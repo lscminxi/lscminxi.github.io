@@ -74,22 +74,39 @@ jobs:
       - name: Install dependencies
         working-directory: blog
         run: npm ci
-      - name: Build, check and export static files
-        working-directory: blog
-        run: npm run publish:prepare
-      - name: Commit generated site
+      - name: Build and publish the latest source revision
         working-directory: ${{ github.workspace }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No generated changes to publish."
-            exit 0
-          fi
-          git commit -m "chore: publish generated site for ${GITHUB_SHA::7} [skip ci]"
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+
+          # 后台短时间内连续保存/删除时，较早的工作流可能晚于较新的提交开始执行。
+          # 始终从远端 main 的最新源码重新生成；若构建期间 main 又变化，则丢弃旧产物、
+          # 基于最新源码重建后重试。这样不会因生成文件 rebase 冲突而留下“源码已删除、
+          # 首页仍是旧版本”的状态。
+          for attempt in 1 2 3 4; do
+            echo "Publish attempt $attempt from latest origin/$GITHUB_REF_NAME"
+            git fetch origin "$GITHUB_REF_NAME"
+            git reset --hard "origin/$GITHUB_REF_NAME"
+            npm --prefix blog run publish:prepare
+            git add -A
+
+            if git diff --cached --quiet; then
+              echo "No generated changes to publish."
+              exit 0
+            fi
+
+            source_sha=$(git rev-parse --short HEAD)
+            git commit -m "chore: publish generated site for ${source_sha} [skip ci]"
+            if git push origin "HEAD:$GITHUB_REF_NAME"; then
+              exit 0
+            fi
+
+            echo "main changed while building; rebuilding the latest revision."
+          done
+
+          echo "Failed to publish after 4 attempts." >&2
+          exit 1
 
       # GITHUB_TOKEN commits do not automatically trigger another Pages workflow.
       # Explicitly request a branch-based Pages build of the freshly exported root.

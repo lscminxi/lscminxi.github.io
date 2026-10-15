@@ -1578,7 +1578,9 @@
         el.buildChip.className = "chip err";
         el.buildChip.textContent = `构建状态：${run.conclusion || "失败"}（${when}）`;
       }
-      el.buildNote.textContent = `最近一次：${run.name} · ${run.head_sha.slice(0, 7)} · ${run.display_title || ""}`;
+      el.buildNote.textContent = run.status === "completed" && run.conclusion !== "success"
+        ? `本次发布失败，公开首页仍是上一次成功发布的版本；后台列表显示的是已提交的最新源码。请打开 Actions 查看原因或重试。`
+        : `最近一次：${run.name} · ${run.head_sha.slice(0, 7)} · ${run.display_title || ""}`;
       el.actionsLink.href = run.html_url;
       return run;
     } catch (error) {

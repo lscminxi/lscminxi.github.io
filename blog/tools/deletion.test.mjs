@@ -26,7 +26,7 @@ async function setup() {
   w.TextDecoder = TextDecoder;
   w.MinxiPreview = { document: () => '<!doctype html><html></html>' };
   const files = new Map([[path, { sha: 'sha1', text }]]);
-  const state = { deletes: [], requests: [], deleteStatus: 0, failTree: false };
+  const state = { deletes: [], requests: [], deleteStatus: 0, failTree: false, runConclusion: 'success' };
   const reply = (status, data) => ({ ok: status < 400, status, text: async () => JSON.stringify(data) });
   w.fetch = async (url, opts = {}) => {
     const uri = new URL(url);
@@ -34,7 +34,7 @@ async function setup() {
     state.requests.push({ suffix, method: opts.method, cache: opts.cache });
     if (suffix === '/user') return reply(200, { login: 'lscminxi' });
     if (!suffix) return reply(200, { permissions: { push: true }, owner: { login: 'lscminxi' } });
-    if (suffix.startsWith('/actions/runs')) return reply(200, { workflow_runs: [{ name: 'Build and deploy blog', head_sha: 'old-commit', status: 'completed', conclusion: 'success', updated_at: '2026-01-01', html_url: 'https://github.com/test', display_title: 'Old build' }] });
+    if (suffix.startsWith('/actions/runs')) return reply(200, { workflow_runs: [{ name: 'Build and deploy blog', head_sha: 'old-commit', status: 'completed', conclusion: state.runConclusion, updated_at: '2026-01-01', html_url: 'https://github.com/test', display_title: 'Old build' }] });
     if (suffix.startsWith('/git/trees/')) {
       if (state.failTree) return reply(500, { message: 'Tree unavailable' });
       return reply(200, { tree: [...files].map(([path, file]) => ({ path, sha: file.sha, size: file.text.length, type: 'blob' })) });
@@ -145,6 +145,17 @@ for (const status of [403, 409]) {
     } finally { dom.window.close(); }
   });
 }
+test('a failed workflow explains why the public homepage still shows deleted source', async () => {
+  const { dom, $, state } = await setup();
+  try {
+    state.runConclusion = 'failure';
+    $('#build-refresh').click();
+    await wait(() => $('#build-chip').textContent.includes('failure'));
+    assert($('#build-note').textContent.includes('公开首页仍是上一次成功发布的版本'));
+    assert($('#build-note').textContent.includes('后台列表显示的是已提交的最新源码'));
+  } finally { dom.window.close(); }
+});
+
 test('already deleted on GitHub synchronizes locally without sending a DELETE', async () => {
   const { dom, $, files, state } = await setup();
   try {

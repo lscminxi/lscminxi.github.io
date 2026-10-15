@@ -25,7 +25,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.7 var(--sans);
+  font: 15px/1.7 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 a {
@@ -1002,7 +1002,7 @@ svg {
   color: var(--accent);
 }
 .article-content {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 2;
   color: #b9c2cf;
   overflow-wrap: break-word;
@@ -1051,11 +1051,11 @@ svg {
   margin: 5px 0;
 }
 .article-content blockquote {
-  margin: 24px 0;
+  margin: 12px 0;
   border-left: 3px solid #4cae97;
   background: #14251f;
   padding: 4px 20px;
-  border-radius: 0 6px 6px 0;
+  border-radius: 8px;
   color: #9ebbae;
 }
 .article-content code {
@@ -1917,6 +1917,9 @@ html[data-wallpaper="on"] {
 }
 html[data-wallpaper="on"] body {
   background: transparent;
+  /* 建立独立层叠上下文：否则 z-index: -1 的壁纸层会落到 <html> 的
+     背景后面，图片即使已正确配置和加载也完全不可见。 */
+  isolation: isolate;
 }
 html[data-wallpaper="on"] body::before,
 html[data-wallpaper="on"] body::after {
