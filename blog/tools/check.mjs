@@ -34,6 +34,20 @@ for (const key of ["avatar", "wallpaper", "favicon"]) {
 const icon = /<link rel="icon"[^>]*href="([^"]+)"/.exec(index);
 assert(icon, "Missing favicon link");
 assert.equal(decoded(icon[1]), look.favicon, "Favicon must match appearance.json");
+// 非内置图标（例如后台填的外链）必须带 data-fallback-icon：加载失败时 js/main.js 靠它换回本地图标。
+const iconTag = /<link rel="icon"[^>]*>/.exec(index)[0];
+const customIcon = look.favicon !== appearance.DEFAULTS.favicon;
+assert.equal(
+  iconTag.includes("data-fallback-icon="),
+  customIcon,
+  "Only a non-default favicon carries data-fallback-icon",
+);
+if (customIcon) {
+  assert(
+    iconTag.includes(`data-fallback-icon="${appearance.DEFAULTS.favicon}"`),
+    "The icon fallback must point at the bundled favicon.svg",
+  );
+}
 const avatar = /<img class="avatar-image" src="([^"]+)"/.exec(index);
 if (look.avatar) {
   assert(avatar, "Configured avatar must be rendered in the sidebar");

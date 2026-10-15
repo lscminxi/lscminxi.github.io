@@ -189,6 +189,20 @@
     if (image.complete && image.naturalWidth === 0) fallback();
   });
 
+  // 站点图标同样可能是外链（后台「外观」里配置）。加载失败就换回 data-fallback-icon
+  // 指向的内置 favicon.svg，否则浏览器标签页会变成空白图标。
+  const siteIcon = document.querySelector('link[rel~="icon"][data-fallback-icon]');
+  if (siteIcon) {
+    const restoreDefaultIcon = () => {
+      siteIcon.href = siteIcon.dataset.fallbackIcon;
+      siteIcon.type = "image/svg+xml";
+    };
+    const iconProbe = new Image();
+    iconProbe.referrerPolicy = "no-referrer";
+    iconProbe.addEventListener("error", restoreDefaultIcon);
+    iconProbe.src = siteIcon.href;
+  }
+
   const backTop = document.querySelector("#back-top");
   const updateScroll = () => {
     backTop.hidden = window.scrollY < 500;

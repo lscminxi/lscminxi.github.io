@@ -53,6 +53,26 @@ async function setup({ fileText = JSON.stringify(defaultData) } = {}) {
     [postPath, { sha: "post-sha", text: "---\ntitle: 测试文章\ndate: 2026-01-01 10:00:00\n---\n正文" }],
   ]);
   const state = { writes: [], requests: [] };
+  // 后台会 new Image() 探测外链图标是否可用；这里换成可手动触发 error 的记录器。
+  const imageProbes = [];
+  w.Image = class {
+    constructor() {
+      this.handlers = {};
+      imageProbes.push(this);
+    }
+    addEventListener(type, handler) {
+      (this.handlers[type] ||= []).push(handler);
+    }
+    set src(value) {
+      this.currentSrc = value;
+    }
+    get src() {
+      return this.currentSrc;
+    }
+    emit(type) {
+      for (const handler of this.handlers[type] || []) handler();
+    }
+  };
   const reply = (status, data) => ({
     ok: status < 400,
     status,
@@ -92,7 +112,7 @@ async function setup({ fileText = JSON.stringify(defaultData) } = {}) {
   $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await wait(() => $("#post-list .row"));
   await wait(() => !$("#refresh-button").disabled);
-  return { dom, w, $, files, state };
+  return { dom, w, $, files, state, imageProbes };
 }
 
 const openAppearanceTab = async ($) => {
@@ -368,6 +388,77 @@ test("the published site falls back to the letter avatar when the image cannot l
   assert(late.window.document.querySelector(".avatar").classList.contains("avatar--failed"));
   assert.equal(late.window.document.querySelector(".avatar-mark").hidden, false);
   late.window.close();
+});
+
+test("the published site falls back to the bundled favicon when the configured icon cannot load", async () => {
+  // 图标同样可能是外链：加载失败时必须换回仓库内置的 favicon.svg，标签页不能变成空白图标。
+  const siteJs = await readFile("themes/minxi/source/js/main.js", "utf8");
+  const markup = (icon) => `<!doctype html><html><head>${icon}</head><body>
+    <dialog id="search-dialog" data-index="/search.json"><button id="close-search"></button><input id="search-input"><div id="search-results"></div></dialog>
+    <button id="back-top" hidden></button>
+  </body></html>`;
+  const recorder = (w) => {
+    const probes = [];
+    w.Image = class {
+      constructor() {
+        this.handlers = {};
+        probes.push(this);
+      }
+      addEventListener(type, handler) {
+        (this.handlers[type] ||= []).push(handler);
+      }
+      set src(value) {
+        this.currentSrc = value;
+      }
+      get src() {
+        return this.currentSrc;
+      }
+      emit(type) {
+        for (const handler of this.handlers[type] || []) handler();
+      }
+    };
+    return probes;
+  };
+
+  const dom = new JSDOM(
+    markup('<link rel="icon" type="image/png" href="https://cdn.example.com/icon.png" data-fallback-icon="/images/favicon.svg">'),
+    { url: "https://lscminxi.github.io/", runScripts: "outside-only" },
+  );
+  const w = dom.window;
+  const probes = recorder(w);
+  const link = w.document.querySelector('link[rel~="icon"]');
+  w.eval(siteJs);
+  assert.equal(probes.length, 1, "A non-default icon is probed once");
+  assert.equal(probes[0].src, "https://cdn.example.com/icon.png");
+  assert.equal(link.getAttribute("href"), "https://cdn.example.com/icon.png", "Nothing changes while the icon loads");
+  probes[0].emit("error");
+  assert.equal(link.getAttribute("href"), "/images/favicon.svg");
+  assert.equal(link.getAttribute("type"), "image/svg+xml");
+  w.close();
+
+  // 用的就是内置图标时不探测，避免多余请求。
+  const plain = new JSDOM(markup('<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">'), {
+    url: "https://lscminxi.github.io/",
+    runScripts: "outside-only",
+  });
+  const plainProbes = recorder(plain.window);
+  plain.window.eval(siteJs);
+  assert.equal(plainProbes.length, 0);
+  plain.window.close();
+});
+
+test("the admin tab icon follows the configured favicon and falls back when it cannot load", async () => {
+  const { dom, $, imageProbes } = await setup();
+  try {
+    await wait(() => $("#admin-favicon").getAttribute("href") === defaultData.favicon);
+    assert.equal($("#admin-favicon").getAttribute("type"), "image/png");
+    assert.equal(imageProbes.length, 1, "The remote admin icon is probed");
+    imageProbes[0].emit("error");
+    assert.equal($("#admin-favicon").getAttribute("href"), "/images/favicon.svg");
+    assert.equal($("#admin-favicon").getAttribute("type"), "image/svg+xml");
+  } finally {
+    await teardown(dom);
+  }
 });
 
 /* ---------------- 构建产物 ---------------- */

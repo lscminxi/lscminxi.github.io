@@ -121,10 +121,10 @@ description: 用一句话介绍题目和核心思路。
 另外：
 
 - 构建时会生成一份只读副本 `/appearance.json`（已清洗、无时间戳，避免无意义的提交差异），后台用它让管理页的图标与站点保持一致。
-- 内置的默认图标仍是主题自带的 `/images/favicon.svg`，删掉配置或地址非法时自动回落到它。
+- 内置的默认图标仍是主题自带的 `/images/favicon.svg`，删掉配置或地址非法时自动回落到它。图标填的是外链（或非内置地址）时，`layout.ejs` 会额外输出 `data-fallback-icon`，`js/main.js` 探测一次它能否加载：被 CDN 防盗链拦住或地址失效时自动换回内置图标，浏览器标签页不会变成空白；后台页面顶部的图标同理。
 - 头像是外链时可能被 CDN 防盗链拦住（图片打不开时卡片会自动显示字母标记 `m_`）。稳妥做法：在后台「图片」里上传图片（单文件 ≤ 1 MB），再用「外观」里的「图片库」按钮填 `/images/文件名`。
 - 壁纸只在配置了图片时才生效：`layout.ejs` 输出 `html[data-wallpaper="on"]` 与 `--wallpaper-image` / `--wallpaper-veil` / `--wallpaper-blur` 变量，样式在 `main.css` 结尾；页面顶栏会变得更透明，压暗层和暗角保证正文对比度。
-- 外观相关回归测试：`cd blog && npm run test:appearance`（共享校验规则、后台面板、保存时的 SHA/分支/内容、拒绝恶意地址、以及「恶意 JSON → 构建产物无注入」）。`npm run build && npm run check` 还会校验构建产物与 `appearance.json` 一致。
+- 外观相关回归测试：`cd blog && npm run test:appearance`（共享校验规则、后台面板、保存时的 SHA/分支/内容、拒绝恶意地址、外链头像/图标加载失败时的回落，以及「恶意 JSON → 构建产物无注入」）。`npm run build && npm run check` 还会校验构建产物与 `appearance.json` 一致。
 
 ## 数学公式与实时预览
 

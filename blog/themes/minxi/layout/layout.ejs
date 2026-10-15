@@ -14,7 +14,8 @@
   <meta property="og:type" content="<%= is_post() ? 'article' : 'website' %>">
   <meta property="og:url" content="<%= config.url.replace(/\/$/, '') + url_for(page.path || '') %>">
   <link rel="canonical" href="<%= config.url.replace(/\/$/, '') + url_for(page.path || '') %>">
-  <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>">
+  <%# 后台可以把图标设成外链；加载失败时 js/main.js 会换回仓库内置的 favicon.svg，标签页不会变空白 -%>
+  <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>"<% if (appearance.favicon !== appearance_default_favicon()) { %> data-fallback-icon="<%- url_for(appearance_default_favicon()) %>"<% } %>>
   <% if (appearance.faviconType === 'image/png') { %><link rel="apple-touch-icon" href="<%= url_for(appearance.favicon) %>">
   <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>">
   <link rel="stylesheet" href="<%- url_for('/vendor/katex/katex.min.css') %>">
