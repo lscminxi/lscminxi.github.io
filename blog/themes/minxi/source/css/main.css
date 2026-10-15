@@ -92,10 +92,32 @@ svg {
   height: 83px;
   border-bottom: 1px solid #202630;
   background: #0b0e14ed;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 20;
   backdrop-filter: blur(18px);
+  /* 默认隐藏在屏幕外：鼠标离开后停留 2 秒再慢慢收起 */
+  transform: translateY(calc(-100% - 1px));
+  transition: transform 0.6s ease 2s, box-shadow 0.6s ease 2s;
+}
+/* 顶部一条很窄的感应区，用来触发顶栏显示 */
+.header-hover-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  z-index: 19;
+}
+.header-hover-zone:hover + .site-header,
+.site-header:hover,
+.site-header:focus-within {
+  transform: none;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  /* 滑出时不延迟，但放慢速度 */
+  transition: transform 0.6s ease 0s, box-shadow 0.6s ease 0s;
 }
 .header-inner {
   max-width: 1180px;
@@ -126,7 +148,8 @@ svg {
   height: 39px;
   border-radius: 10px;
   letter-spacing: -4px;
-  padding-right: 3px;
+  padding: 0;
+  overflow: hidden;
 }
 .brand-mark span {
   font-size: 22px;
@@ -833,6 +856,21 @@ svg {
   font: 700 24px var(--mono);
   color: #768c91;
   letter-spacing: -4px;
+}
+.brand-mark-image,
+.footer-brand-image {
+  display: block;
+  object-fit: cover;
+}
+.brand-mark-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+.footer-brand-image {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
 }
 .footer-brand > span {
   color: var(--accent);
@@ -1964,4 +2002,48 @@ html[data-wallpaper="on"] .site-header {
   html[data-wallpaper="on"] .site-header {
     background: #0b0e14ed;
   }
+}
+
+/* 触屏设备没有鼠标悬停，顶栏保持常驻 */
+@media (hover: none) and (pointer: coarse) {
+  .site-header {
+    position: sticky;
+    transform: none;
+  }
+  .header-hover-zone {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-header {
+    transition: none;
+  }
+}
+
+/* 置顶标记与归档页的置顶区块 */
+.pin-label {
+  font: 9px var(--mono);
+  color: var(--accent);
+  background: #12221f;
+  border: 1px solid #285146;
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+.pinned-block {
+  margin-bottom: 30px;
+}
+.pinned-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 13px var(--mono);
+  color: var(--accent);
+  font-weight: 400;
+  margin: 24px 0 14px;
+}
+.pinned-title .subtle-label {
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 2px;
 }

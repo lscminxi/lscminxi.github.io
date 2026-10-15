@@ -630,3 +630,13 @@ code {
     display: none;
   }
 }
+
+/* 置顶开关复用「编辑 / 分屏 / 预览」的按钮样式 */
+.pin-field {
+  margin-bottom: 14px;
+}
+.pin-hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
