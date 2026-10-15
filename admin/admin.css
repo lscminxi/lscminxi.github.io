@@ -631,51 +631,9 @@ code {
   }
 }
 
-/* 置顶开关：两个胶囊按钮，选中项高亮，下方给出说明 */
+/* 置顶开关复用「编辑 / 分屏 / 预览」的按钮样式 */
 .pin-field {
   margin-bottom: 14px;
-}
-.pin-toggle {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #0e131b;
-}
-.pin-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font: 500 12px var(--sans);
-  padding: 7px 16px;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-.pin-option i {
-  font-style: normal;
-  font-size: 10px;
-  opacity: 0.7;
-}
-.pin-option:hover {
-  color: var(--text);
-}
-.pin-option.active {
-  background: #17352e;
-  border-color: #2f5c51;
-  color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(74, 170, 150, 0.12);
-}
-.pin-option.active i {
-  opacity: 1;
-}
-.pin-option:focus-visible {
-  outline: 2px solid #3d6a60;
-  outline-offset: 2px;
 }
 .pin-hint {
   margin: 8px 2px 0;
