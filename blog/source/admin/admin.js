@@ -365,6 +365,21 @@
   const asList = (value) =>
     Array.isArray(value) ? value : value === "" || value == null ? [] : [String(value)];
 
+  // 置顶按钮：二选一，状态保存在 pinned 变量里，写入 front matter 时为 sticky: 1。
+  let pinned = false;
+  const pinButtons = document.querySelectorAll("[data-pin]");
+  function setPinned(value) {
+    pinned = Boolean(value);
+    pinButtons.forEach((button) => {
+      const on = (button.dataset.pin === "on") === pinned;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", String(on));
+    });
+  }
+  pinButtons.forEach((button) =>
+    button.addEventListener("click", () => setPinned(button.dataset.pin === "on")),
+  );
+
   function buildMarkdown(fields) {
     const lines = ["---"];
     lines.push(`title: ${yamlString(fields.title)}`);
@@ -380,6 +395,7 @@
     if (fields.description) lines.push(`description: ${yamlString(fields.description)}`);
     if (fields.accent) lines.push(`accent: ${fields.accent}`);
     if (fields.sample) lines.push("sample: true");
+    if (fields.pinned) lines.push("sticky: 1");
     lines.push("---", "");
     return `${lines.join("\n")}${fields.body.replace(/^\s+/, "")}\n`;
   }
@@ -569,6 +585,7 @@
           tags: asList(data.tags),
           description: String(data.description || ""),
           sample: String(data.sample || "") === "true",
+          sticky: Number(data.sticky) > 0,
         });
       } catch (error) {
         if (error.status === 404) return; // File removed while the tree was loading.
@@ -581,6 +598,7 @@
           tags: [],
           description: `读取失败：${describeError(error)}`,
           sample: false,
+          sticky: false,
         });
       }
     });
@@ -1062,6 +1080,7 @@
       el.f.description.value = String(data.description || "");
       el.f.accent.value = String(data.accent || "");
       el.f.sample.checked = String(data.sample || "") === "true";
+      setPinned(Number(data.sticky) > 0);
       el.f.body.value = body.replace(/^\n+/, "");
       el.editorStatus.textContent = `已加载 ${path}（${(file.size / 1024).toFixed(1)} KB）`;
       log(`打开编辑：${path}`);
@@ -1084,6 +1103,7 @@
     el.f.description.value = "";
     el.f.accent.value = "";
     el.f.sample.checked = false;
+    setPinned(false);
     el.f.body.value = "";
     delete el.f.slug.dataset.touched;
     el.editorStatus.textContent = "填写后点「保存并提交」。";
@@ -1115,6 +1135,7 @@
       description: el.f.description.value.trim(),
       accent: el.f.accent.value,
       sample: el.f.sample.checked,
+      pinned,
       body: el.f.body.value,
       path: `${CONFIG.postsDir}/${slug}.md`,
     };

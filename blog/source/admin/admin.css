@@ -630,3 +630,34 @@ code {
     display: none;
   }
 }
+
+/* 置顶按钮组 */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0e131b;
+}
+.seg {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 12px var(--mono);
+  padding: 9px 16px;
+  cursor: pointer;
+}
+.seg + .seg {
+  border-left: 1px solid var(--line);
+}
+.seg:hover {
+  color: var(--text);
+}
+.seg.active {
+  background: #172721;
+  color: var(--accent);
+}
+.seg:focus-visible {
+  outline: 2px solid #3d6a60;
+  outline-offset: -2px;
+}
