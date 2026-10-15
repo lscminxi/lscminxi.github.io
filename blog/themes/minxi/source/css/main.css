@@ -839,10 +839,14 @@ svg {
   display: block;
   object-fit: cover;
 }
+.brand-mark:has(> .brand-mark-image) {
+  padding: 0;
+  overflow: hidden;
+}
 .brand-mark-image {
   width: 100%;
   height: 100%;
-  border-radius: 9px;
+  border-radius: inherit;
 }
 .footer-brand-image {
   width: 32px;
