@@ -781,25 +781,6 @@ svg {
 .links-section a:hover strong {
   color: var(--accent);
 }
-.sidebar-note {
-  margin-top: 25px;
-  border-left: 2px solid #33483f;
-  padding: 3px 0 3px 15px;
-}
-.sidebar-note > span {
-  font: 9px var(--mono);
-  color: #6a897b;
-}
-.sidebar-note p {
-  font-size: 11px;
-  color: #8c9aab;
-  line-height: 2;
-  margin: 9px 0;
-}
-.sidebar-note > div {
-  font: 8px var(--mono);
-  color: #8195a3;
-}
 .site-footer {
   border-top: 1px solid #232b35;
 }
@@ -1206,10 +1187,6 @@ svg {
   justify-content: space-between;
   gap: 20px;
 }
-.article-bottom > span {
-  font-size: 10px;
-  color: var(--dim);
-}
 .post-navigation {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1587,9 +1564,6 @@ body.search-open {
     align-items: start;
   }
   .sidebar-section {
-    margin-top: 0;
-  }
-  .sidebar-note {
     margin-top: 0;
   }
   .profile-card {
