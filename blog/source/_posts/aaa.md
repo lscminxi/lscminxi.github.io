@@ -5,3 +5,13 @@ categories:
   - 学习笔记
 ---
 aaaaaa
+:::info[aaa]
+asaa
+```
+aaaaa
+```
+:::
+
+:::success[Code]
+godogod
+:::
