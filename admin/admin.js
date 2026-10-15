@@ -1666,7 +1666,23 @@
       const response = await fetch(`${location.origin}/appearance.json`, { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
-      if (appearanceApi().isSafeImageUrl(data?.favicon)) link.href = data.favicon;
+      const icon = data?.favicon;
+      const api = appearanceApi();
+      if (!api.isSafeImageUrl(icon)) return;
+      link.href = icon;
+      // type 要跟着扩展名走，否则后台会宣称外链图标是本地的 svg。
+      const type = api.faviconType(icon);
+      if (type) link.type = type;
+      else link.removeAttribute("type");
+      if (link.getAttribute("href") === link.dataset.fallbackIcon) return;
+      // 配置的图标可能是外链：加载失败就回到本地图标，避免标签页空白。
+      const probe = new Image();
+      probe.referrerPolicy = "no-referrer";
+      probe.addEventListener("error", () => {
+        link.href = link.dataset.fallbackIcon || "/images/favicon.svg";
+        link.type = "image/svg+xml";
+      });
+      probe.src = icon;
     } catch {
       // 忽略：图标只是装饰，读取失败不影响后台功能。
     }
