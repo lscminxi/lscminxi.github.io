@@ -10,7 +10,8 @@
   <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="./admin.css">
-  <script src="./admin.js" defer></script>
+  <script src="./preview.js?v=fold-preview-2" defer></script>
+  <script src="./admin.js?v=delete-fix-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -163,11 +164,27 @@
       <div class="body-head">
         <label class="field grow"><span>正文 Markdown</span></label>
         <div class="body-tools">
+          <div class="preview-modes" role="group" aria-label="编辑器视图">
+            <button class="btn ghost small" type="button" data-editor-mode="edit" aria-pressed="false">编辑</button>
+            <button class="btn ghost small" type="button" data-editor-mode="split" aria-pressed="true">分屏</button>
+            <button class="btn ghost small" type="button" data-editor-mode="preview" aria-pressed="false">预览</button>
+          </div>
+          <button class="btn ghost small" id="insert-math" type="button">插入公式</button>
+          <select id="insert-fold" class="small-select" aria-label="插入折叠框">
+            <option value="">插入折叠框…</option>
+            <option value="info">info · 蓝色提示</option>
+            <option value="success">success · 绿色成功</option>
+          </select>
           <select id="insert-image" class="small-select"><option value="">插入图片…</option></select>
           <button class="btn ghost small" id="insert-more" type="button">插入 &lt;!-- more --&gt;</button>
         </div>
       </div>
-      <textarea id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
+      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</p>
+      <div class="writing-workspace" id="writing-workspace" data-mode="split">
+      <textarea aria-label="正文 Markdown" id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
+      <iframe id="post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+      </div>
+      <p id="preview-status" class="muted small" role="status"></p>
       <div class="panel-actions">
         <span class="muted small" id="editor-status"></span>
         <button class="btn danger small" id="delete-post" type="button" hidden>删除这篇文章</button>

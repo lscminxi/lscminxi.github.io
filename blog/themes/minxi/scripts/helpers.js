@@ -21,3 +21,21 @@ hexo.extend.generator.register("search-index", function (locals) {
     }));
   return { path: "search.json", data: JSON.stringify(posts) };
 });
+
+// Hexo's index/archive generators omit pages when the final post is deleted.
+// Keep navigation and the empty blog build valid.
+hexo.extend.generator.register("empty-archives", function (locals) {
+  if (locals.posts.length) return [];
+  return [
+    {
+      path: "index.html",
+      layout: ["index"],
+      data: { posts: locals.posts, total: 1, current: 1, __index: true },
+    },
+    {
+      path: "archives/index.html",
+      layout: ["archive"],
+      data: { posts: locals.posts, total: 1, archive: true },
+    },
+  ];
+});

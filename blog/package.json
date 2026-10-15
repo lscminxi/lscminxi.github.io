@@ -7,12 +7,18 @@
     "dev": "hexo server --ip 0.0.0.0",
     "new": "hexo new",
     "check": "node tools/check.mjs",
-    "publish:prepare": "npm run build && npm run check && node tools/export.mjs"
+    "publish:prepare": "npm run build && npm run check && node tools/export.mjs",
+    "assets": "node tools/build-assets.mjs",
+    "prebuild": "npm run assets",
+    "predev": "npm run assets",
+    "test:preview": "npm run assets && node --test tools/preview.test.mjs",
+    "test:delete": "node --test tools/deletion.test.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "dompurify": "^3.4.17",
     "hexo": "^8.1.2",
     "hexo-generator-archive": "^2.0.0",
     "hexo-generator-category": "^2.0.0",
@@ -20,9 +26,16 @@
     "hexo-generator-tag": "^2.0.0",
     "hexo-renderer-ejs": "^2.0.0",
     "hexo-renderer-marked": "^7.0.1",
-    "hexo-server": "^3.0.0"
+    "hexo-server": "^3.0.0",
+    "katex": "^0.16.47",
+    "marked": "^15.0.12",
+    "marked-katex-extension": "^5.1.13"
   },
   "hexo": {
     "version": "8.1.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^26.1.0"
   }
 }

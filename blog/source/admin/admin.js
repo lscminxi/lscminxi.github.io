@@ -38,6 +38,8 @@
   let editing = null; // { path, sha, isNew }
   let aboutState = { sha: "", text: "" };
   let buildWatch = null;
+  let postsRevision = 0;
+  const deletingPosts = new Set();
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -158,6 +160,7 @@
 
   let modalResolver = null;
   function confirmDialog(title, text, okLabel = "确认") {
+    if (modalResolver) return Promise.resolve(false);
     el.modalTitle.textContent = title;
     el.modalText.textContent = text;
     el.modalOk.textContent = okLabel;
@@ -243,6 +246,7 @@
   async function api(path, { method = "GET", body } = {}) {
     const response = await fetch(CONFIG.api + path, {
       method,
+      cache: "no-store",
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
@@ -439,6 +443,7 @@
   function logout(silent) {
     token = "";
     currentUser = "";
+    postsRevision++;
     postIndex.clear();
     imageIndex.clear();
     editing = null;
@@ -518,10 +523,13 @@
   }
 
   async function refreshPosts() {
+    const revision = ++postsRevision;
     const { posts } = await loadTree();
-    postIndex = new Map();
+    if (revision !== postsRevision) return;
+    const nextIndex = new Map();
     el.postList.textContent = "";
     if (!posts.length) {
+      postIndex = nextIndex;
       el.postList.append(Object.assign(document.createElement("p"), { className: "muted", textContent: "还没有文章，点右上角「新建文章」。" }));
       el.postsCount.textContent = "0";
       return;
@@ -533,7 +541,7 @@
       try {
         const file = await getFile(item.path);
         const { data } = parseFrontMatter(file.text);
-        postIndex.set(item.path, {
+        nextIndex.set(item.path, {
           sha: file.sha,
           size: item.size || file.size,
           title: String(data.title || item.path.split("/").pop()),
@@ -544,7 +552,8 @@
           sample: String(data.sample || "") === "true",
         });
       } catch (error) {
-        postIndex.set(item.path, {
+        if (error.status === 404) return; // File removed while the tree was loading.
+        nextIndex.set(item.path, {
           sha: item.sha,
           size: item.size,
           title: item.path.split("/").pop(),
@@ -556,6 +565,8 @@
         });
       }
     });
+    if (revision !== postsRevision) return;
+    postIndex = nextIndex;
     renderPosts();
   }
 
@@ -608,7 +619,7 @@
       remove.className = "btn danger small";
       remove.type = "button";
       remove.textContent = "删除";
-      remove.addEventListener("click", () => removePost(path));
+      remove.addEventListener("click", () => removePost(path, remove));
       actions.append(edit, remove);
       row.append(main, actions);
       el.postList.append(row);
@@ -617,29 +628,81 @@
 
   const fileName = (path) => path.split("/").pop().replace(/\.md$/, "");
 
-  async function removePost(path) {
-    const post = postIndex.get(path);
-    if (!post) return;
-    const ok = await confirmDialog(
-      "删除文章",
-      `确定删除「${post.title}」（${path}）吗？这会立刻提交一次删除到 ${CONFIG.branch} 分支，静态页面重新生成后文章将从站点消失。此操作只能通过 Git 历史恢复。`,
-      "删除并提交",
-    );
-    if (!ok) return;
+  async function removePost(path, button = el.deletePost) {
+    if (deletingPosts.has(path)) return false;
+    if (editing?.path === path && el.savePost.disabled) {
+      toast("正在保存文章，请等保存完成后再删除。", "err");
+      return false;
+    }
+    const editor = editing?.path === path ? editing : null;
+    const post = postIndex.get(path) || (editor ? { title: el.f.title.value || fileName(path), sha: editor.sha } : null);
+    if (!post) {
+      toast("文章列表已变化，请刷新后重试。", "err");
+      return false;
+    }
+    deletingPosts.add(path);
+    let started = false;
     try {
-      busy(el.refreshButton, true, "删除中…");
-      const result = await deleteFile(path, post.sha, `chore(blog): delete post ${fileName(path)}`);
-      log(`已删除文章：${path}（commit ${result.commit?.sha?.slice(0, 7) || "?"}）`, "ok");
-      toast("已删除，站点将在 1–2 分钟内更新");
+      const ok = await confirmDialog(
+        "删除文章",
+        `确定删除「${post.title}」（${path}）吗？这会提交删除到 ${CONFIG.branch} 分支；公开页面需要等待自动构建和 Pages 发布完成后才会消失。此操作只能通过 Git 历史恢复。`,
+        "删除并提交",
+      );
+      if (!ok) return false;
+      started = true;
+      busy(button, true, "删除中…");
+      if (editor) {
+        busy(el.savePost, true);
+        el.editorStatus.textContent = "正在删除文章并提交到 GitHub…";
+      }
+      // Revalidate after confirmation. Never silently delete a newer revision.
+      let file;
+      try {
+        file = await getFile(path);
+      } catch (error) {
+        if (error.status !== 404) throw error;
+      }
+      let result;
+      if (file) {
+        const expectedSha = editor?.sha || post.sha;
+        if (expectedSha && file.sha !== expectedSha) {
+          const confirmed = await confirmDialog(
+            "文章已被修改",
+            "该文章在列表加载后被更新过。确定删除 GitHub 上的最新版本吗？取消可保留你的编辑内容。",
+            "删除最新版本",
+          );
+          if (!confirmed) return false;
+        }
+        result = await deleteFile(path, file.sha, `chore(blog): delete post ${fileName(path)}`);
+        log(`已删除文章：${path}（commit ${result.commit?.sha?.slice(0, 7) || "?"}）`, "ok");
+        toast("源码已删除；公开页面需等待自动发布完成。");
+      } else {
+        log(`文章已不存在：${path}，已同步移除列表。`, "ok");
+        toast("文章源码已不存在，已更新列表。");
+      }
+      postsRevision++; // Invalidate refreshes begun before the delete.
       postIndex.delete(path);
       renderPosts();
-      watchBuild();
+      if (editing?.path === path) hideEditor();
+      watchBuild(result?.commit?.sha || "");
+      return true;
     } catch (error) {
-      log(`删除失败：${describeError(error)}`, "err");
-      toast(describeError(error), "err");
-      await refreshPosts().catch(() => {});
+      const message = `删除失败：${describeError(error)}`;
+      log(message, "err");
+      toast(message, "err");
+      if (editing?.path === path) el.editorStatus.textContent = message;
+      return false; // Keep the editor/draft intact on error or cancellation.
     } finally {
-      busy(el.refreshButton, false);
+      deletingPosts.delete(path);
+      if (started) {
+        busy(button, false);
+        if (editor) {
+          busy(el.savePost, false);
+          if (editing?.path === path && el.editorStatus.textContent === "正在删除文章并提交到 GitHub…") {
+            el.editorStatus.textContent = "删除已取消，编辑内容已保留。";
+          }
+        }
+      }
     }
   }
 
@@ -824,6 +887,7 @@
   }
 
   function updatePreview() {
+    renderPostPreview();
     const slug = el.f.slug.value.trim();
     const dateValue = fromDateInput(el.f.date.value);
     const valid = /^[a-z0-9][a-z0-9-]*$/.test(slug);
@@ -839,7 +903,82 @@
         : "";
   }
 
+  // Debounce typing; never call GitHub or save when generating a preview.
+  let previewTimer;
+  let previewSignature = "";
+  let previewNeedsReset = true;
+  let previewOpenFolds = [];
+  let previewScroll = { top: 0, left: 0 };
+  const previewFrame = $("#post-preview");
+  previewFrame.addEventListener("load", () => {
+    // Controlled by the parent: keep the iframe script-free.
+    const scroll = previewFrame.contentDocument?.scrollingElement;
+    if (scroll) {
+      scroll.scrollTop = previewScroll.top;
+      scroll.scrollLeft = previewScroll.left;
+    }
+  });
+  function renderPostPreview() {
+    clearTimeout(previewTimer);
+    try {
+      if (!window.MinxiPreview) throw new Error("预览组件未加载，请刷新页面。");
+      const input = {
+        title: el.f.title.value,
+        description: el.f.description.value,
+        body: el.f.body.value,
+      };
+      const signature = JSON.stringify(input);
+      // Switching edit/split/preview modes must not reload a working preview.
+      if (!previewNeedsReset && signature === previewSignature) return;
+      if (previewNeedsReset) {
+        previewOpenFolds = [];
+        previewScroll = { top: 0, left: 0 };
+      } else {
+        const doc = previewFrame.contentDocument;
+        // During an in-flight srcdoc load retain the last valid snapshot.
+        if (doc?.querySelector('.article-content')) {
+          previewOpenFolds = [...doc.querySelectorAll('details.fold-box[open][data-preview-fold-key]')]
+            .map((fold) => fold.dataset.previewFoldKey);
+          const scroll = doc.scrollingElement;
+          previewScroll = { top: scroll?.scrollTop || 0, left: scroll?.scrollLeft || 0 };
+        }
+      }
+      previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds });
+      previewSignature = signature;
+      previewNeedsReset = false;
+      $("#preview-status").textContent = "预览已更新 · Markdown / KaTeX / 可点击折叠框（代码高亮与目录以发布页为准）";
+    } catch (error) {
+      $("#preview-status").textContent = `预览失败：${error.message}`;
+    }
+  }
+  [el.f.body, el.f.title, el.f.description].forEach((field) => {
+    field.addEventListener("input", () => {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(renderPostPreview, 180);
+    });
+  });
+  $$('[data-editor-mode]').forEach((button) => {
+    button.addEventListener("click", () => {
+      $("#writing-workspace").dataset.mode = button.dataset.editorMode;
+      $$('[data-editor-mode]').forEach((item) => {
+        item.setAttribute("aria-pressed", String(item === button));
+      });
+      renderPostPreview();
+    });
+  });
+  $("#insert-math").addEventListener("click", () => {
+    insertAtCursor(el.f.body, "\n\n$$\nf(n) = \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n");
+  });
+
+  $("#insert-fold").addEventListener("change", (event) => {
+    const kind = event.target.value;
+    if (kind !== "info" && kind !== "success") return;
+    insertAtCursor(el.f.body, `\n\n:::${kind}[${kind === "info" ? "提示" : "成功"}]\n\n在这里写内容，支持 **Markdown** 和 $a_i$ 公式。\n\n:::\n\n`);
+    event.target.value = "";
+  });
+
   function showEditor() {
+    previewNeedsReset = true;
     el.viewApp.hidden = true;
     el.viewEditor.hidden = false;
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -931,6 +1070,7 @@
   }
 
   async function savePost() {
+    if (el.savePost.disabled || deletingPosts.size) return;
     const fields = readForm();
     if (fields.errors.length) {
       el.editorStatus.textContent = fields.errors.join("；");
@@ -949,10 +1089,14 @@
     busy(el.savePost, true, "提交中…");
     el.editorStatus.textContent = "正在提交到 GitHub…";
     try {
+      let submittedSha = "";
       const renamed = !editing.isNew && editing.path && editing.path !== fields.path;
       if (renamed) {
         const created = await putFile(fields.path, markdown, "", `feat(blog): rename post to ${fields.slug}`);
-        await deleteFile(editing.path, editing.sha, `chore(blog): remove renamed post ${fileName(editing.path)}`);
+        const removed = await deleteFile(editing.path, editing.sha, `chore(blog): remove renamed post ${fileName(editing.path)}`);
+        submittedSha = removed.commit?.sha || "";
+        postIndex.delete(editing.path);
+        editing = { path: fields.path, sha: created.content?.sha || "", isNew: false };
         log(`已重命名：${editing.path} → ${fields.path}（两次提交，commit ${created.commit?.sha?.slice(0, 7) || "?"}）`, "ok");
       } else {
         const result = await putFile(
@@ -963,6 +1107,7 @@
             ? `feat(blog): add post ${fields.slug}`
             : `docs(blog): update post ${fields.slug}`,
         );
+        submittedSha = result.commit?.sha || "";
         editing = { path: fields.path, sha: result.content?.sha || "", isNew: false };
         log(
           `${editing.isNew ? "已新建" : "已保存"}：${fields.path}（commit ${
@@ -975,9 +1120,10 @@
       el.deletePost.hidden = false;
       el.editorStatus.textContent = `已提交。发布地址 ${postUrl(fields.date, fields.slug)}，静态页面约 1–2 分钟后更新。`;
       toast("已提交，GitHub Actions 正在重新生成站点");
+      postIndex.set(fields.path, { ...fields, sha: editing.sha, size: markdown.length });
       await refreshPosts().catch(() => {});
-      if (editing.path) editing.sha = postIndex.get(editing.path)?.sha || editing.sha;
-      watchBuild();
+      if (editing?.path) editing.sha = postIndex.get(editing.path)?.sha || editing.sha;
+      watchBuild(submittedSha);
     } catch (error) {
       el.editorStatus.textContent = describeError(error);
       log(`保存失败：${describeError(error)}`, "err");
@@ -1011,9 +1157,7 @@
   });
   el.deletePost.addEventListener("click", async () => {
     if (!editing?.path) return;
-    await removePost(editing.path);
-    if (!postIndex.has(editing.path)) hideEditor();
-    else await openEditor(editing.path);
+    await removePost(editing.path, el.deletePost);
   });
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
@@ -1081,10 +1225,19 @@
 
   /* ---------------- 构建状态 ---------------- */
 
-  async function refreshBuildStatus() {
+  async function refreshBuildStatus(expectedSha = "") {
     try {
-      const data = await api(repoPath(`/actions/runs?branch=${CONFIG.branch}&per_page=1`));
-      const run = data.workflow_runs?.[0];
+      const data = await api(repoPath(`/actions/runs?branch=${CONFIG.branch}&per_page=20`));
+      const runs = data.workflow_runs || [];
+      const run = expectedSha
+        ? runs.find((item) => item.head_sha === expectedSha && (item.path === ".github/workflows/deploy.yml" || item.name === "Build and deploy blog"))
+        : runs[0];
+      if (!run && expectedSha) {
+        el.buildChip.className = "chip run";
+        el.buildChip.textContent = "构建状态：等待本次提交的发布任务";
+        el.buildNote.textContent = `源码已提交 ${expectedSha.slice(0, 7)}，尚未检测到对应工作流。请确认 main 上已启用自动发布。`;
+        return null;
+      }
       if (!run) {
         el.buildChip.className = "chip";
         el.buildChip.textContent = "构建状态：还没有工作流记录";
@@ -1096,7 +1249,7 @@
         el.buildChip.textContent = `构建状态：${run.status === "queued" ? "排队中" : "正在构建"}（${when}）`;
       } else if (run.conclusion === "success") {
         el.buildChip.className = "chip ok";
-        el.buildChip.textContent = `构建状态：已发布 ✓（${when}）`;
+        el.buildChip.textContent = `构建状态：构建完成 ✓ · Pages 发布稍后生效（${when}）`;
       } else {
         el.buildChip.className = "chip err";
         el.buildChip.textContent = `构建状态：${run.conclusion || "失败"}（${when}）`;
@@ -1112,12 +1265,13 @@
     }
   }
 
-  function watchBuild() {
+  function watchBuild(expectedSha = "") {
     clearInterval(buildWatch);
+    refreshBuildStatus(expectedSha);
     let tries = 0;
     buildWatch = setInterval(async () => {
       tries += 1;
-      const run = await refreshBuildStatus();
+      const run = await refreshBuildStatus(expectedSha);
       if (tries > 18 || (run && run.status === "completed")) clearInterval(buildWatch);
     }, 10000);
   }

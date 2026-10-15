@@ -1836,3 +1836,43 @@ body.search-open {
     animation: none !important;
   }
 }
+
+/* Keep wide display equations scrollable, especially on mobile. */
+.article-content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 8px 0; }
+.article-content .katex { font-size: 1.1em; }
+
+/* Luogu-style Markdown containers: native, keyboard-accessible fold boxes. */
+.article-content .fold-box {
+  --fold-color: #8ebcff;
+  --fold-tint: rgba(105, 160, 255, 0.08);
+  margin: 22px 0;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--fold-color);
+  border-radius: 8px;
+  background: var(--fold-tint);
+  overflow: hidden;
+}
+.article-content .fold-box--success {
+  --fold-color: #5ce0a0;
+  --fold-tint: rgba(92, 224, 160, 0.08);
+}
+.article-content .fold-box > summary {
+  padding: 13px 18px;
+  color: var(--fold-color);
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.article-content .fold-box > summary::marker { color: var(--fold-color); }
+.article-content .fold-box > summary:hover { background: var(--fold-tint); }
+.article-content .fold-box > summary:focus-visible { outline: 2px solid var(--fold-color); outline-offset: -4px; }
+.article-content .fold-box[open] > summary { border-bottom: 1px solid var(--line); }
+.article-content .fold-box-body { padding: 4px 18px 16px; min-width: 0; }
+.article-content .fold-box-body > :last-child { margin-bottom: 0; }
+.article-content .fold-box-body > table { width: 100%; border-collapse: collapse; margin: 18px 0; }
+.article-content .fold-box-body > table th,
+.article-content .fold-box-body > table td { border: 1px solid var(--line); padding: 8px 12px; }
+@media (max-width: 560px) {
+  .article-content .fold-box > summary { padding: 12px; }
+  .article-content .fold-box-body { padding: 4px 12px 12px; }
+}
