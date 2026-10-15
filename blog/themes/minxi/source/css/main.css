@@ -834,6 +834,21 @@ svg {
   color: #768c91;
   letter-spacing: -4px;
 }
+.brand-mark-image,
+.footer-brand-image {
+  display: block;
+  object-fit: cover;
+}
+.brand-mark-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 9px;
+}
+.footer-brand-image {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
 .footer-brand > span {
   color: var(--accent);
 }
