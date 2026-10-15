@@ -1,5 +1,6 @@
 [
   "2026/10/15/dpyh/index.html",
+  "2026/10/15/fjy/index.html",
   "404.html",
   "about/index.html",
   "admin/admin.css",
@@ -11,6 +12,7 @@
   "archives/2026/10/index.html",
   "archives/2026/index.html",
   "archives/index.html",
+  "categories/娱乐/index.html",
   "categories/学习笔记/index.html",
   "css/main.css",
   "images/favicon.svg",
@@ -19,6 +21,8 @@
   "search.json",
   "tags/index.html",
   "tags/动态规划/index.html",
+  "tags/娱乐/index.html",
+  "tags/小花哥/index.html",
   "tags/总结/index.html",
   "vendor/katex/LICENSE.txt",
   "vendor/katex/fonts/KaTeX_AMS-Regular.ttf",
