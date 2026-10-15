@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="./admin.css">
   <script src="./preview.js?v=fold-preview-2" defer></script>
   <script src="./appearance.js?v=appearance-1" defer></script>
-  <script src="./admin.js?v=pin-1" defer></script>
+  <script src="./admin.js?v=pin-2" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -212,7 +212,7 @@
             <option value="amber">amber</option>
           </select>
         </label>
-        <div class="field"><span>置顶</span><div class="segmented" role="group" aria-label="置顶设置"><button type="button" class="seg active" data-pin="off" aria-pressed="true">不置顶</button><button type="button" class="seg" data-pin="on" aria-pressed="false">置顶</button></div></div>
+        <div class="field pin-field"><span>置顶</span><div class="pin-toggle" role="group" aria-label="置顶设置"><button type="button" class="pin-option active" data-pin="off" aria-pressed="true"><i aria-hidden="true">○</i>不置顶</button><button type="button" class="pin-option" data-pin="on" aria-pressed="false"><i aria-hidden="true">◆</i>置顶</button></div><p class="pin-hint" id="pin-hint" aria-live="polite"></p></div>
         <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
         <label class="checkline wide"><input id="f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
       </div>

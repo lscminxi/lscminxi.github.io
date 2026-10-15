@@ -368,6 +368,7 @@
   // 置顶按钮：二选一，状态保存在 pinned 变量里，写入 front matter 时为 sticky: 1。
   let pinned = false;
   const pinButtons = document.querySelectorAll("[data-pin]");
+  const pinHint = document.querySelector("#pin-hint");
   function setPinned(value) {
     pinned = Boolean(value);
     pinButtons.forEach((button) => {
@@ -375,6 +376,10 @@
       button.classList.toggle("active", on);
       button.setAttribute("aria-pressed", String(on));
     });
+    if (pinHint)
+      pinHint.textContent = pinned
+        ? "保存后会排在首页和归档的最前面，并显示「置顶」标记。"
+        : "普通文章，按日期排序。";
   }
   pinButtons.forEach((button) =>
     button.addEventListener("click", () => setPinned(button.dataset.pin === "on")),
@@ -630,6 +635,7 @@
         post.categories.join(" / "),
         post.tags.map((tag) => `#${tag}`).join(" "),
         post.sample ? "示例文章" : "",
+        post.sticky ? "置顶" : "",
         url ? `→ ${url}` : "",
       ]
         .filter(Boolean)

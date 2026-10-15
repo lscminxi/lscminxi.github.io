@@ -631,33 +631,54 @@ code {
   }
 }
 
-/* 置顶按钮组 */
-.segmented {
+/* 置顶开关：两个胶囊按钮，选中项高亮，下方给出说明 */
+.pin-field {
+  margin-bottom: 14px;
+}
+.pin-toggle {
   display: inline-flex;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  overflow: hidden;
+  border-radius: 999px;
   background: #0e131b;
 }
-.seg {
-  border: 0;
+.pin-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font: 12px var(--mono);
-  padding: 9px 16px;
+  font: 500 12px var(--sans);
+  padding: 7px 16px;
   cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
-.seg + .seg {
-  border-left: 1px solid var(--line);
+.pin-option i {
+  font-style: normal;
+  font-size: 10px;
+  opacity: 0.7;
 }
-.seg:hover {
+.pin-option:hover {
   color: var(--text);
 }
-.seg.active {
-  background: #172721;
+.pin-option.active {
+  background: #17352e;
+  border-color: #2f5c51;
   color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(74, 170, 150, 0.12);
 }
-.seg:focus-visible {
+.pin-option.active i {
+  opacity: 1;
+}
+.pin-option:focus-visible {
   outline: 2px solid #3d6a60;
-  outline-offset: -2px;
+  outline-offset: 2px;
+}
+.pin-hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
 }
