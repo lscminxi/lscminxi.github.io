@@ -24,6 +24,7 @@
     postsDir: "blog/source/_posts",
     imagesDir: "blog/source/images",
     aboutPath: "blog/source/about/index.md",
+    appearancePath: "blog/source/_data/appearance.json",
     maxUploadBytes: 1000000, // GitHub Contents API 单文件上限约 1 MB
     imageExtensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
   };
@@ -37,6 +38,7 @@
   let imageIndex = new Map(); // path -> { sha, name, size }
   let editing = null; // { path, sha, isNew }
   let aboutState = { sha: "", text: "" };
+  let appearanceState = { sha: "", loaded: false };
   let buildWatch = null;
   let postsRevision = 0;
   const deletingPosts = new Set();
@@ -58,8 +60,25 @@
     tabs: $("#tabs"),
     tabPosts: $("#tab-posts"),
     tabMedia: $("#tab-media"),
+    tabAppearance: $("#tab-appearance"),
     tabAbout: $("#tab-about"),
     tabLog: $("#tab-log"),
+    appearancePreview: $("#appearance-preview"),
+    appearanceStatus: $("#appearance-status"),
+    appearanceSave: $("#appearance-save"),
+    appearanceReload: $("#appearance-reload"),
+    appearanceDefaults: $("#appearance-defaults"),
+    appearanceNote: $("#appearance-preview-note"),
+    appearancePicker: $("#a-image"),
+    a: {
+      avatar: $("#a-avatar"),
+      wallpaper: $("#a-wallpaper"),
+      favicon: $("#a-favicon"),
+      dim: $("#a-dim"),
+      blur: $("#a-blur"),
+      dimValue: $("#a-dim-value"),
+      blurValue: $("#a-blur-value"),
+    },
     postList: $("#post-list"),
     postsCount: $("#posts-count"),
     newPostButton: $("#new-post-button"),
@@ -714,8 +733,11 @@
         { sha: item.sha, name: item.path.split("/").pop(), size: item.size || 0 },
       ]),
     );
+    refreshKnownLocalImages();
     renderImages();
     renderImageSelect();
+    renderAppearancePicker();
+    renderAppearancePreview();
   }
 
   function renderImages() {
@@ -789,6 +811,35 @@
       row.append(thumb, main, actions);
       el.mediaList.append(row);
     }
+  }
+
+  // 已上传图片的公开地址（/images/…），用于「外观」里校验站内路径。
+  const builtinLocalImages = ["/images/favicon.svg"];
+  const knownLocalImages = new Set(builtinLocalImages);
+  function refreshKnownLocalImages() {
+    knownLocalImages.clear();
+    for (const value of builtinLocalImages) knownLocalImages.add(value);
+    for (const path of imageIndex.keys()) knownLocalImages.add(`/${path.replace(/^blog\/source\//, "")}`);
+  }
+
+  function renderAppearancePicker() {
+    const select = el.appearancePicker;
+    if (!select) return;
+    const current = select.value;
+    select.textContent = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = imageIndex.size ? "从已上传的图片选择…" : "（先在「图片」里上传）";
+    select.append(placeholder);
+    for (const [path, image] of [...imageIndex.entries()].sort((a, b) =>
+      a[1].name.localeCompare(b[1].name),
+    )) {
+      const option = document.createElement("option");
+      option.value = `/${path.replace(/^blog\/source\//, "")}`;
+      option.textContent = image.name;
+      select.append(option);
+    }
+    select.value = current && [...select.options].some((option) => option.value === current) ? current : "";
   }
 
   function renderImageSelect() {
@@ -1167,6 +1218,9 @@
       } else if (!el.tabAbout.hidden && !el.viewApp.hidden) {
         event.preventDefault();
         saveAbout();
+      } else if (!el.tabAppearance.hidden && !el.viewApp.hidden) {
+        event.preventDefault();
+        saveAppearance();
       }
     }
   });
@@ -1222,6 +1276,276 @@
 
   el.aboutSave.addEventListener("click", saveAbout);
   el.aboutReload.addEventListener("click", loadAbout);
+
+  /* ---------------- 外观：头像 / 壁纸 / 网页图标 ---------------- */
+
+  // 与前台共用 lib/appearance.cjs（经 tools/build-assets.mjs 打包成 appearance.js）。
+  function appearanceApi() {
+    const api = window.MinxiAppearance;
+    if (!api || typeof api.isSafeImageUrl !== "function") {
+      throw new Error("外观模块（appearance.js）没有加载成功，请刷新页面后重试。");
+    }
+    return api;
+  }
+
+  const appearancePreviewFailures = { avatar: false, favicon: false };
+
+  function readAppearanceForm() {
+    return {
+      avatar: el.a.avatar.value.trim(),
+      wallpaper: el.a.wallpaper.value.trim(),
+      favicon: el.a.favicon.value.trim(),
+      wallpaperDim: Number(el.a.dim.value),
+      wallpaperBlur: Number(el.a.blur.value),
+    };
+  }
+
+  function fillAppearanceForm(value) {
+    el.a.avatar.value = value.avatar;
+    el.a.wallpaper.value = value.wallpaper;
+    el.a.favicon.value = value.favicon;
+    el.a.dim.value = String(value.wallpaperDim);
+    el.a.blur.value = String(value.wallpaperBlur);
+    appearancePreviewFailures.avatar = false;
+    appearancePreviewFailures.favicon = false;
+    renderAppearancePreview();
+  }
+
+  // 地址分两类：errors 会阻止提交，warnings 只是提醒（可在确认后继续）。
+  function inspectAppearanceDraft(draft, api) {
+    const errors = [];
+    const warnings = [];
+    const fields = [
+      ["avatar", "头像"],
+      ["wallpaper", "壁纸"],
+      ["favicon", "网页图标"],
+    ];
+    for (const [key, label] of fields) {
+      const value = draft[key];
+      if (!value) {
+        if (key === "favicon") errors.push("网页图标不能留空（默认值 /images/favicon.svg）。");
+        continue;
+      }
+      if (!api.isSafeImageUrl(value)) {
+        errors.push(
+          `${label}地址不合法：只能是以 https:// 开头的外链或以 / 开头的站内路径，且不能包含引号、括号、空格、反斜杠等字符。`,
+        );
+      } else if (value.startsWith("/") && !knownLocalImages.has(value)) {
+        warnings.push(
+          `${label}指向站内路径 ${value}，但它不在已上传的图片列表里；构建检查会因为找不到这个文件而失败。`,
+        );
+      }
+    }
+    return { errors, warnings };
+  }
+
+  function renderAppearancePreview() {
+    if (!el.appearancePreview || !el.a.avatar) return;
+    if (el.tabAppearance && el.tabAppearance.hidden) return;
+    let api;
+    try {
+      api = appearanceApi();
+    } catch (error) {
+      el.appearanceNote.textContent = error.message;
+      el.appearanceNote.className = "small err";
+      return;
+    }
+    const draft = readAppearanceForm();
+    const { errors, warnings } = inspectAppearanceDraft(draft, api);
+    el.a.dimValue.textContent = `${draft.wallpaperDim}%`;
+    el.a.blurValue.textContent = `${draft.wallpaperBlur}px`;
+
+    const safe = (value) => (api.isSafeImageUrl(value) ? value : "");
+    const wallpaper = safe(draft.wallpaper);
+    const avatar = safe(draft.avatar);
+    const favicon = safe(draft.favicon);
+
+    const wallpaperLayer = el.appearancePreview.querySelector(".preview-wallpaper");
+    wallpaperLayer.style.backgroundImage = wallpaper ? `url("${wallpaper}")` : "none";
+    wallpaperLayer.style.filter =
+      wallpaper && draft.wallpaperBlur > 0 ? `blur(${Math.min(20, draft.wallpaperBlur)}px)` : "";
+    const veil = el.appearancePreview.querySelector(".preview-veil");
+    const alpha = api.veilAlpha(draft.wallpaperDim);
+    veil.style.background = `linear-gradient(rgba(11,14,20,${alpha}), rgba(11,14,20,${alpha}))`;
+
+    const avatarFrame = el.appearancePreview.querySelector(".preview-avatar");
+    const avatarImage = el.appearancePreview.querySelector(".preview-avatar-image");
+    const avatarMark = el.appearancePreview.querySelector(".preview-avatar-mark");
+    if (avatar) {
+      if (avatarImage.getAttribute("src") !== avatar) avatarImage.src = avatar;
+      avatarFrame.classList.add("preview-avatar--image");
+      if (appearancePreviewFailures.avatar) {
+        avatarFrame.classList.add("preview-avatar--failed");
+        avatarMark.hidden = false;
+      } else {
+        avatarFrame.classList.remove("preview-avatar--failed");
+        avatarMark.hidden = true;
+      }
+    } else {
+      avatarImage.removeAttribute("src");
+      avatarFrame.classList.remove("preview-avatar--image");
+      avatarFrame.classList.add("preview-avatar--failed");
+      avatarMark.hidden = false;
+    }
+
+    const faviconImage = document.getElementById("preview-favicon-image");
+    if (faviconImage) {
+      if (favicon && faviconImage.getAttribute("src") !== favicon) faviconImage.src = favicon;
+      if (!favicon) faviconImage.removeAttribute("src");
+      faviconImage.dataset.broken = String(!favicon || appearancePreviewFailures.favicon);
+    }
+
+    if (errors.length) {
+      el.appearanceNote.textContent = `⚠ ${errors.join(" ")}`;
+      el.appearanceNote.className = "small err";
+    } else if (warnings.length) {
+      el.appearanceNote.textContent = `⚠ ${warnings.join(" ")}`;
+      el.appearanceNote.className = "small warn";
+    } else if (appearancePreviewFailures.avatar || appearancePreviewFailures.favicon) {
+      const names = [
+        appearancePreviewFailures.avatar ? "头像" : "",
+        appearancePreviewFailures.favicon ? "网页图标" : "",
+      ].filter(Boolean).join("、");
+      el.appearanceNote.textContent = `⚠ ${names}图片在当前网络下加载失败（外链可能禁止跨站引用）。可以把它上传到「图片」后改填站内路径。`;
+      el.appearanceNote.className = "small warn";
+    } else {
+      el.appearanceNote.textContent = "✓ 地址格式正常，预览即为首页侧边栏与页面背景的大致效果；保存后约 1–2 分钟发布。";
+      el.appearanceNote.className = "small ok";
+    }
+  }
+
+  async function loadAppearance() {
+    el.appearanceStatus.textContent = "正在加载…";
+    let api;
+    try {
+      api = appearanceApi();
+    } catch (error) {
+      el.appearanceStatus.textContent = error.message;
+      log(error.message, "err");
+      return;
+    }
+    try {
+      const file = await getFile(CONFIG.appearancePath);
+      appearanceState = { sha: file.sha, loaded: true };
+      let raw = null;
+      let broken = "";
+      try {
+        raw = JSON.parse(file.text);
+      } catch {
+        broken = "配置文件不是合法 JSON：保存会用当前表单内容覆盖它。";
+      }
+      fillAppearanceForm(api.resolveAppearance(raw));
+      el.appearanceStatus.textContent =
+        broken || `已加载（${file.size} B）· 保存后约 1–2 分钟发布`;
+      if (broken) log(broken, "err");
+      log(`读取 ${CONFIG.appearancePath}`);
+    } catch (error) {
+      if (error.status === 404) {
+        appearanceState = { sha: "", loaded: true };
+        fillAppearanceForm(api.resolveAppearance(null));
+        el.appearanceStatus.textContent = "配置文件还不存在，保存时会新建。";
+        log(`${CONFIG.appearancePath} 不存在，将按默认值创建。`);
+        return;
+      }
+      el.appearanceStatus.textContent = describeError(error);
+      log(`读取外观设置失败：${describeError(error)}`, "err");
+    }
+  }
+
+  async function saveAppearance() {
+    let api;
+    try {
+      api = appearanceApi();
+    } catch (error) {
+      el.appearanceStatus.textContent = error.message;
+      toast(error.message, "err");
+      return;
+    }
+    const draft = readAppearanceForm();
+    const { errors, warnings } = inspectAppearanceDraft(draft, api);
+    if (errors.length) {
+      el.appearanceStatus.textContent = errors.join(" ");
+      toast("地址不合法，没有提交", "err");
+      log(`外观设置未提交：${errors.join(" ")}`, "err");
+      return;
+    }
+    if (warnings.length) {
+      const ok = await confirmDialog("确认保存", `${warnings.join("\n")}\n\n仍然保存吗？`, "仍然保存");
+      if (!ok) return;
+    }
+    const value = api.resolveAppearance(draft);
+    busy(el.appearanceSave, true, "提交中…");
+    el.appearanceStatus.textContent = "正在提交…";
+    try {
+      const result = await putFile(
+        CONFIG.appearancePath,
+        JSON.stringify(value, null, 2) + "\n",
+        appearanceState.sha,
+        "feat(blog): update avatar and wallpaper",
+      );
+      appearanceState = { sha: result.content?.sha || appearanceState.sha, loaded: true };
+      el.appearanceStatus.textContent = `已提交（commit ${result.commit?.sha?.slice(0, 7) || "?"}），约 1–2 分钟后生效。`;
+      log(`已保存 ${CONFIG.appearancePath}`, "ok");
+      toast("头像 / 壁纸设置已提交");
+      watchBuild();
+    } catch (error) {
+      el.appearanceStatus.textContent = describeError(error);
+      log(`保存外观设置失败：${describeError(error)}`, "err");
+      toast(describeError(error), "err");
+    } finally {
+      busy(el.appearanceSave, false);
+    }
+  }
+
+  el.appearanceSave.addEventListener("click", saveAppearance);
+  el.appearanceReload.addEventListener("click", loadAppearance);
+  el.appearanceDefaults.addEventListener("click", () => {
+    let api;
+    try {
+      api = appearanceApi();
+    } catch (error) {
+      el.appearanceStatus.textContent = error.message;
+      return;
+    }
+    fillAppearanceForm(api.resolveAppearance(null));
+    el.appearanceStatus.textContent = "已填入默认值（默认图标 /images/favicon.svg，无壁纸）；点「保存并提交」后生效。";
+  });
+  for (const input of [el.a.avatar, el.a.wallpaper, el.a.favicon, el.a.dim, el.a.blur]) {
+    input.addEventListener("input", renderAppearancePreview);
+  }
+  el.appearancePicker.addEventListener("change", () => {
+    if (el.appearancePicker.value) toast(`已选择 ${el.appearancePicker.value}，点右侧按钮填入对应字段`);
+  });
+  $$("[data-appearance-fill]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const value = el.appearancePicker.value;
+      if (!value) {
+        toast("先在左边选择一个已上传的图片", "err");
+        return;
+      }
+      el.a[button.dataset.appearanceFill].value = value;
+      renderAppearancePreview();
+      toast(`已填入 ${value}，确认后点「保存并提交」`);
+    });
+  });
+  // 图片加载失败时更新提示（外链可能因为防盗链打不开）。
+  const previewAvatarImage = el.appearancePreview?.querySelector(".preview-avatar-image");
+  previewAvatarImage?.addEventListener("error", () => {
+    appearancePreviewFailures.avatar = true;
+    renderAppearancePreview();
+  });
+  previewAvatarImage?.addEventListener("load", () => {
+    appearancePreviewFailures.avatar = false;
+    renderAppearancePreview();
+  });
+  document.getElementById("preview-favicon-image")?.addEventListener("error", () => {
+    appearancePreviewFailures.favicon = true;
+    renderAppearancePreview();
+  });
+  document.getElementById("preview-favicon-image")?.addEventListener("load", () => {
+    appearancePreviewFailures.favicon = false;
+    renderAppearancePreview();
+  });
 
   /* ---------------- 构建状态 ---------------- */
 
@@ -1291,10 +1615,18 @@
     });
     el.tabPosts.hidden = tab !== "posts";
     el.tabMedia.hidden = tab !== "media";
+    el.tabAppearance.hidden = tab !== "appearance";
     el.tabAbout.hidden = tab !== "about";
     el.tabLog.hidden = tab !== "log";
     if (tab === "about" && !aboutState.sha) await loadAbout();
-    if (tab === "media") renderImageSelect();
+    if (tab === "media") {
+      renderImageSelect();
+      renderAppearancePicker();
+    }
+    if (tab === "appearance") {
+      if (!appearanceState.loaded) await loadAppearance();
+      else renderAppearancePreview();
+    }
   });
 
   async function refreshAll() {
@@ -1324,8 +1656,23 @@
 
   /* ---------------- 启动 ---------------- */
 
+  // 后台页面顶部的图标跟随「外观」设置（读取公开的 /appearance.json，纯装饰，失败就保留默认图标）。
+  async function refreshAdminFavicon() {
+    const link = document.getElementById("admin-favicon");
+    if (!link) return;
+    try {
+      const response = await fetch(`${location.origin}/appearance.json`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (appearanceApi().isSafeImageUrl(data?.favicon)) link.href = data.favicon;
+    } catch {
+      // 忽略：图标只是装饰，读取失败不影响后台功能。
+    }
+  }
+
   (async function init() {
     log("后台已就绪。请输入 GitHub 令牌登录。");
+    refreshAdminFavicon();
     const stored = readStoredToken();
     el.rememberInput.checked = Boolean(localStorage.getItem(REMEMBER_KEY));
     if (!stored) return;
