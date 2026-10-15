@@ -2,7 +2,7 @@
 
 > 一个幼儿园小班水平的 Oier · lsc_minxi 的 OI 学习记录
 
-基于 **Hexo 8 + 自定义 Minxi 深色主题 + GitHub Pages**。无需数据库，文章使用 Markdown 编写。主题不依赖外部字体、图片 CDN 或前端框架。
+基于 **Hexo 8 + 自定义 Minxi 深色主题 + GitHub Pages**。无需数据库，文章使用 Markdown 编写。主题本身不依赖外部字体或前端框架；头像、壁纸和网页图标在 `/admin/` 的「外观」里配置，可以填外链，也可以先用后台的「图片」上传再填 `/images/文件名`。
 
 ## 本地预览
 
@@ -69,7 +69,8 @@ description: 用一句话介绍题目和核心思路。
 2. **文章**：列出 `blog/source/_posts/` 下全部文章，可新建、在线编辑（标题、文件名、日期、分类、标签、描述、强调色、示例标记、Markdown 正文）、实时删除。编辑器支持「编辑 / 分屏 / 预览」，正文输入后自动更新预览，无需保存；提供「插入公式」按钮。预览在本地浏览器中生成，不调用 GitHub；预览用沙箱和 HTML 清洗阻止脚本执行。代码高亮与目录以发布页为准。改文件名会自动「新建 + 删除旧文件」。
 3. **图片**：上传到 `blog/source/images/`（单文件 ≤ 1 MB，GitHub Contents API 的限制），可复制 `/images/xxx.png` 写法、插入正文或删除。
 4. **个人简介**：直接编辑 `blog/source/about/index.md`。
-5. **构建状态**：显示 GitHub Actions 结果；删除/保存文章后跟踪本次提交，避免把旧任务误报为成功。构建完成后仍需等待 Pages 发布，源码删除不等于公开网页已下线。
+5. **外观**：修改**头像**、**页面壁纸**和**网页图标**，可调壁纸压暗程度与模糊半径，并有实时预览。设置写入 `blog/source/_data/appearance.json`，同样是「只有 admin 能改」：写权限由 GitHub 判断，账号还要在 `CONFIG.allowedLogins` 名单里，普通访客看到的只是构建好的静态页面，无法改动。详见「[头像、壁纸与网页图标](#头像壁纸与网页图标外观)」。
+6. **构建状态**：显示 GitHub Actions 结果；删除/保存文章后跟踪本次提交，避免把旧任务误报为成功。构建完成后仍需等待 Pages 发布，源码删除不等于公开网页已下线。
 
 每次保存都以你的身份提交到 `main`。`.github/workflows/deploy.yml` 里的 `publish-root` 任务会自动构建、检查并把生成的静态文件提交回仓库（提交信息带 `[skip ci]`，不会循环触发），分支发布模式下会显式请求 Pages 重建（因为 `GITHUB_TOKEN` 的提交不会自动触发新工作流），通常几分钟后生效。也就是说：**用后台写完文章不需要再手动跑 `publish:prepare`**；在本地改源码时仍然建议手动跑一次，方便先检查。
 
@@ -87,6 +88,43 @@ description: 用一句话介绍题目和核心思路。
 **自动发布工作流必须已合并到 `main`**：只在预览分支有修复，无法使旧 `main` 工作流更新根目录发布文件。工作流需要 `contents: write` 和 `pages: write`；构建状态里看到旧任务成功并不能证明本次删除已经发布。
 
 删除回归测试：`cd blog && npm run test:delete`。使用模拟 API，不会删除真实仓库中的文章；包含隔离临时目录里的「删空博客 → 构建 → 检查 → 导出 → 清除旧静态页」测试。
+
+## 头像、壁纸与网页图标（外观）
+
+站点外观由**一个**数据文件决定：`blog/source/_data/appearance.json`。
+
+```json
+{
+  "avatar": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
+  "wallpaper": "https://cdn.luogu.com.cn/upload/image_hosting/ht2x3cgh.webp",
+  "favicon": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
+  "wallpaperDim": 62,
+  "wallpaperBlur": 0
+}
+```
+
+| 字段 | 作用 |
+| --- | --- |
+| `avatar` | 个人卡片左上角的头像。留空则回到字母标记 `m_`。 |
+| `wallpaper` | 整站固定壁纸。留空表示不使用壁纸（纯色深色背景）。 |
+| `favicon` | 浏览器标签页图标；`type` 由扩展名推断，`.png` 时额外输出 `apple-touch-icon`。 |
+| `wallpaperDim` | 壁纸压暗程度（0–95），数值越大壁纸越暗、正文越清晰。 |
+| `wallpaperBlur` | 壁纸模糊半径（0–20 px）。0 表示不模糊。 |
+
+改法有两种：
+
+1. **在线后台（推荐）**：`/admin/` →「外观」→ 填地址、拖滑块 →「保存并提交」。地址会先按下面的规则校验，不合法时直接拒绝提交；站内路径如果不在已上传的图片列表里，会先弹窗确认。**只有登录后台（拥有仓库写权限、且在 `allowedLogins` 名单里）的 admin 能改。**
+2. **直接改源码**：编辑上面的 JSON，然后运行 `npm run publish:prepare`。
+
+地址规则（前后台共用 `blog/lib/appearance.cjs` 的同一套代码）：只接受 `https://` / `http://` 外链或以 `/` 开头的站内路径；拒绝 `javascript:`、`data:`、协议相对地址 `//…` 以及含引号、括号、空白、反斜杠的字符串。渲染时地址只会出现在 HTML 属性（EJS 转义）和 `url("…")` 里，所以坏数据不可能变成可执行的样式或标记；即使把 JSON 改坏、写进恶意内容，构建也只会回落到默认值（回归测试见下）。
+
+另外：
+
+- 构建时会生成一份只读副本 `/appearance.json`（已清洗、无时间戳，避免无意义的提交差异），后台用它让管理页的图标与站点保持一致。
+- 内置的默认图标仍是主题自带的 `/images/favicon.svg`，删掉配置或地址非法时自动回落到它。
+- 头像是外链时可能被 CDN 防盗链拦住（图片打不开时卡片会自动显示字母标记 `m_`）。稳妥做法：在后台「图片」里上传图片（单文件 ≤ 1 MB），再用「外观」里的「图片库」按钮填 `/images/文件名`。
+- 壁纸只在配置了图片时才生效：`layout.ejs` 输出 `html[data-wallpaper="on"]` 与 `--wallpaper-image` / `--wallpaper-veil` / `--wallpaper-blur` 变量，样式在 `main.css` 结尾；页面顶栏会变得更透明，压暗层和暗角保证正文对比度。
+- 外观相关回归测试：`cd blog && npm run test:appearance`（共享校验规则、后台面板、保存时的 SHA/分支/内容、拒绝恶意地址、以及「恶意 JSON → 构建产物无注入」）。`npm run build && npm run check` 还会校验构建产物与 `appearance.json` 一致。
 
 ## 数学公式与实时预览
 
@@ -142,7 +180,7 @@ npm run build
 npm run check
 ```
 
-构建输出为 `blog/public/`，已被 Git 忽略。检查涵盖页面标题、站点信息、内部链接和搜索索引。`npm run build` 会先清理旧输出，避免删除文章后残留旧页面。
+构建输出为 `blog/public/`，已被 Git 忽略。检查涵盖页面标题、站点信息、内部链接、搜索索引，以及外观配置与构建产物（图标、头像、壁纸变量）的一致性。`npm run build` 会先清理旧输出，避免删除文章后残留旧页面。
 
 ## 正式网站发布
 
@@ -193,10 +231,14 @@ blog/
   package.json                # 命令与依赖
   package-lock.json           # 可重复安装的锁定版本
   scaffolds/post.md           # 新文章模板
+  lib/                        # 折叠框、公式选项与外观规则（Hexo 与浏览器共用）
+  client/                     # 浏览器端入口，构建时打包成下面的 source/admin/*.js
   tools/check.mjs             # 构建产物检查
   tools/export.mjs            # 同步静态产物到现有 Pages 根目录
+  tools/appearance.test.mjs   # 外观（头像 / 壁纸 / 图标）回归测试
   source/
     _posts/                   # Markdown 文章
+    _data/appearance.json     # 头像 / 壁纸 / 网页图标（后台「外观」写入）
     about/index.md            # 关于我（个人简介）
     admin/                    # 在线管理后台：index.html / admin.css / admin.js
     tags/index.md             # 标签入口
@@ -205,15 +247,16 @@ blog/
     _config.yml               # GitHub 个人主页链接
     layout/                   # EJS 页面模板
     scripts/helpers.js        # 阅读时长与搜索索引
+    scripts/appearance.js     # 读取 _data/appearance.json：注入图标/头像/壁纸并生成 /appearance.json
     source/css/main.css       # 主题与响应式样式
     source/js/main.js          # 搜索、筛选、复制、目录、返回顶部
     source/images/favicon.svg
 ```
 
-修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改主题色：`main.css` 中的 `:root` 变量。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`。
+修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改头像、壁纸、网页图标：`blog/source/_data/appearance.json`，或者直接在 `/admin/` 后台的「外观」里改。修改主题色：`main.css` 中的 `:root` 变量。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`。
 
 ## 安全与隐私
 
-站点是纯静态页面，无账号系统、无统计追踪。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 后台同样没有账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`，详见「在线管理后台」一节。
+站点是纯静态页面，无账号系统、无统计追踪。头像、壁纸和网页图标同样只能由 `/admin/` 的 admin 修改（写权限由 GitHub 判定），访客无法改动页面外观。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 后台同样没有账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`，详见「在线管理后台」一节。
 
 2026-10-14 的 `npm audit` 检测到 Hexo 上游构建依赖的 9 条报告（7 high、2 moderate），对应 `braces` / `sprintf-js` 的拒绝服务问题及其依赖链。`npm audit fix` 无法在当前兼容版本下消除；工具建议的 `--force` 会把 Hexo 降级到旧主版本，因此未执行。依赖仅运行于本地或 CI 构建，未打包进公开页面，但不要使用不可信的模板、插件或配置；来自外部的 PR 应在隔离的 GitHub runner 中构建，且不能获得发布权限。后续升级 Hexo 后请重新运行审计。

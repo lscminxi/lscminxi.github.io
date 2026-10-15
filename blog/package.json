@@ -12,6 +12,7 @@
     "prebuild": "npm run assets",
     "predev": "npm run assets",
     "test:preview": "npm run assets && node --test tools/preview.test.mjs",
+    "test:appearance": "npm run assets && node --test tools/appearance.test.mjs",
     "test:delete": "node --test tools/deletion.test.mjs"
   },
   "engines": {

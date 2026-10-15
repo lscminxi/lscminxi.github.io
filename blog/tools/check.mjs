@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import appearance from "../lib/appearance.cjs";
 
 const root = resolve("public");
 const files = [];
@@ -22,6 +23,36 @@ assert(about.includes("？！糖糖"), "About page bio missing");
 assert(!index.includes("example.com"), "Default Hexo URL remains");
 const search = JSON.parse(await readFile(join(root, "search.json"), "utf8"));
 assert(Array.isArray(search), "Search index must be an array");
+
+// 外观（头像 / 壁纸 / 网页图标）必须和 source/_data/appearance.json 一致：
+// 后台写入的地址经过同一套清洗规则，构建产物里不允许出现可注入的 URL。
+const look = appearance.resolveAppearance(JSON.parse(await readFile(join(root, "appearance.json"), "utf8")));
+const decoded = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+for (const key of ["avatar", "wallpaper", "favicon"]) {
+  assert(look[key] === "" || appearance.isSafeImageUrl(look[key]), `Unsafe ${key} URL: ${look[key]}`);
+}
+const icon = /<link rel="icon"[^>]*href="([^"]+)"/.exec(index);
+assert(icon, "Missing favicon link");
+assert.equal(decoded(icon[1]), look.favicon, "Favicon must match appearance.json");
+const avatar = /<img class="avatar-image" src="([^"]+)"/.exec(index);
+if (look.avatar) {
+  assert(avatar, "Configured avatar must be rendered in the sidebar");
+  assert.equal(decoded(avatar[1]), look.avatar, "Avatar must match appearance.json");
+} else {
+  assert(!avatar, "No avatar image is rendered when none is configured");
+}
+const wallpaperRule = /--wallpaper-image:\s*([^;]+);/.exec(index);
+if (look.wallpaper) {
+  assert.equal(index.includes('data-wallpaper="on"'), true, "Wallpaper layer must be enabled");
+  assert(wallpaperRule, "Wallpaper CSS variable is missing");
+  assert.equal(wallpaperRule[1].trim(), appearance.cssImage(look.wallpaper), "Wallpaper must match appearance.json");
+} else {
+  assert(!index.includes("data-wallpaper"), "Wallpaper layer must stay off when no wallpaper is configured");
+  assert(!index.includes("--wallpaper-image"), "No wallpaper CSS variable without a wallpaper");
+}
+for (const rule of [wallpaperRule?.[1] || "", icon[1], avatar?.[1] || ""]) {
+  assert(!/(?:javascript|vbscript|data)\s*:/i.test(rule), `Forbidden scheme in appearance value: ${rule}`);
+}
 // An empty blog is valid, including after deleting the last post.
 
 const errors = [];

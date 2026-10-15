@@ -7,11 +7,12 @@
   <meta name="description" content="博客管理后台：登录、在线编辑、上传与删除。">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
-  <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+  <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="./admin.css">
   <script src="./preview.js?v=fold-preview-2" defer></script>
-  <script src="./admin.js?v=delete-fix-1" defer></script>
+  <script src="./appearance.js?v=appearance-1" defer></script>
+  <script src="./admin.js?v=appearance-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -77,6 +78,7 @@
       <nav class="tabs" id="tabs" aria-label="后台功能区">
         <button class="tab active" type="button" data-tab="posts" aria-pressed="true">文章</button>
         <button class="tab" type="button" data-tab="media" aria-pressed="false">图片</button>
+        <button class="tab" type="button" data-tab="appearance" aria-pressed="false">外观</button>
         <button class="tab" type="button" data-tab="about" aria-pressed="false">个人简介</button>
         <button class="tab" type="button" data-tab="log" aria-pressed="false">日志</button>
       </nav>
@@ -103,6 +105,63 @@
           单个文件不超过 1 MB（GitHub Contents API 限制）。
         </p>
         <div class="list" id="media-list"><p class="muted">还没有图片。</p></div>
+      </div>
+
+      <!-- 外观：头像 / 壁纸 / 网页图标 -->
+      <div class="panel" id="tab-appearance" hidden>
+        <div class="panel-head">
+          <h2>头像 / 壁纸 / 图标</h2>
+          <span class="muted small" id="appearance-path">blog/source/_data/appearance.json</span>
+          <span class="admin-spacer"></span>
+          <span class="muted small" id="appearance-status"></span>
+        </div>
+        <p class="muted small">
+          只有登录这个后台（拥有仓库写权限的 admin 账号）才能修改：设置写进
+          <code>blog/source/_data/appearance.json</code>，随后由自动构建生效，普通访客无法改动。
+          地址可以填 <code>https://</code> 外链，也可以先用「图片」标签页上传，再用下面的「图片库」填入
+          <code>/images/文件名</code>（站点是纯静态的，外链打不开时建议改用本地上传的图片）。
+        </p>
+        <div class="form-grid">
+          <label class="field wide"><span>头像图片地址（个人卡片左上角）</span>
+            <input id="a-avatar" type="text" spellcheck="false" placeholder="https://… 或 /images/avatar.png">
+          </label>
+          <label class="field wide"><span>页面壁纸地址（留空 = 纯色深色背景）</span>
+            <input id="a-wallpaper" type="text" spellcheck="false" placeholder="https://… 或 /images/wallpaper.webp">
+          </label>
+          <label class="field wide"><span>网页图标地址（浏览器标签页）</span>
+            <input id="a-favicon" type="text" spellcheck="false" placeholder="/images/favicon.svg">
+          </label>
+          <label class="field"><span>壁纸压暗程度</span>
+            <div class="range-row"><input id="a-dim" type="range" min="0" max="95" step="1"><output id="a-dim-value" for="a-dim">62%</output></div>
+          </label>
+          <label class="field"><span>壁纸模糊半径</span>
+            <div class="range-row"><input id="a-blur" type="range" min="0" max="20" step="1"><output id="a-blur-value" for="a-blur">0px</output></div>
+          </label>
+          <div class="field">
+            <span>图片库（已上传到 /images/）</span>
+            <div class="appearance-picker">
+              <select id="a-image" class="small-select" aria-label="选择已上传的图片"><option value="">还没有图片</option></select>
+              <button class="btn ghost small" type="button" data-appearance-fill="avatar">选为头像</button>
+              <button class="btn ghost small" type="button" data-appearance-fill="wallpaper">设为壁纸</button>
+              <button class="btn ghost small" type="button" data-appearance-fill="favicon">设为图标</button>
+            </div>
+          </div>
+        </div>
+        <div class="appearance-preview" id="appearance-preview">
+          <div class="preview-wallpaper" aria-hidden="true"></div>
+          <div class="preview-veil" aria-hidden="true"></div>
+          <div class="preview-card">
+            <span class="preview-avatar"><img class="preview-avatar-image" alt="" width="44" height="44" referrerpolicy="no-referrer"><span class="preview-avatar-mark" hidden>m<span>_</span></span></span>
+            <span class="preview-card-text"><strong>lsc_minxi</strong><small>幼儿园小班水平</small></span>
+            <span class="preview-favicon"><img id="preview-favicon-image" alt="网页图标预览"><span class="muted small">图标</span></span>
+          </div>
+        </div>
+        <p class="muted small" id="appearance-preview-note" role="status"></p>
+        <div class="panel-actions">
+          <button class="btn ghost small" id="appearance-defaults" type="button">填入默认值</button>
+          <button class="btn ghost small" id="appearance-reload" type="button">重新加载</button>
+          <button class="btn primary small" id="appearance-save" type="button">保存并提交</button>
+        </div>
       </div>
 
       <!-- 个人简介 -->

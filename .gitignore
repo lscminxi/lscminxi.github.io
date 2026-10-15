@@ -7,3 +7,4 @@ blog/.deploy_git/
 # Generated from locked npm dependencies by npm run assets.
 blog/source/vendor/katex/
 blog/source/admin/preview.js
+blog/source/admin/appearance.js

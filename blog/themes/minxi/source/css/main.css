@@ -660,10 +660,40 @@ svg {
   justify-content: center;
   align-items: center;
   border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px #00000047;
   color: var(--accent);
   font: 700 30px var(--mono);
   letter-spacing: -6px;
   padding-right: 4px;
+}
+.avatar-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 配置了头像图片时（见 /admin/ 的「外观」）：字母标记只作为加载失败的后备。 */
+.avatar--image {
+  padding-right: 0;
+}
+.avatar--image .avatar-mark {
+  display: none;
+}
+.avatar--failed {
+  padding-right: 4px;
+}
+.avatar--failed .avatar-mark {
+  display: flex;
+}
+.avatar--failed .avatar-image {
+  display: none;
+}
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
 .profile-card h2 {
   font: 600 16px var(--mono);
@@ -1875,4 +1905,60 @@ body.search-open {
 @media (max-width: 560px) {
   .article-content .fold-box > summary { padding: 12px; }
   .article-content .fold-box-body { padding: 4px 12px 12px; }
+}
+
+/* ------------------------------------------------------------------
+   壁纸（由后台「外观」写入 source/_data/appearance.json）
+   只有配置了壁纸时 layout.ejs 才会输出 html[data-wallpaper="on"]
+   与 --wallpaper-* 变量，因此默认的纯色深色主题完全不受影响。
+   ------------------------------------------------------------------ */
+html[data-wallpaper="on"] {
+  background-color: var(--bg);
+}
+html[data-wallpaper="on"] body {
+  background: transparent;
+}
+html[data-wallpaper="on"] body::before,
+html[data-wallpaper="on"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+html[data-wallpaper="on"] body::before {
+  background-image: var(--wallpaper-image, none);
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+/* 模糊时轻微放大，遮住模糊后露出的边缘。 */
+html[data-wallpaper="on"][data-wallpaper-blur="on"] body::before {
+  filter: blur(var(--wallpaper-blur, 0px));
+  transform: scale(1.06);
+}
+/* 压暗层 + 暗角：保证正文在任意壁纸上都足够清晰。 */
+html[data-wallpaper="on"] body::after {
+  background-image:
+    radial-gradient(
+      125% 95% at 50% 18%,
+      rgba(11, 14, 20, 0) 30%,
+      rgba(11, 14, 20, 0.66) 100%
+    ),
+    linear-gradient(
+      rgba(11, 14, 20, var(--wallpaper-veil, 0.62)),
+      rgba(11, 14, 20, var(--wallpaper-veil, 0.62))
+    );
+}
+/* 顶栏原本是不透光的深色，有壁纸时更透明一点，让壁纸露出来。 */
+html[data-wallpaper="on"] .site-header {
+  background: rgba(11, 14, 20, 0.78);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-wallpaper="on"] body::after {
+    background-image: linear-gradient(rgba(11, 14, 20, 0.94), rgba(11, 14, 20, 0.94));
+  }
+  html[data-wallpaper="on"] .site-header {
+    background: #0b0e14ed;
+  }
 }

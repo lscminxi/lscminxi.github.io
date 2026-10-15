@@ -175,6 +175,20 @@
     block.append(copy);
   });
 
+  // 头像图片（后台「外观」里配置，可能是外链）加载失败时回落到字母标记。
+  document.querySelectorAll(".avatar--image").forEach((frame) => {
+    const image = frame.querySelector(".avatar-image");
+    const mark = frame.querySelector(".avatar-mark");
+    if (!image || !mark) return;
+    const fallback = () => {
+      frame.classList.add("avatar--failed");
+      mark.hidden = false;
+    };
+    image.addEventListener("error", fallback);
+    // 事件可能在脚本执行前就已经触发过，这里补一次判断。
+    if (image.complete && image.naturalWidth === 0) fallback();
+  });
+
   const backTop = document.querySelector("#back-top");
   const updateScroll = () => {
     backTop.hidden = window.scrollY < 500;
