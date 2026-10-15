@@ -2003,7 +2003,7 @@ html[data-wallpaper="on"] .site-header {
 }
 
 /* 触屏设备没有鼠标悬停，顶栏保持常驻 */
-@media (hover: none) {
+@media (hover: none) and (pointer: coarse) {
   .site-header {
     position: sticky;
     transform: none;
