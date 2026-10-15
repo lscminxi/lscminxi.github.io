@@ -34,6 +34,19 @@ test('code fences and inline code are never interpreted as formulas', async () =
   const post = await hexo.post.render('preview-test.md', { content: md });
   assert(post.content.includes('highlight'), 'Keep existing Hexo syntax highlighting');
 });
+test('line numbers are enabled only by the exact line-numbers fence option', async () => {
+  const post = await hexo.post.render('line-number-test.md', {
+    content: '```cpp line-numbers\nint numbered;\n```\n\n```cpp\nint plain;\n```\n\n```cpp line-number\nint typo;\n```',
+  });
+  const doc = new JSDOM(post.content).window.document;
+  const blocks = doc.querySelectorAll('figure.highlight');
+  assert.equal(blocks.length, 3);
+  assert(blocks[0].querySelector('.gutter'), 'The explicit option displays line numbers');
+  assert(!blocks[0].querySelector('figcaption'), 'The option is not displayed as a caption');
+  assert(!blocks[1].querySelector('.gutter'), 'A normal cpp fence has no line numbers');
+  assert(!blocks[2].querySelector('.gutter'), 'A misspelled option does not enable line numbers');
+});
+
 test('invalid TeX does not crash preview or publication', () => {
   assert(preview('$\\frac{$').querySelector('.katex-error'));
   assert(render('$\\frac{$').includes('katex-error'));
