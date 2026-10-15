@@ -36,7 +36,7 @@
   const search = async () => {
     const version = ++searchVersion;
     const query = input.value.trim().toLocaleLowerCase();
-    if (!query) return hint("输入关键词，找到你的下一条思路。");
+    if (!query) return hint("输入关键词以搜索");
     hint("正在查找笔记…");
     try {
       const data = await loadSearch();

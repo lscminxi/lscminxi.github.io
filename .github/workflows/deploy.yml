@@ -10,9 +10,10 @@ on:
 permissions:
   contents: read
 
+# 不取消进行中的运行：在线后台连续保存时，构建任务需要按顺序完成并提交静态文件。
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -49,6 +50,45 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: blog/public
+
+  # 在线后台（/admin/）通过 GitHub API 提交 Markdown 后，这里自动构建并把生成的
+  # 静态文件提交回 main，GitHub Pages 内置工作流随后发布，无需手动运行 publish:prepare。
+  publish-root:
+    name: Publish generated static files
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.build.outputs.pages_mode != 'workflow'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # 完整历史：在线后台可能在构建期间提交新内容，需要能 rebase 后再推送。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: blog/package-lock.json
+      - name: Install dependencies
+        working-directory: blog
+        run: npm ci
+      - name: Build, check and export static files
+        working-directory: blog
+        run: npm run publish:prepare
+      - name: Commit generated site
+        working-directory: ${{ github.workspace }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No generated changes to publish."
+            exit 0
+          fi
+          git commit -m "chore: publish generated site for ${GITHUB_SHA::7} [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.build.outputs.pages_mode == 'workflow'

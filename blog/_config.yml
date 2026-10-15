@@ -1,7 +1,7 @@
 title: Minxi 的 blog
-subtitle: 一个幼儿园小班水平的 Oier
-description: lsc_minxi 的 OI 学习笔记，记录算法、题解与成长。
-author: lsc_minxi
+subtitle: 幼儿园小班水平
+description: 一个糖糖的 blog
+author: ？！糖糖
 language: zh-CN
 timezone: Asia/Shanghai
 url: https://lscminxi.github.io
@@ -14,7 +14,8 @@ archive_dir: archives
 category_dir: categories
 code_dir: downloads/code
 i18n_dir: :lang
-skip_render: []
+skip_render:
+  - admin/**
 new_post_name: :title.md
 default_layout: post
 titlecase: false
