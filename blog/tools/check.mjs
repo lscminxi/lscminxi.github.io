@@ -15,11 +15,14 @@ await walk(root);
 assert(files.length > 0, "Build output is empty; run npm run build first");
 const index = await readFile(join(root, "index.html"), "utf8");
 assert(index.includes("Minxi 的 blog"), "Site title missing");
-assert(index.includes("一个幼儿园小班水平的 Oier"), "Profile missing");
+assert(index.includes("幼儿园小班水平"), "Profile missing");
+assert(index.includes("lsc_minxi"), "Author missing");
+const about = await readFile(join(root, "about", "index.html"), "utf8");
+assert(about.includes("？！糖糖"), "About page bio missing");
 assert(!index.includes("example.com"), "Default Hexo URL remains");
 const search = JSON.parse(await readFile(join(root, "search.json"), "utf8"));
 assert(Array.isArray(search), "Search index must be an array");
-assert(search.length > 0, "No posts found in search index");
+// An empty blog is valid, including after deleting the last post.
 
 const errors = [];
 const checked = new Set();

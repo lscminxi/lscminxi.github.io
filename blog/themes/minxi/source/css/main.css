@@ -437,27 +437,6 @@ svg {
   color: #8ca79a;
   margin-top: 5px;
 }
-.home-divider {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  color: #8593a4;
-  font: 9px var(--mono);
-  letter-spacing: 1.4px;
-}
-.home-divider > span:last-child {
-  font-family: var(--sans);
-  letter-spacing: 1px;
-  font-size: 10px;
-}
-.spark {
-  font-size: 16px;
-  color: var(--accent);
-  margin-left: 14px;
-}
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 286px;
@@ -686,20 +665,6 @@ svg {
   letter-spacing: -6px;
   padding-right: 4px;
 }
-.profile-status {
-  font: 8px var(--mono);
-  letter-spacing: 0.1px;
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  color: #8fa99d;
-}
-.profile-status i {
-  height: 4px;
-  width: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-}
 .profile-card h2 {
   font: 600 16px var(--mono);
   margin-top: 17px;
@@ -716,7 +681,7 @@ svg {
 }
 .profile-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   text-align: center;
   margin: 24px 0 20px;
 }
@@ -816,25 +781,6 @@ svg {
 .links-section a:hover strong {
   color: var(--accent);
 }
-.sidebar-note {
-  margin-top: 25px;
-  border-left: 2px solid #33483f;
-  padding: 3px 0 3px 15px;
-}
-.sidebar-note > span {
-  font: 9px var(--mono);
-  color: #6a897b;
-}
-.sidebar-note p {
-  font-size: 11px;
-  color: #8c9aab;
-  line-height: 2;
-  margin: 9px 0;
-}
-.sidebar-note > div {
-  font: 8px var(--mono);
-  color: #8195a3;
-}
 .site-footer {
   border-top: 1px solid #232b35;
 }
@@ -860,10 +806,6 @@ svg {
 }
 .footer-brand > span {
   color: var(--accent);
-}
-.footer-divider {
-  padding: 0 13px;
-  color: #45505f;
 }
 .footer-tech {
   font: 9px var(--mono);
@@ -1245,10 +1187,6 @@ svg {
   justify-content: space-between;
   gap: 20px;
 }
-.article-bottom > span {
-  font-size: 10px;
-  color: var(--dim);
-}
 .post-navigation {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1482,9 +1420,6 @@ body.search-open {
   .profile-card {
     padding: 19px 17px 0;
   }
-  .profile-status {
-    font-size: 7px;
-  }
   .post-card {
     padding: 20px;
   }
@@ -1617,13 +1552,6 @@ body.search-open {
   .floating-tag small {
     font-size: 7px;
   }
-  .home-divider {
-    font-size: 8px;
-  }
-  .home-divider > span:last-child {
-    font-size: 9px;
-    letter-spacing: 0;
-  }
   .content-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 40px;
@@ -1638,17 +1566,11 @@ body.search-open {
   .sidebar-section {
     margin-top: 0;
   }
-  .sidebar-note {
-    margin-top: 0;
-  }
   .profile-card {
     grid-row: span 2;
   }
   .links-section {
     grid-column: 2;
-  }
-  .sidebar > .sidebar-note {
-    grid-column: 1/-1;
   }
   .post-card h3 {
     font-size: 17px;
@@ -1661,9 +1583,6 @@ body.search-open {
   .footer-tech {
     font-size: 8px;
     gap: 7px;
-  }
-  .footer-divider {
-    padding: 0 8px;
   }
   .footer-inner > div {
     gap: 10px;
@@ -1785,17 +1704,6 @@ body.search-open {
   .floating-tag small {
     font-size: 8px;
   }
-  .home-divider > span:first-child {
-    font-size: 7px;
-    letter-spacing: 0.7px;
-  }
-  .home-divider > span:last-child {
-    font-size: 8px;
-  }
-  .spark {
-    font-size: 12px;
-    margin-left: 5px;
-  }
   .section-heading h2 {
     font-size: 16px;
     gap: 8px;
@@ -1842,9 +1750,6 @@ body.search-open {
   .profile-card {
     padding: 23px 22px 0;
   }
-  .profile-status {
-    font-size: 10px;
-  }
   .profile-card h2 {
     font-size: 18px;
   }
@@ -1871,9 +1776,6 @@ body.search-open {
   }
   .links-section small {
     font-size: 11px;
-  }
-  .sidebar > .sidebar-note {
-    margin-top: 27px;
   }
   .footer-inner {
     display: block;
@@ -1933,4 +1835,44 @@ body.search-open {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Keep wide display equations scrollable, especially on mobile. */
+.article-content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 8px 0; }
+.article-content .katex { font-size: 1.1em; }
+
+/* Luogu-style Markdown containers: native, keyboard-accessible fold boxes. */
+.article-content .fold-box {
+  --fold-color: #8ebcff;
+  --fold-tint: rgba(105, 160, 255, 0.08);
+  margin: 22px 0;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--fold-color);
+  border-radius: 8px;
+  background: var(--fold-tint);
+  overflow: hidden;
+}
+.article-content .fold-box--success {
+  --fold-color: #5ce0a0;
+  --fold-tint: rgba(92, 224, 160, 0.08);
+}
+.article-content .fold-box > summary {
+  padding: 13px 18px;
+  color: var(--fold-color);
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.article-content .fold-box > summary::marker { color: var(--fold-color); }
+.article-content .fold-box > summary:hover { background: var(--fold-tint); }
+.article-content .fold-box > summary:focus-visible { outline: 2px solid var(--fold-color); outline-offset: -4px; }
+.article-content .fold-box[open] > summary { border-bottom: 1px solid var(--line); }
+.article-content .fold-box-body { padding: 4px 18px 16px; min-width: 0; }
+.article-content .fold-box-body > :last-child { margin-bottom: 0; }
+.article-content .fold-box-body > table { width: 100%; border-collapse: collapse; margin: 18px 0; }
+.article-content .fold-box-body > table th,
+.article-content .fold-box-body > table td { border: 1px solid var(--line); padding: 8px 12px; }
+@media (max-width: 560px) {
+  .article-content .fold-box > summary { padding: 12px; }
+  .article-content .fold-box-body { padding: 4px 12px 12px; }
 }

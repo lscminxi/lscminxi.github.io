@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理后台 · Minxi 的 blog</title>
+  <meta name="description" content="博客管理后台：登录、在线编辑、上传与删除。">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0b0e14">
+  <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="./admin.css">
+  <script src="./preview.js?v=fold-preview-2" defer></script>
+  <script src="./admin.js?v=delete-fix-1" defer></script>
+</head>
+<body class="admin-body">
+  <header class="admin-topbar">
+    <div class="admin-topbar-inner">
+      <span class="admin-brand"><span class="admin-mark">m<span>_</span></span> 管理后台</span>
+      <span class="admin-repo" id="repo-chip">lscminxi/lscminxi.github.io · main</span>
+      <span class="admin-spacer"></span>
+      <span class="admin-user" id="user-chip" hidden></span>
+      <a class="btn ghost small" href="/">返回站点</a>
+      <button class="btn ghost small" id="logout-button" type="button" hidden>退出登录</button>
+    </div>
+  </header>
+
+  <main class="admin-main">
+    <!-- 登录 -->
+    <section class="panel login-panel" id="view-login">
+      <div class="eyebrow"><span></span> SIGN IN WITH GITHUB</div>
+      <h1>登录管理后台</h1>
+      <p class="lead">
+        这个站点是纯静态的 GitHub Pages，没有自己的服务器。后台使用
+        <strong>GitHub 令牌</strong>登录，浏览器直接调用 GitHub API 读写仓库文件：
+        新建文章、在线编辑、上传图片、实时删除，全部以你的身份提交到
+        <code>main</code> 分支，随后由 GitHub Actions 自动生成并发布静态页面。
+      </p>
+      <form id="login-form" class="login-form" autocomplete="off">
+        <label class="field">
+          <span>GitHub Personal Access Token</span>
+          <input id="token-input" type="password" name="token" placeholder="github_pat_… 或 ghp_…" required spellcheck="false">
+        </label>
+        <label class="checkline">
+          <input id="remember-input" type="checkbox">
+          <span>在这台设备上记住令牌（写入 localStorage；公用电脑请不要勾选）</span>
+        </label>
+        <p class="error" id="login-error" hidden></p>
+        <button class="btn primary" id="login-button" type="submit">登录</button>
+      </form>
+      <details class="help">
+        <summary>怎么获取令牌？</summary>
+        <ol>
+          <li>打开 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Fine-grained tokens → Generate new token</a>。</li>
+          <li><strong>Repository access</strong> 选 <em>Only select repositories</em>，选中 <code>lscminxi/lscminxi.github.io</code>。</li>
+          <li><strong>Permissions → Repository permissions → Contents</strong> 设为 <em>Read and write</em>（其余保持默认，不需要额外权限）。</li>
+          <li>生成后复制令牌，粘贴到上面的输入框登录。令牌只会发送到 <code>api.github.com</code>，不会经过任何第三方服务器。</li>
+        </ol>
+        <p class="muted">也可以使用带 <code>repo</code> 权限的 classic token，但细粒度令牌更安全。随时可以在 GitHub 上撤销。</p>
+      </details>
+    </section>
+
+    <!-- 控制台 -->
+    <section id="view-app" hidden>
+      <div class="statusbar">
+        <div>
+          <span class="chip" id="build-chip">构建状态：未知</span>
+          <span class="muted small" id="build-note">保存后 GitHub Actions 会自动重新生成并发布静态页面，约 1–2 分钟生效。</span>
+        </div>
+        <div class="statusbar-actions">
+          <a class="btn ghost small" id="actions-link" href="https://github.com/lscminxi/lscminxi.github.io/actions" target="_blank" rel="noopener noreferrer">查看 Actions</a>
+          <button class="btn ghost small" id="build-refresh" type="button">刷新构建状态</button>
+          <button class="btn ghost small" id="refresh-button" type="button">刷新文件列表</button>
+        </div>
+      </div>
+
+      <nav class="tabs" id="tabs" aria-label="后台功能区">
+        <button class="tab active" type="button" data-tab="posts" aria-pressed="true">文章</button>
+        <button class="tab" type="button" data-tab="media" aria-pressed="false">图片</button>
+        <button class="tab" type="button" data-tab="about" aria-pressed="false">个人简介</button>
+        <button class="tab" type="button" data-tab="log" aria-pressed="false">日志</button>
+      </nav>
+
+      <!-- 文章 -->
+      <div class="panel" id="tab-posts">
+        <div class="panel-head">
+          <h2>文章 <span class="count" id="posts-count">0</span></h2>
+          <button class="btn primary small" id="new-post-button" type="button">＋ 新建文章</button>
+        </div>
+        <p class="muted small">文件位于 <code>blog/source/_posts/</code>。删除会立刻提交到 <code>main</code>，静态页面随后自动移除。</p>
+        <div class="list" id="post-list"><p class="muted">正在加载…</p></div>
+      </div>
+
+      <!-- 图片 -->
+      <div class="panel" id="tab-media" hidden>
+        <div class="panel-head">
+          <h2>图片 <span class="count" id="media-count">0</span></h2>
+          <label class="btn primary small" for="upload-input">上传图片</label>
+          <input id="upload-input" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" multiple hidden>
+        </div>
+        <p class="muted small">
+          上传到 <code>blog/source/images/</code>，发布后用 <code>/images/文件名</code> 引用。
+          单个文件不超过 1 MB（GitHub Contents API 限制）。
+        </p>
+        <div class="list" id="media-list"><p class="muted">还没有图片。</p></div>
+      </div>
+
+      <!-- 个人简介 -->
+      <div class="panel" id="tab-about" hidden>
+        <div class="panel-head">
+          <h2>个人简介 / 关于页</h2>
+          <span class="muted small" id="about-path">blog/source/about/index.md</span>
+        </div>
+        <p class="muted small">
+          直接编辑 Markdown（包含开头的 <code>---</code> 元信息）。<code>description</code> 会显示在「关于我」标题下方，
+          正文里的 <code>## ？！糖糖</code> 与「幼儿园小班水平」就是页面上看到的个人简介。
+        </p>
+        <textarea id="about-editor" class="code-area" spellcheck="false" rows="16" placeholder="正在加载…"></textarea>
+        <div class="panel-actions">
+          <span class="muted small" id="about-status"></span>
+          <button class="btn ghost small" id="about-reload" type="button">重新加载</button>
+          <button class="btn primary small" id="about-save" type="button">保存并提交</button>
+        </div>
+      </div>
+
+      <!-- 日志 -->
+      <div class="panel" id="tab-log" hidden>
+        <div class="panel-head">
+          <h2>操作日志</h2>
+          <button class="btn ghost small" id="clear-log" type="button">清空</button>
+        </div>
+        <div class="log" id="log-list"></div>
+      </div>
+    </section>
+
+    <!-- 编辑器 -->
+    <section class="panel" id="view-editor" hidden>
+      <div class="panel-head">
+        <h2 id="editor-title">新建文章</h2>
+        <button class="btn ghost small" id="cancel-edit" type="button">← 返回列表</button>
+      </div>
+      <div class="form-grid">
+        <label class="field"><span>标题</span><input id="f-title" type="text" placeholder="例如：二分查找笔记"></label>
+        <label class="field"><span>文件名（英文短名，决定 URL）</span><input id="f-slug" type="text" placeholder="binary-search" spellcheck="false"></label>
+        <label class="field"><span>日期</span><input id="f-date" type="datetime-local" step="60"></label>
+        <label class="field"><span>分类（多个用逗号分隔）</span><input id="f-categories" type="text" placeholder="学习笔记"></label>
+        <label class="field"><span>标签（多个用逗号分隔）</span><input id="f-tags" type="text" placeholder="二分, C++"></label>
+        <label class="field"><span>强调色</span>
+          <select id="f-accent">
+            <option value="">默认</option>
+            <option value="blue">blue</option>
+            <option value="purple">purple</option>
+            <option value="amber">amber</option>
+          </select>
+        </label>
+        <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
+        <label class="checkline wide"><input id="f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
+      </div>
+      <p class="muted small">
+        发布地址：<code id="url-preview">/</code>
+        <span id="slug-warning" class="warn small" hidden></span>
+        日期晚于当前时间的文章不会发布（站点时区 Asia/Shanghai）。
+      </p>
+      <div class="body-head">
+        <label class="field grow"><span>正文 Markdown</span></label>
+        <div class="body-tools">
+          <div class="preview-modes" role="group" aria-label="编辑器视图">
+            <button class="btn ghost small" type="button" data-editor-mode="edit" aria-pressed="false">编辑</button>
+            <button class="btn ghost small" type="button" data-editor-mode="split" aria-pressed="true">分屏</button>
+            <button class="btn ghost small" type="button" data-editor-mode="preview" aria-pressed="false">预览</button>
+          </div>
+          <button class="btn ghost small" id="insert-math" type="button">插入公式</button>
+          <select id="insert-fold" class="small-select" aria-label="插入折叠框">
+            <option value="">插入折叠框…</option>
+            <option value="info">info · 蓝色提示</option>
+            <option value="success">success · 绿色成功</option>
+          </select>
+          <select id="insert-image" class="small-select"><option value="">插入图片…</option></select>
+          <button class="btn ghost small" id="insert-more" type="button">插入 &lt;!-- more --&gt;</button>
+        </div>
+      </div>
+      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</p>
+      <div class="writing-workspace" id="writing-workspace" data-mode="split">
+      <textarea aria-label="正文 Markdown" id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
+      <iframe id="post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+      </div>
+      <p id="preview-status" class="muted small" role="status"></p>
+      <div class="panel-actions">
+        <span class="muted small" id="editor-status"></span>
+        <button class="btn danger small" id="delete-post" type="button" hidden>删除这篇文章</button>
+        <button class="btn primary" id="save-post" type="button">保存并提交</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">确认操作</h2>
+      <p id="modal-text"></p>
+      <div class="modal-actions">
+        <button class="btn ghost small" id="modal-cancel" type="button">取消</button>
+        <button class="btn danger small" id="modal-ok" type="button">确认</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

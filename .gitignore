@@ -4,3 +4,6 @@ blog/db.json
 blog/.deploy_git/
 .DS_Store
 *.log
+# Generated from locked npm dependencies by npm run assets.
+blog/source/vendor/katex/
+blog/source/admin/preview.js

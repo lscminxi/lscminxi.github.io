@@ -57,7 +57,82 @@ description: 用一句话介绍题目和核心思路。
 - 日期按 `Asia/Shanghai` 处理，未来时间的文章不会发布。文章时间也决定 URL；发布后尽量不改文件名和日期。
 - 初始 4 篇文章都带 `sample: true`，页面会显示「示例文章」。可直接修改、删除，发布自己的内容时移除该字段。
 - 删除示例后，也可删除或改写关于页里关于示例文章的说明。
-- 题解中的数学表达当前使用普通文本或代码排版；未启用 LaTeX 渲染器。
+- 文章支持 KaTeX 数学公式：`$...$` 行内公式与 `$$...$$` 独立公式，构建时渲染，样式和字体由本站提供。
+
+## 在线管理后台（`/admin/`）
+
+后台页面地址：**https://lscminxi.github.io/admin/**。导航里没有入口，页面也带 `noindex`，不会出现在搜索结果里。
+
+站点是纯静态的 GitHub Pages，没有自己的服务器，所以后台**不保存任何账号密码**：
+
+1. **登录**：粘贴你自己的 GitHub Fine-grained Personal Access Token（Repository access 只选 `lscminxi/lscminxi.github.io`，权限 `Contents: Read and write`）。浏览器直接用它调用 `api.github.com` 校验仓库写权限，并检查账号是否在 `admin.js` 的 `CONFIG.allowedLogins` 名单里（默认只有 `lscminxi`）。
+2. **文章**：列出 `blog/source/_posts/` 下全部文章，可新建、在线编辑（标题、文件名、日期、分类、标签、描述、强调色、示例标记、Markdown 正文）、实时删除。编辑器支持「编辑 / 分屏 / 预览」，正文输入后自动更新预览，无需保存；提供「插入公式」按钮。预览在本地浏览器中生成，不调用 GitHub；预览用沙箱和 HTML 清洗阻止脚本执行。代码高亮与目录以发布页为准。改文件名会自动「新建 + 删除旧文件」。
+3. **图片**：上传到 `blog/source/images/`（单文件 ≤ 1 MB，GitHub Contents API 的限制），可复制 `/images/xxx.png` 写法、插入正文或删除。
+4. **个人简介**：直接编辑 `blog/source/about/index.md`。
+5. **构建状态**：显示 GitHub Actions 结果；删除/保存文章后跟踪本次提交，避免把旧任务误报为成功。构建完成后仍需等待 Pages 发布，源码删除不等于公开网页已下线。
+
+每次保存都以你的身份提交到 `main`。`.github/workflows/deploy.yml` 里的 `publish-root` 任务会自动构建、检查并把生成的静态文件提交回仓库（提交信息带 `[skip ci]`，不会循环触发），分支发布模式下会显式请求 Pages 重建（因为 `GITHUB_TOKEN` 的提交不会自动触发新工作流），通常几分钟后生效。也就是说：**用后台写完文章不需要再手动跑 `publish:prepare`**；在本地改源码时仍然建议手动跑一次，方便先检查。
+
+令牌安全：
+
+- 令牌只保存在当前浏览器（默认 `sessionStorage`，关掉标签页就失效；勾选「记住」才写入 `localStorage`），点「退出登录」立即清除。
+- 令牌只会发送到 `api.github.com`。本站没有后端，不存在第三方收集或统计。
+- 真正的写权限由 GitHub 判断，没有仓库写权限的令牌改不了任何文件；账号名单只是界面上的额外一层限制。
+- 建议为这个站点单独生成一个只对该仓库生效的细粒度令牌、设置较短有效期，不用时在 GitHub 上撤销。
+
+### 删除文章说明
+
+列表和编辑器都可删除文章，确认后才调用 GitHub DELETE API。取消/失败保留草稿；删除前校验文件版本，若文章被别人改过，会再次询问是否删除最新版本。连续点击不会重复提交；文件已不存在时同步清理列表。成功后列表立即更新，公开文章页、归档、标签和搜索结果要等自动构建、导出和 Pages 发布完成才会消失。删除最后一篇文章也是有效操作：首页、归档和空搜索索引仍可构建。
+
+**自动发布工作流必须已合并到 `main`**：只在预览分支有修复，无法使旧 `main` 工作流更新根目录发布文件。工作流需要 `contents: write` 和 `pages: write`；构建状态里看到旧任务成功并不能证明本次删除已经发布。
+
+删除回归测试：`cd blog && npm run test:delete`。使用模拟 API，不会删除真实仓库中的文章；包含隔离临时目录里的「删空博客 → 构建 → 检查 → 导出 → 清除旧静态页」测试。
+
+## 数学公式与实时预览
+
+在 `/admin/` 中新建或编辑文章，默认左侧写 Markdown、右侧看实时预览。小屏幕分屏会改为上下排列，也可以点击「预览」只看渲染结果。预览不会提交内容；仍需点击「保存并提交」才会发布。
+
+行内公式（中文前后不必留空格）：
+
+```markdown
+时间复杂度是 $O(n \log n)$，第 $i$ 项为 $a_i$。
+```
+
+独立公式建议前后留一个空行，`$$` 各占一行：
+
+```markdown
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+```
+
+代码块和行内代码中的 `$` 不会当成公式。公式语法错误会显示错误内容，不会中断写作或构建；不支持的命令需要改成 KaTeX 支持的写法。KaTeX 的危险 HTML/URL 命令未启用。
+
+预览使用 `marked` + `marked-katex-extension`，正式页通过同一公式扩展接入原来的 Hexo Markdown 渲染器，保留代码高亮和目录。公式选项统一在 `blog/lib/math-options.cjs` 中维护。`npm run build` / `npm run dev` 会自动生成预览脚本和本地字体，不需要手动下载 CDN 文件。
+
+回归测试：`cd blog && npm run test:preview`（公式、代码块、错误语法、HTML 清洗、真实编辑器交互及 Hexo 完整渲染流程）。
+
+## Markdown 折叠框
+
+支持类似洛谷的 `:::info[标题]` 和 `:::success[标题]` 写法。蓝色 info 提示框与绿色 success 成功框默认折叠，点击标题或用键盘 Enter / 空格展开，再点击即可收起，不需要 JavaScript。
+
+```markdown
+:::info[思路提示]
+
+这里可以写 **加粗**、列表、图片、代码块和 $O(n \log n)$ 公式。
+
+:::
+
+:::success[结论]
+
+这道题已经 AC 了！
+
+:::
+```
+
+方括号必须保留；`:::info[]` / `:::success[]` 的默认标题分别为「提示」/「成功」。开头与结尾各占一行，结尾都是 `:::`。支持嵌套折叠框。代码块中的这些符号不会被转换；漏写结尾时保留原文，不吞掉后续内容。标题作为普通文字显示，不执行 HTML。
+
+后台编辑器有「插入折叠框…」菜单，支持即时预览与点击展开。预览和正式文章共用 `blog/lib/fold-containers.cjs`，样式随主题深色配色。实时预览中点击标题即可展开/收起；修改正文或文章标题时保留已有折叠框的展开状态与预览滚动位置，切换视图不会重载预览。打开另一篇文章会重置状态；修改折叠框自身的标题时，该框按新折叠框处理。
 
 ## 构建与检查
 
@@ -86,6 +161,8 @@ npm run publish:prepare
 
 这条命令会构建、检查，并将静态文件同步到仓库根目录。将**源码和根目录的生成文件一起提交**，通过 PR 合并到 `main`，GitHub Pages 会自动发布。
 
+如果只提交了源码而忘记导出，`main` 上的 `publish-root` 工作流也会自动构建并把生成文件补提交一次（见「在线管理后台」）。
+
 - 不要直接编辑根目录的 HTML、CSS、JS；下次构建会覆盖它们。
 - `.blog-output.json` 记录受管理的生成文件，供脚本清理被删除的文章和旧资源使用。不要手动篡改清单。
 - 导出脚本只清理清单中的静态文件，不递归删除目录，不碰源码或 `.git`。
@@ -110,7 +187,7 @@ npm run publish:prepare
 ## 目录结构
 
 ```text
-.github/workflows/deploy.yml   # 构建、检查和 Pages 发布
+.github/workflows/deploy.yml   # 构建、检查、自动导出静态文件、Pages 发布
 blog/
   _config.yml                 # 名称、作者、网址、语言等
   package.json                # 命令与依赖
@@ -120,7 +197,8 @@ blog/
   tools/export.mjs            # 同步静态产物到现有 Pages 根目录
   source/
     _posts/                   # Markdown 文章
-    about/index.md            # 关于我
+    about/index.md            # 关于我（个人简介）
+    admin/                    # 在线管理后台：index.html / admin.css / admin.js
     tags/index.md             # 标签入口
     404.md                    # 自定义 404
   themes/minxi/
@@ -132,10 +210,10 @@ blog/
     source/images/favicon.svg
 ```
 
-修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`。修改主题色：`main.css` 中的 `:root` 变量。
+修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改主题色：`main.css` 中的 `:root` 变量。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`。
 
 ## 安全与隐私
 
-站点是纯静态页面，无账号系统、无统计追踪。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。
+站点是纯静态页面，无账号系统、无统计追踪。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 后台同样没有账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`，详见「在线管理后台」一节。
 
 2026-10-14 的 `npm audit` 检测到 Hexo 上游构建依赖的 9 条报告（7 high、2 moderate），对应 `braces` / `sprintf-js` 的拒绝服务问题及其依赖链。`npm audit fix` 无法在当前兼容版本下消除；工具建议的 `--force` 会把 Hexo 降级到旧主版本，因此未执行。依赖仅运行于本地或 CI 构建，未打包进公开页面，但不要使用不可信的模板、插件或配置；来自外部的 PR 应在隔离的 GitHub runner 中构建，且不能获得发布权限。后续升级 Hexo 后请重新运行审计。
