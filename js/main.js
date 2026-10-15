@@ -141,6 +141,18 @@
       });
       const empty = document.querySelector(".filter-empty");
       if (empty) empty.hidden = visible !== 0;
+      // 归档页：没有可见文章的年份标题和置顶区块一并隐藏。
+      document.querySelectorAll(".archive-year, .pinned-block").forEach((group) => {
+        let count = 0;
+        if (group.classList.contains("pinned-block")) {
+          count = [...group.querySelectorAll(".post-card")].filter((card) => !card.hidden).length;
+        } else {
+          for (let el = group.nextElementSibling; el && !el.classList.contains("archive-year"); el = el.nextElementSibling) {
+            if (el.classList.contains("post-card") && !el.hidden) count++;
+          }
+        }
+        group.hidden = count === 0;
+      });
     }),
   );
 
