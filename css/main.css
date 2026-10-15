@@ -1962,3 +1962,98 @@ html[data-wallpaper="on"] .site-header {
     background: #0b0e14ed;
   }
 }
+
+/* ------------------------------------------------------------------
+   毛玻璃（appearance.json 的 wallpaperGlass，后台「外观」里开关）
+   只有「有壁纸 + 开启」时 layout.ejs 才输出 html[data-wallpaper-glass="on"]：
+   卡片与正文区变成半透明，并用 backdrop-filter 模糊背后的壁纸。
+   关闭时保持主题原本不透明的纯色卡片。
+   ------------------------------------------------------------------ */
+html[data-wallpaper-glass="on"] {
+  --glass-panel: rgba(17, 21, 29, 0.5);
+  --glass-panel-hover: rgba(22, 29, 39, 0.62);
+  --glass-reading: rgba(12, 16, 23, 0.72);
+  --glass-chip: rgba(19, 25, 33, 0.62);
+  --glass-line: rgba(150, 165, 185, 0.16);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --glass-filter: blur(16px) saturate(140%);
+}
+html[data-wallpaper-glass="on"] .site-header {
+  background: rgba(11, 14, 20, 0.6);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+html[data-wallpaper-glass="on"] .post-card,
+html[data-wallpaper-glass="on"] .profile-card,
+html[data-wallpaper-glass="on"] .tag-tile,
+html[data-wallpaper-glass="on"] .post-navigation a,
+html[data-wallpaper-glass="on"] .code-window {
+  background: var(--glass-panel);
+  box-shadow: var(--glass-edge);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+html[data-wallpaper-glass="on"] .code-window {
+  box-shadow: 0 15px 60px #0004, var(--glass-edge);
+}
+html[data-wallpaper-glass="on"] .profile-card {
+  background: radial-gradient(ellipse at 10% 0%, #1b332c66, transparent 70%), var(--glass-panel);
+}
+html[data-wallpaper-glass="on"] .post-card:hover {
+  background: var(--glass-panel-hover);
+}
+/* 小标签数量多：只做半透明、不做模糊，节省性能。 */
+html[data-wallpaper-glass="on"] .tag-cloud a,
+html[data-wallpaper-glass="on"] .search-trigger {
+  background: var(--glass-chip);
+}
+/* 正文和关于页是长文，底色更深一些，保证阅读清晰。 */
+html[data-wallpaper-glass="on"] .full-post,
+html[data-wallpaper-glass="on"] .about-content {
+  align-self: start;
+  background: var(--glass-reading);
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  box-shadow: var(--glass-edge);
+  padding: 8px 32px 32px;
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+html[data-wallpaper-glass="on"] .about-content {
+  padding-top: 28px;
+}
+@media (max-width: 760px) {
+  html[data-wallpaper-glass="on"] {
+    --glass-filter: blur(12px) saturate(140%);
+  }
+  html[data-wallpaper-glass="on"] .full-post,
+  html[data-wallpaper-glass="on"] .about-content {
+    padding: 4px 16px 22px;
+  }
+  html[data-wallpaper-glass="on"] .about-content {
+    padding-top: 20px;
+  }
+}
+/* 不支持 backdrop-filter 的浏览器：底色加深，保证文字清楚。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-wallpaper-glass="on"] {
+    --glass-panel: rgba(17, 21, 29, 0.92);
+    --glass-panel-hover: rgba(22, 29, 39, 0.95);
+    --glass-reading: rgba(12, 16, 23, 0.94);
+    --glass-chip: rgba(19, 25, 33, 0.92);
+  }
+}
+/* 系统设置「减少透明度 / 提高对比度」时，回到不透明卡片。 */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-wallpaper-glass="on"] {
+    --glass-panel: var(--panel);
+    --glass-panel-hover: #141b24;
+    --glass-reading: #0e1219;
+    --glass-chip: #131921;
+    --glass-edge: 0 0 0 transparent;
+    --glass-filter: none;
+  }
+  html[data-wallpaper-glass="on"] .site-header {
+    background: #0b0e14ed;
+  }
+}

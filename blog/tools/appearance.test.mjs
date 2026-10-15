@@ -23,6 +23,7 @@ const defaultData = {
   favicon: "https://cdn.example.com/icon.png",
   wallpaperDim: 40,
   wallpaperBlur: 6,
+  wallpaperGlass: true,
 };
 
 const wait = async (predicate) => {
@@ -115,7 +116,7 @@ const teardown = async (dom) => {
 /* ---------------- 共享规则（前后台一致） ---------------- */
 
 test("missing, malformed or hostile appearance data always falls back to safe defaults", () => {
-  const fallback = { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0 };
+  const fallback = { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0, wallpaperGlass: false };
   for (const input of [null, undefined, 0, "", "nope", [], true]) {
     assert.deepEqual(appearance.resolveAppearance(input), fallback);
   }
@@ -125,8 +126,19 @@ test("missing, malformed or hostile appearance data always falls back to safe de
     favicon: '"/><script>alert(1)</script>',
     wallpaperDim: "999",
     wallpaperBlur: -4,
+    wallpaperGlass: "<script>",
   });
-  assert.deepEqual(hostile, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0 });
+  assert.deepEqual(hostile, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0, wallpaperGlass: false });
+});
+
+test("the frosted-glass switch accepts booleans and common spellings, anything else is off", () => {
+  for (const value of [true, "true", "on", "1", 1, " Yes ", "TRUE"]) {
+    assert.equal(appearance.resolveAppearance({ wallpaperGlass: value }).wallpaperGlass, true, String(value));
+  }
+  for (const value of [false, "false", "off", "0", 0, "no", undefined, null, "", "maybe", 2, {}, []]) {
+    assert.equal(appearance.resolveAppearance({ wallpaperGlass: value }).wallpaperGlass, false, String(value));
+  }
+  assert.equal(appearance.DEFAULTS.wallpaperGlass, false, "Off by default: existing configs keep their look");
 });
 
 test("only http(s) links and root-relative site paths are accepted", () => {
@@ -176,6 +188,14 @@ test("admin sees the current avatar/wallpaper/icon and its live preview", async 
     assert.equal($("#appearance-preview .preview-wallpaper").style.backgroundImage, 'url("/images/avatar.png")');
     assert.equal($("#appearance-preview .preview-wallpaper").style.filter, "blur(6px)");
     assert.equal($("#appearance-preview .preview-veil").style.background, "linear-gradient(rgba(11,14,20,0.40), rgba(11,14,20,0.40))");
+    assert.equal($("#a-glass").checked, true);
+    assert($("#appearance-preview .preview-card").classList.contains("preview-card--glass"), "Glass preview card");
+    assert.match($("#a-glass-hint").textContent, /已开启/);
+    $("#a-glass").click();
+    assert.equal($("#a-glass").checked, false);
+    assert(!$("#appearance-preview .preview-card").classList.contains("preview-card--glass"), "Solid preview card when off");
+    assert.match($("#a-glass-hint").textContent, /已关闭/);
+    $("#a-glass").click();
     assert.equal($("#appearance-preview-note").className, "small ok");
     // 顶栏图标跟随公开的 /appearance.json
     await wait(() => $("#admin-favicon").getAttribute("href") === defaultData.favicon);
@@ -198,6 +218,9 @@ test("saving commits sanitized JSON to source/_data/appearance.json with the fil
       $(field).dispatchEvent(new dom.window.Event("input"));
     }
     assert.equal($("#appearance-preview .preview-wallpaper").style.backgroundImage, "none");
+    assert(!$("#appearance-preview .preview-card").classList.contains("preview-card--glass"), "Glass needs a wallpaper");
+    assert.match($("#a-glass-hint").textContent, /设置壁纸后才会生效/);
+    $("#a-glass").click();
     $("#appearance-save").click();
     await wait(() => state.writes.length === 1);
     const write = state.writes[0];
@@ -211,6 +234,7 @@ test("saving commits sanitized JSON to source/_data/appearance.json with the fil
       favicon: "/images/avatar.png",
       wallpaperDim: 88,
       wallpaperBlur: 14,
+      wallpaperGlass: false,
     });
     await wait(() => files.get(appearancePath).text === write.decoded);
     await wait(() => $("#appearance-status").textContent.includes("已提交"));
@@ -282,6 +306,7 @@ test("defaults and the uploaded-image picker fill the form without saving", asyn
     assert.equal($("#a-favicon").value, "/images/favicon.svg");
     assert.equal($("#a-dim").value, "62");
     assert.equal($("#a-blur").value, "0");
+    assert.equal($("#a-glass").checked, false);
     assert.equal(state.writes.length, 0);
     // 默认值（无壁纸）下预览层不显示壁纸
     assert.equal($("#appearance-preview .preview-wallpaper").style.backgroundImage, "none");
@@ -301,7 +326,7 @@ test("a missing or malformed config file still lets the admin create it", async 
     $("#appearance-save").click();
     await wait(() => state.writes.length === 1);
     assert.equal(state.writes[0].sha, "appearance-sha", "Repairs the existing file instead of creating a new one");
-    assert.deepEqual(JSON.parse(state.writes[0].decoded), { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0 });
+    assert.deepEqual(JSON.parse(state.writes[0].decoded), { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0, wallpaperGlass: false });
     await settleBuild($);
   } finally {
     await teardown(dom);
@@ -372,42 +397,67 @@ test("the published site falls back to the letter avatar when the image cannot l
 
 /* ---------------- 构建产物 ---------------- */
 
-test("a hostile appearance.json cannot inject markup or CSS into the built site", async () => {
+// 在隔离的临时目录里用给定的 appearance.json 完整构建一次站点。
+async function buildSite(data) {
   const temp = await mkdtemp(join(tmpdir(), "minxi-appearance-"));
   const source = resolve(".");
+  await cp(source, join(temp, "blog"), {
+    recursive: true,
+    filter: (path) => {
+      const relative = path.slice(source.length + 1);
+      return !["node_modules", "public", "db.json"].some((p) => relative === p || relative.startsWith(p + "/"));
+    },
+  });
+  await symlink(join(source, "node_modules"), join(temp, "blog/node_modules"), "dir");
+  await writeFile(join(temp, "blog/source/_data/appearance.json"), JSON.stringify(data));
+  await exec("npm", ["run", "build"], { cwd: join(temp, "blog"), timeout: 120000 });
+  return {
+    read: (path) => readFile(join(temp, "blog/public", path), "utf8"),
+    cleanup: () => rm(temp, { recursive: true, force: true }),
+  };
+}
+
+test("a hostile appearance.json cannot inject markup or CSS into the built site", async () => {
+  const site = await buildSite({
+    avatar: '"><script>alert(1)</script>',
+    wallpaper: "javascript:alert(1)",
+    favicon: "data:text/html,<script>alert(1)</script>",
+    wallpaperDim: 1000,
+    wallpaperBlur: "abc",
+    wallpaperGlass: true,
+  });
   try {
-    await cp(source, join(temp, "blog"), {
-      recursive: true,
-      filter: (path) => {
-        const relative = path.slice(source.length + 1);
-        return !["node_modules", "public", "db.json"].some((p) => relative === p || relative.startsWith(p + "/"));
-      },
-    });
-    await symlink(join(source, "node_modules"), join(temp, "blog/node_modules"), "dir");
-    await writeFile(
-      join(temp, "blog/source/_data/appearance.json"),
-      JSON.stringify({
-        avatar: '"><script>alert(1)</script>',
-        wallpaper: "javascript:alert(1)",
-        favicon: "data:text/html,<script>alert(1)</script>",
-        wallpaperDim: 1000,
-        wallpaperBlur: "abc",
-      }),
-    );
-    await exec("npm", ["run", "build"], { cwd: join(temp, "blog"), timeout: 120000 });
-    const built = await readFile(join(temp, "blog/public/index.html"), "utf8");
+    const built = await site.read("index.html");
     assert(!built.includes("<script>alert(1)</script>"), "No injected script element");
     assert(!/javascript:/i.test(built), "No javascript: URL");
     assert(!/data:text\/html/i.test(built), "No data: URL");
     assert(!built.includes("data-wallpaper"), "Invalid wallpaper disables the wallpaper layer");
+    assert(!built.includes("data-wallpaper-glass"), "Frosted glass needs a valid wallpaper");
     assert(!built.includes("--wallpaper-image"), "No wallpaper CSS variable is emitted");
     assert(built.includes('<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">'), "Falls back to the bundled favicon");
     assert(built.includes('<span class="avatar-mark">m<span>_</span></span>'), "Falls back to the letter avatar");
     assert(!built.includes("avatar-image"));
-    const published = JSON.parse(await readFile(join(temp, "blog/public/appearance.json"), "utf8"));
-    assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0 });
+    const published = JSON.parse(await site.read("appearance.json"));
+    assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0, wallpaperGlass: true });
   } finally {
-    await rm(temp, { recursive: true, force: true });
+    await site.cleanup();
+  }
+});
+
+test("turning on frosted glass with a wallpaper marks every page and ships the glass styles", async () => {
+  const site = await buildSite({ wallpaper: "https://img.example/wall.webp", wallpaperDim: 50, wallpaperGlass: "on" });
+  try {
+    for (const page of ["index.html", "about/index.html", "tags/index.html", "archives/index.html"]) {
+      const built = await site.read(page);
+      assert(built.includes('<html lang="zh-CN" data-wallpaper="on" data-wallpaper-glass="on">'), `${page} uses glass`);
+    }
+    const css = await site.read("css/main.css");
+    assert(css.includes('html[data-wallpaper-glass="on"] .post-card'), "Glass card styles are published");
+    assert(css.includes("backdrop-filter: var(--glass-filter)"), "Cards blur the wallpaper behind them");
+    assert(/prefers-reduced-transparency[^{]*\{\s*html\[data-wallpaper-glass="on"\]/.test(css), "Reduced-transparency fallback");
+    assert.equal(JSON.parse(await site.read("appearance.json")).wallpaperGlass, true);
+  } finally {
+    await site.cleanup();
   }
 });
 

@@ -15,8 +15,9 @@ function rawAppearance(hexo, locals) {
 }
 
 // 模板里调用 site_appearance() 得到一个已清洗、字段齐全的对象：
-//   avatar / wallpaper / favicon / wallpaperDim / wallpaperBlur
-// 另外附带 faviconType、wallpaperImage（CSS 值）、wallpaperVeil（透明度字符串）。
+//   avatar / wallpaper / favicon / wallpaperDim / wallpaperBlur / wallpaperGlass
+// 另外附带 faviconType、wallpaperImage（CSS 值）、wallpaperVeil（透明度字符串）、
+// hasWallpaper / hasWallpaperBlur / hasGlass（毛玻璃只在有壁纸时生效）。
 hexo.extend.helper.register("site_appearance", function () {
   const value = resolveAppearance(rawAppearance(hexo, this));
   return Object.assign({}, value, {
@@ -25,6 +26,7 @@ hexo.extend.helper.register("site_appearance", function () {
     wallpaperVeil: veilAlpha(value.wallpaperDim),
     hasWallpaper: Boolean(value.wallpaper),
     hasWallpaperBlur: Boolean(value.wallpaper) && value.wallpaperBlur > 0,
+    hasGlass: Boolean(value.wallpaper) && value.wallpaperGlass,
   });
 });
 
@@ -43,6 +45,7 @@ hexo.extend.generator.register("appearance-data", function (locals) {
         favicon: value.favicon,
         wallpaperDim: value.wallpaperDim,
         wallpaperBlur: value.wallpaperBlur,
+        wallpaperGlass: value.wallpaperGlass,
       },
       null,
       2,

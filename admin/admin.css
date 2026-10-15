@@ -514,6 +514,60 @@ code {
   min-width: 48px;
   text-align: right;
 }
+/* 开关（毛玻璃效果）：复选框外观改成滑动开关，整行可点击。 */
+/* 比 .field > span（小号等宽标签样式）更具体，避免被它覆盖成块级。 */
+.field > span.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+  margin: 0;
+  font: inherit;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+.switch-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #0e131b;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.switch-row input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.switch-row input[type="checkbox"]:checked {
+  background: #1d4a40;
+  border-color: #3d6a60;
+}
+.switch-row input[type="checkbox"]:checked::before {
+  transform: translateX(16px);
+  background: var(--accent);
+}
+.switch-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.switch-text {
+  font: 12px/1.4 var(--sans);
+  color: var(--muted);
+}
 .appearance-preview {
   position: relative;
   border: 1px solid var(--line);
@@ -549,6 +603,13 @@ code {
   background: #121820f2;
   box-shadow: 0 10px 30px #0006;
   max-width: 100%;
+}
+/* 与主题 html[data-wallpaper-glass="on"] 的卡片一致。 */
+.preview-card--glass {
+  background: rgba(17, 21, 29, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px #0006;
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 .preview-avatar {
   width: 44px;

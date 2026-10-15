@@ -78,6 +78,8 @@
       blur: $("#a-blur"),
       dimValue: $("#a-dim-value"),
       blurValue: $("#a-blur-value"),
+      glass: $("#a-glass"),
+      glassHint: $("#a-glass-hint"),
     },
     postList: $("#post-list"),
     postsCount: $("#posts-count"),
@@ -1297,6 +1299,7 @@
       favicon: el.a.favicon.value.trim(),
       wallpaperDim: Number(el.a.dim.value),
       wallpaperBlur: Number(el.a.blur.value),
+      wallpaperGlass: el.a.glass.checked,
     };
   }
 
@@ -1306,6 +1309,7 @@
     el.a.favicon.value = value.favicon;
     el.a.dim.value = String(value.wallpaperDim);
     el.a.blur.value = String(value.wallpaperBlur);
+    el.a.glass.checked = value.wallpaperGlass;
     appearancePreviewFailures.avatar = false;
     appearancePreviewFailures.favicon = false;
     renderAppearancePreview();
@@ -1367,6 +1371,15 @@
     const veil = el.appearancePreview.querySelector(".preview-veil");
     const alpha = api.veilAlpha(draft.wallpaperDim);
     veil.style.background = `linear-gradient(rgba(11,14,20,${alpha}), rgba(11,14,20,${alpha}))`;
+
+    // 毛玻璃只在有壁纸时生效（与 layout.ejs 的 data-wallpaper-glass 规则一致）。
+    const glass = Boolean(wallpaper) && draft.wallpaperGlass;
+    el.appearancePreview.querySelector(".preview-card").classList.toggle("preview-card--glass", glass);
+    el.a.glassHint.textContent = !wallpaper
+      ? "设置壁纸后才会生效"
+      : draft.wallpaperGlass
+        ? "已开启：卡片半透明，并模糊背后的壁纸"
+        : "已关闭：卡片为不透明的纯色";
 
     const avatarFrame = el.appearancePreview.querySelector(".preview-avatar");
     const avatarImage = el.appearancePreview.querySelector(".preview-avatar-image");
@@ -1508,11 +1521,12 @@
       return;
     }
     fillAppearanceForm(api.resolveAppearance(null));
-    el.appearanceStatus.textContent = "已填入默认值（默认图标 /images/favicon.svg，无壁纸）；点「保存并提交」后生效。";
+    el.appearanceStatus.textContent = "已填入默认值（默认图标 /images/favicon.svg，无壁纸，毛玻璃关闭）；点「保存并提交」后生效。";
   });
   for (const input of [el.a.avatar, el.a.wallpaper, el.a.favicon, el.a.dim, el.a.blur]) {
     input.addEventListener("input", renderAppearancePreview);
   }
+  el.a.glass.addEventListener("change", renderAppearancePreview);
   el.appearancePicker.addEventListener("change", () => {
     if (el.appearancePicker.value) toast(`已选择 ${el.appearancePicker.value}，点右侧按钮填入对应字段`);
   });

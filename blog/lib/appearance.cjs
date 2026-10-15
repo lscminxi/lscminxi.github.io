@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * 外观设置（头像 / 壁纸 / 网页图标）
+ * 外观设置（头像 / 壁纸 / 网页图标 / 毛玻璃）
  * --------------------------------------------------------------
  * 唯一数据源：source/_data/appearance.json
  *  - 构建时（Hexo 模板 / 生成器）读取它，写入页面 <link rel="icon">、头像 <img> 与壁纸 CSS 变量；
@@ -20,6 +20,7 @@ const DEFAULTS = Object.freeze({
   favicon: '/images/favicon.svg',
   wallpaperDim: 62, // 0–95：壁纸压暗程度（百分比），保证深色主题下的可读性
   wallpaperBlur: 0, // 0–20：壁纸模糊半径（px）
+  wallpaperGlass: false, // 毛玻璃：有壁纸时卡片与正文区半透明并模糊背后的壁纸
 });
 
 const MAX_URL_LENGTH = 2000;
@@ -61,6 +62,21 @@ function clampNumber(value, min, max, fallback) {
 }
 
 /**
+ * 开关值：接受 true/false，也宽容手写 JSON 里常见的 "true" / "on" / "1" / "yes"
+ * 与 "false" / "off" / "0" / "no"（不区分大小写）；其他值一律回落到默认值。
+ */
+function toBoolean(value, fallback) {
+  if (typeof value === 'boolean') return value;
+  if (value === 1 || value === 0) return value === 1;
+  if (typeof value === 'string') {
+    const text = value.trim().toLowerCase();
+    if (['true', 'on', '1', 'yes'].includes(text)) return true;
+    if (['false', 'off', '0', 'no'].includes(text)) return false;
+  }
+  return fallback;
+}
+
+/**
  * 把任意（可能被手工改坏、甚至恶意构造的）输入整理成可信的外观设置。
  * 缺失或不合法的字段会回落到默认值，绝不抛出异常，保证构建永远可用。
  */
@@ -75,6 +91,7 @@ function resolveAppearance(input) {
     favicon,
     wallpaperDim: clampNumber(source.wallpaperDim, 0, 95, DEFAULTS.wallpaperDim),
     wallpaperBlur: clampNumber(source.wallpaperBlur, 0, 20, DEFAULTS.wallpaperBlur),
+    wallpaperGlass: toBoolean(source.wallpaperGlass, DEFAULTS.wallpaperGlass),
   };
 }
 
@@ -102,12 +119,14 @@ const FIELD_HINTS = Object.freeze({
   favicon: '浏览器标签页图标地址。默认 /images/favicon.svg。',
   wallpaperDim: '壁纸压暗程度：数值越大壁纸越暗、正文越清晰。0 表示完全不压暗。',
   wallpaperBlur: '壁纸模糊半径（px）。0 表示不模糊；数值较大时更柔和但更耗性能。',
+  wallpaperGlass: '毛玻璃效果：有壁纸时，文章卡片、侧栏卡片和正文区变成半透明并模糊背后的壁纸；关闭则保持不透明的纯色卡片。',
 });
 
 module.exports = {
   DEFAULTS,
   FIELD_HINTS,
   isSafeImageUrl,
+  toBoolean,
   resolveAppearance,
   faviconType,
   cssImage,

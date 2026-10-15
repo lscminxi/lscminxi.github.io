@@ -69,7 +69,7 @@ description: 用一句话介绍题目和核心思路。
 2. **文章**：列出 `blog/source/_posts/` 下全部文章，可新建、在线编辑（标题、文件名、日期、分类、标签、描述、强调色、示例标记、Markdown 正文）、实时删除。编辑器支持「编辑 / 分屏 / 预览」，正文输入后自动更新预览，无需保存；提供「插入公式」按钮。预览在本地浏览器中生成，不调用 GitHub；预览用沙箱和 HTML 清洗阻止脚本执行。代码高亮与目录以发布页为准。改文件名会自动「新建 + 删除旧文件」。
 3. **图片**：上传到 `blog/source/images/`（单文件 ≤ 1 MB，GitHub Contents API 的限制），可复制 `/images/xxx.png` 写法、插入正文或删除。
 4. **个人简介**：直接编辑 `blog/source/about/index.md`。
-5. **外观**：修改**头像**、**页面壁纸**和**网页图标**，可调壁纸压暗程度与模糊半径，并有实时预览。设置写入 `blog/source/_data/appearance.json`，同样是「只有 admin 能改」：写权限由 GitHub 判断，账号还要在 `CONFIG.allowedLogins` 名单里，普通访客看到的只是构建好的静态页面，无法改动。详见「[头像、壁纸与网页图标](#头像壁纸与网页图标外观)」。
+5. **外观**：修改**头像**、**页面壁纸**和**网页图标**，可调壁纸压暗程度与模糊半径、开关**毛玻璃效果**，并有实时预览。设置写入 `blog/source/_data/appearance.json`，同样是「只有 admin 能改」：写权限由 GitHub 判断，账号还要在 `CONFIG.allowedLogins` 名单里，普通访客看到的只是构建好的静态页面，无法改动。详见「[头像、壁纸与网页图标](#头像壁纸与网页图标外观)」。
 6. **构建状态**：显示 GitHub Actions 结果；删除/保存文章后跟踪本次提交，避免把旧任务误报为成功。构建完成后仍需等待 Pages 发布，源码删除不等于公开网页已下线。
 
 每次保存都以你的身份提交到 `main`。`.github/workflows/deploy.yml` 里的 `publish-root` 任务会自动构建、检查并把生成的静态文件提交回仓库（提交信息带 `[skip ci]`，不会循环触发），分支发布模式下会显式请求 Pages 重建（因为 `GITHUB_TOKEN` 的提交不会自动触发新工作流），通常几分钟后生效。也就是说：**用后台写完文章不需要再手动跑 `publish:prepare`**；在本地改源码时仍然建议手动跑一次，方便先检查。
@@ -99,7 +99,8 @@ description: 用一句话介绍题目和核心思路。
   "wallpaper": "https://cdn.luogu.com.cn/upload/image_hosting/ht2x3cgh.webp",
   "favicon": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
   "wallpaperDim": 62,
-  "wallpaperBlur": 0
+  "wallpaperBlur": 0,
+  "wallpaperGlass": true
 }
 ```
 
@@ -110,10 +111,11 @@ description: 用一句话介绍题目和核心思路。
 | `favicon` | 浏览器标签页图标；`type` 由扩展名推断，`.png` 时额外输出 `apple-touch-icon`。 |
 | `wallpaperDim` | 壁纸压暗程度（0–95），数值越大壁纸越暗、正文越清晰。 |
 | `wallpaperBlur` | 壁纸模糊半径（0–20 px）。0 表示不模糊。 |
+| `wallpaperGlass` | 毛玻璃效果（`true` / `false`，默认 `false`）。开启后，文章卡片、侧栏卡片、标签卡片、顶栏以及正文区 / 关于页变成半透明，并模糊背后的壁纸；关闭则保持原来不透明的纯色卡片。**只在设置了壁纸时生效。** |
 
 改法有两种：
 
-1. **在线后台（推荐）**：`/admin/` →「外观」→ 填地址、拖滑块 →「保存并提交」。地址会先按下面的规则校验，不合法时直接拒绝提交；站内路径如果不在已上传的图片列表里，会先弹窗确认。**只有登录后台（拥有仓库写权限、且在 `allowedLogins` 名单里）的 admin 能改。**
+1. **在线后台（推荐）**：`/admin/` →「外观」→ 填地址、拖滑块、点「毛玻璃效果」开关 →「保存并提交」。图片可以先在「图片」标签页上传（单文件 ≤ 1 MB），再在「外观」的「图片库」里选中，点「选为头像」/「设为壁纸」。地址会先按下面的规则校验，不合法时直接拒绝提交；站内路径如果不在已上传的图片列表里，会先弹窗确认。**只有登录后台（拥有仓库写权限、且在 `allowedLogins` 名单里）的 admin 能改。**
 2. **直接改源码**：编辑上面的 JSON，然后运行 `npm run publish:prepare`。
 
 地址规则（前后台共用 `blog/lib/appearance.cjs` 的同一套代码）：只接受 `https://` / `http://` 外链或以 `/` 开头的站内路径；拒绝 `javascript:`、`data:`、协议相对地址 `//…` 以及含引号、括号、空白、反斜杠的字符串。渲染时地址只会出现在 HTML 属性（EJS 转义）和 `url("…")` 里，所以坏数据不可能变成可执行的样式或标记；即使把 JSON 改坏、写进恶意内容，构建也只会回落到默认值（回归测试见下）。
@@ -124,6 +126,7 @@ description: 用一句话介绍题目和核心思路。
 - 内置的默认图标仍是主题自带的 `/images/favicon.svg`，删掉配置或地址非法时自动回落到它。
 - 头像是外链时可能被 CDN 防盗链拦住（图片打不开时卡片会自动显示字母标记 `m_`）。稳妥做法：在后台「图片」里上传图片（单文件 ≤ 1 MB），再用「外观」里的「图片库」按钮填 `/images/文件名`。
 - 壁纸只在配置了图片时才生效：`layout.ejs` 输出 `html[data-wallpaper="on"]` 与 `--wallpaper-image` / `--wallpaper-veil` / `--wallpaper-blur` 变量，样式在 `main.css` 结尾；页面顶栏会变得更透明，压暗层和暗角保证正文对比度。
+- 毛玻璃：有壁纸且 `wallpaperGlass` 为真时，页面额外输出 `html[data-wallpaper-glass="on"]`，卡片用 `backdrop-filter` 模糊背后的壁纸（正文区底色更深，长文也清楚；数量很多的小标签只做半透明、不做模糊，节省性能）。浏览器不支持 `backdrop-filter` 时自动加深底色；系统开启「减少透明度」或「提高对比度」时回到不透明卡片。手写 JSON 时 `"on"` / `"off"`、`"true"` / `"false"`、`1` / `0` 也能识别，其他值按关闭处理。
 - 外观相关回归测试：`cd blog && npm run test:appearance`（共享校验规则、后台面板、保存时的 SHA/分支/内容、拒绝恶意地址、以及「恶意 JSON → 构建产物无注入」）。`npm run build && npm run check` 还会校验构建产物与 `appearance.json` 一致。
 
 ## 数学公式与实时预览

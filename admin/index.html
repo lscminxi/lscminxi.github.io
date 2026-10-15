@@ -11,8 +11,8 @@
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="./admin.css">
   <script src="./preview.js?v=fold-preview-2" defer></script>
-  <script src="./appearance.js?v=appearance-1" defer></script>
-  <script src="./admin.js?v=appearance-1" defer></script>
+  <script src="./appearance.js?v=appearance-glass-1" defer></script>
+  <script src="./admin.js?v=appearance-glass-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -137,7 +137,10 @@
           <label class="field"><span>壁纸模糊半径</span>
             <div class="range-row"><input id="a-blur" type="range" min="0" max="20" step="1"><output id="a-blur-value" for="a-blur">0px</output></div>
           </label>
-          <div class="field">
+          <label class="field"><span>毛玻璃效果</span>
+            <span class="switch-row"><input id="a-glass" type="checkbox" role="switch" aria-describedby="a-glass-hint"><span class="switch-text" id="a-glass-hint">卡片半透明，并模糊背后的壁纸</span></span>
+          </label>
+          <div class="field wide">
             <span>图片库（已上传到 /images/）</span>
             <div class="appearance-picker">
               <select id="a-image" class="small-select" aria-label="选择已上传的图片"><option value="">还没有图片</option></select>

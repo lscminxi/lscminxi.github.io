@@ -50,6 +50,11 @@ if (look.wallpaper) {
   assert(!index.includes("data-wallpaper"), "Wallpaper layer must stay off when no wallpaper is configured");
   assert(!index.includes("--wallpaper-image"), "No wallpaper CSS variable without a wallpaper");
 }
+assert.equal(
+  index.includes('data-wallpaper-glass="on"'),
+  Boolean(look.wallpaper) && look.wallpaperGlass,
+  "Frosted glass must match appearance.json (and only applies with a wallpaper)",
+);
 for (const rule of [wallpaperRule?.[1] || "", icon[1], avatar?.[1] || ""]) {
   assert(!/(?:javascript|vbscript|data)\s*:/i.test(rule), `Forbidden scheme in appearance value: ${rule}`);
 }

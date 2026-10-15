@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <% const appearance = site_appearance(); -%>
-<html lang="zh-CN"<% if (appearance.hasWallpaper) { %> data-wallpaper="on"<% if (appearance.hasWallpaperBlur) { %> data-wallpaper-blur="on"<% } %><% } %>>
+<html lang="zh-CN"<% if (appearance.hasWallpaper) { %> data-wallpaper="on"<% if (appearance.hasWallpaperBlur) { %> data-wallpaper-blur="on"<% } %><% if (appearance.hasGlass) { %> data-wallpaper-glass="on"<% } %><% } %>>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
