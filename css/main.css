@@ -126,7 +126,8 @@ svg {
   height: 39px;
   border-radius: 10px;
   letter-spacing: -4px;
-  padding-right: 3px;
+  padding: 0;
+  overflow: hidden;
 }
 .brand-mark span {
   font-size: 22px;
@@ -838,10 +839,6 @@ svg {
 .footer-brand-image {
   display: block;
   object-fit: cover;
-}
-.brand-mark:has(> .brand-mark-image) {
-  padding: 0;
-  overflow: hidden;
 }
 .brand-mark-image {
   width: 100%;
