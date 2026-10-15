@@ -98,9 +98,9 @@ svg {
   right: 0;
   z-index: 20;
   backdrop-filter: blur(18px);
-  /* 默认隐藏在屏幕外，鼠标移到顶部或顶栏上时再滑出来 */
+  /* 默认隐藏在屏幕外：鼠标离开后停留 2 秒再慢慢收起 */
   transform: translateY(calc(-100% - 1px));
-  transition: transform 0.28s ease, box-shadow 0.28s ease;
+  transition: transform 0.6s ease 2s, box-shadow 0.6s ease 2s;
 }
 /* 顶部一条很窄的感应区，用来触发顶栏显示 */
 .header-hover-zone {
@@ -116,6 +116,8 @@ svg {
 .site-header:focus-within {
   transform: none;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  /* 滑出时不延迟，但放慢速度 */
+  transition: transform 0.6s ease 0s, box-shadow 0.6s ease 0s;
 }
 .header-inner {
   max-width: 1180px;
