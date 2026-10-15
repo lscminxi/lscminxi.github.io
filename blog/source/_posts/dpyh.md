@@ -6,6 +6,7 @@ categories:
 tags:
   - 动态规划
   - 总结
+sticky: 1
 ---
 ## [CF505C](https://www.luogu.com.cn/problem/CF505C)
 
@@ -1069,3 +1070,4 @@ int main(){
 ```
 
 :::
+
