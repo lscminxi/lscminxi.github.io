@@ -6,6 +6,7 @@ categories:
 tags:
   - 动态规划
   - 总结
+sticky: 1
 ---
 ## [CF505C](https://www.luogu.com.cn/problem/CF505C)
 
@@ -905,3 +906,168 @@ int main(){
 }
 ```
 :::
+
+## [P4383](https://www.luogu.com.cn/problem/P4383)
+
+:::info[简化题面]
+给你一棵树，让你切断树上的 $k$ 条边，在连接 $k$ 条为 $0$ 的边，求操作后的树的最大权值和链。
+:::
+
+题意等价于选择 $k+1$ 条链，使其边权和最大。
+
+那么考虑树形 `dp`。
+
+设 $f_{u,y,0/1/2}$ 表示以 $u$ 为根的子树中，一共有 $y$ 条链，在链点 $u$ 的度数为 $0/1/2$。
+
+我们分类讨论一下转移。
+
+这里设 $v \in son_u$，其中 $son_u$ 是 $u$ 的儿子节点集合。
+
+如果将 $u$ 与 $v$ 使用边 $(u,v)$ 连接起来，首先要满足 $u$ 和 $v$ 作为链头或单个点，即 $u$ 的度和 $v$ 的度都不等于 $2$，转移后会将链头为 $u$ 和链头为 $v$ 的链拼接，所以 $u$ 的度一定会增加 $1$，简单推理可得下列转移。
+
+$$
+f_{u,y,1}=\begin{cases} 
+f_{u,y_1,0}+f_{v,y-y_1-1,0}\\
+f_{u,y_1,0}+f_{v,y-y_1,1}
+\end{cases}\\
+
+f_{u,y,2}=\begin{cases} 
+f_{u,y_1,1}+f_{v,y-y_1,0}\\
+f_{u,y_1,1}+f_{v,y-y_1+1,1}
+\end{cases}
+$$
+
+这里简单解释一下链的数量变化的含义，如果将两个点连接成一条链，显然会增加一条的链。
+
+如果一个是链头，一个是点，那么相当于给链添加了一个点，链的数量不变。
+
+如果两个都是链头，那么就会把这两条链合成一条链，减少一条链。
+
+如果不将 $u$ 和 $v$ 使用边 $(u,v)$ 连接起来，显然可以得到下列转移。
+
+$$
+f_{u,y_1+y_2,i}=f_{u,y_1,i}+f_{v,y_2,j}
+$$
+
+其中 $1 \le i,j \le 3$。
+
+然后初始将 $f_{u,0,0}$ 设为 $0$，由于一个点算是一个极度退化的链，于是将 $f_{u,1,2}$ 也设为 $0$，可以把他想象成自环，然后其他都设为 $-\infty$。
+
+那么我们就得到了 $\mathcal{O}(nk^2)$ 的做法。
+
+然后如果你~看了标签~很闲，把 $0\le y \le 100$ 的表打出来了，你就会发现这是个凸函数。
+
+这里有一个感性的证明，首先我们不在链中留下负边权的边，将一条链分成两条链，此时分割的收益是正的，但是当没有负边权的边能选时，此时就只能选正边权了，收益为负，于是就形成了一个凸函数。
+
+于是我们就可以上 `WQS` 了。
+
+简单说明一下 `WQS`，将方程以 $(k,f_k)$ 作为点放置到平面直角坐标系上，如果这是一个凸包，那么我们就可以用一个合适的斜率 $m$ 的直线 $y=mx+b$ 去切这个凸包，那么 $\max\{b\}=\max\{y-mx\}$，由于前面我们定义 $y$ 是 $f_x$，所以 $\max\{b\}=\max\{f_x-mx\}$。
+
+于是我们可以考虑找到这个 $b$，每次增加一条链时加上一个权值 $m$，如果最后选择的链数 $x$ 大于 $k+1$，就增加 $m$ 的大小，反之则减少。
+
+:::success[Code]
+
+```
+#include <bits/stdc++.h>
+using namespace std;
+
+#define ll long long
+#define the_end return 0;
+
+const int N=3e5;
+const ll Min=-0x7f7f7f7f7f;
+const ll Max=0x3f3f3f3f;
+
+struct Node{
+	ll v,w;
+};
+
+struct Data{
+	ll x,tot;
+	friend bool operator <(Data x,Data y){
+		if(x.x!=y.x)return x.x<y.x;
+		return x.tot>y.tot;
+	};
+	friend Data operator +(Data x,Data y){
+		return Data{x.x+y.x,x.tot+y.tot};
+	}
+};
+
+ll n,m;
+vector<Node> G[N+10];	
+Data f[N+10][4];
+
+inline void dfs(const ll &K,int u=1,int fa=-1){
+
+	Data g[4];
+	for(auto X:G[u]){
+		ll v=X.v,w=X.w;
+		if(v==fa) continue;
+		dfs(K,v,u);
+
+		for(int i=0;i<=2;i++){
+			g[i]={Min,Max};
+		}
+
+		for(int i=0;i<=2;i++){
+			g[0]=max(g[0],f[u][0]+f[v][i]);
+			g[1]=max(g[1],f[u][1]+f[v][i]);
+			g[2]=max(g[2],f[u][2]+f[v][i]);
+		}
+
+		g[1]=max(g[1],f[u][0]+f[v][0]+Data{w-K,1});
+		g[1]=max(g[1],f[u][0]+f[v][1]+Data{w,0});
+
+		g[2]=max(g[2],f[u][1]+f[v][0]+Data{w,0});
+		g[2]=max(g[2],f[u][1]+f[v][1]+Data{w+K,-1});
+
+		for(int i=0;i<=2;i++){
+			f[u][i]=g[i];
+		}
+	}
+}
+
+inline void init(const ll &K){
+	for(int i=1;i<=n;i++){
+		f[i][0]={0,0};
+		f[i][1]={Min,Max};
+		f[i][2]={-K,1};	
+	}
+}
+
+int main(){
+
+    ios::sync_with_stdio(false);
+    cin.tie(0),cout.tie(0);
+
+	cin>>n>>m;
+	for(int i=1;i<n;i++){
+		int u,v,w;
+		cin>>u>>v>>w;
+		G[u].push_back({v,w});
+		G[v].push_back({u,w});
+	}
+
+	ll L=-1e12,R=1e12,ans=0;
+	while(L<=R){
+		ll Mid=(L+R)>>1;
+		init(Mid);
+		dfs(Mid);
+		Data res=max({f[1][0],f[1][1],f[1][2]});
+		if(res.tot<=m+1){
+			R=Mid-1;
+			ans=res.x+Mid*(m+1);
+		}
+		else {
+			L=Mid+1;
+		}
+	}
+
+	cout<<ans<<endl;
+	
+	the_end
+}
+```
+
+:::
+
