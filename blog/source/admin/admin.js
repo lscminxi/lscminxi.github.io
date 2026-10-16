@@ -1161,6 +1161,9 @@
     showEditor();
     try {
       const file = await getFile(path);
+      // 读取期间可能已经点了「← 返回列表」或换去编辑另一篇；这时不能再往回填，
+      // 否则会写进一个已经关掉的编辑器（editing 已为 null）。
+      if (!editing || editing.path !== path) return;
       editing.sha = file.sha;
       const { data, body } = parseFrontMatter(file.text);
       el.f.title.value = String(data.title || "");
@@ -1304,7 +1307,22 @@
 
   el.newPostButton.addEventListener("click", openNewPost);
   el.savePost.addEventListener("click", savePost);
-  el.cancelEdit.addEventListener("click", hideEditor);
+  /** 「← 返回列表」会把编辑器里的草稿丢掉，所以有改动时先问一句。
+     这是唯一「站内离开编辑器」的入口（删除文章那条路径自己也确认过）。 */
+  async function leaveEditor() {
+    if (editorDirty()) {
+      const title = el.f.title.value.trim();
+      const label = title ? `「${title}」` : editing?.isNew ? "这篇新建的文章" : "当前文章";
+      const ok = await confirmDialog(
+        "还有未保存的修改",
+        `${label}的改动还没提交，返回列表后会丢失。确定要放弃吗？`,
+        "放弃修改",
+      );
+      if (!ok) return; // 留在编辑器里，草稿还在
+    }
+    hideEditor();
+  }
+  el.cancelEdit.addEventListener("click", leaveEditor);
   el.f.date.addEventListener("input", updatePreview);
   el.f.title.addEventListener("input", () => {
     if (editing?.isNew && !el.f.slug.dataset.touched) {
@@ -1375,15 +1393,20 @@
 
   const aboutSnapshotValue = () => (el.aboutEditor ? el.aboutEditor.value : null);
 
+  /** 编辑器里的内容是否和「最后一次读取或保存成功时」不一样。 */
+  function editorDirty() {
+    return (
+      !el.viewEditor.hidden &&
+      !!editing &&
+      snapshots.editor !== null &&
+      editorSnapshotValue() !== snapshots.editor
+    );
+  }
+
   /** 有未保存内容时返回简短说明（例如「文章「二分查找笔记」」），没有则返回空数组。 */
   function unsavedWork() {
     const pending = [];
-    if (
-      !el.viewEditor.hidden &&
-      editing &&
-      snapshots.editor !== null &&
-      editorSnapshotValue() !== snapshots.editor
-    ) {
+    if (editorDirty()) {
       const name = el.f.title.value.trim() || fileName(editing.path || "");
       pending.push(editing.isNew ? `新建的文章${name ? `「${name}」` : ""}` : `文章「${name}」`);
     }
