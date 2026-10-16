@@ -34,7 +34,7 @@ const wait = async (predicate) => {
 };
 const decode = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 
-async function setup({ fileText = JSON.stringify(defaultData) } = {}) {
+async function setup({ fileText = JSON.stringify(defaultData), publicAppearance = defaultData, publicStatus = 200, login = true } = {}) {
   const dom = new JSDOM(html, { url: "https://preview.example/admin/", runScripts: "outside-only" });
   const w = dom.window;
   w.scrollTo = () => {};
@@ -63,7 +63,7 @@ async function setup({ fileText = JSON.stringify(defaultData) } = {}) {
     const uri = new URL(url);
     const suffix = decodeURIComponent(uri.pathname.replace("/repos/lscminxi/lscminxi.github.io", ""));
     state.requests.push({ suffix, method: opts.method });
-    if (suffix === "/appearance.json") return reply(200, { favicon: "https://cdn.example.com/icon.png" });
+    if (suffix === "/appearance.json") return reply(publicStatus, publicAppearance);
     if (suffix === "/user") return reply(200, { login: "lscminxi" });
     if (!suffix) return reply(200, { permissions: { push: true }, owner: { login: "lscminxi" } });
     if (suffix.startsWith("/actions/runs")) return reply(200, { workflow_runs: [] });
@@ -88,6 +88,7 @@ async function setup({ fileText = JSON.stringify(defaultData) } = {}) {
   w.eval(appearanceJs);
   w.eval(adminJs);
   const $ = (selector) => w.document.querySelector(selector);
+  if (!login) return { dom, w, $, files, state };
   $("#token-input").value = "test-token-not-real";
   $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await wait(() => $("#post-list .row"));
@@ -159,6 +160,61 @@ test("favicon type is derived from the file extension and omitted when unknown",
 });
 
 /* ---------------- 后台「外观」面板 ---------------- */
+
+test("admin uses the published wallpaper on the login page and after login", async () => {
+  const draft = { ...defaultData, wallpaper: "https://cdn.example.com/unpublished.webp" };
+  const { dom, w, $, state } = await setup({ fileText: JSON.stringify(draft), login: false });
+  try {
+    const root = w.document.documentElement;
+    await wait(() => root.dataset.wallpaper === "on");
+    assert.equal($("#view-login").hidden, false, "Wallpaper is loaded before authentication");
+    assert.equal($("#view-app").hidden, true);
+    assert.equal(root.style.getPropertyValue("--wallpaper-image"), appearance.cssImage(defaultData.wallpaper));
+    assert.equal(root.style.getPropertyValue("--wallpaper-veil"), "0.40");
+    assert.equal(root.style.getPropertyValue("--wallpaper-blur"), "6px");
+    assert.equal(root.dataset.wallpaperBlur, "on");
+    assert.equal($("#admin-favicon").getAttribute("href"), defaultData.favicon);
+    assert.equal(state.requests[0].suffix, "/appearance.json", "Public appearance is fetched without a GitHub token");
+
+    $("#token-input").value = "test-token-not-real";
+    $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+    await wait(() => !$("#view-app").hidden);
+    await openAppearanceTab($);
+    assert.equal($("#a-wallpaper").value, draft.wallpaper);
+    assert.equal(root.dataset.wallpaper, "on", "Switching admin views preserves the background");
+    assert.equal(root.style.getPropertyValue("--wallpaper-image"), appearance.cssImage(defaultData.wallpaper), "The background uses the published value, not an unsaved draft");
+  } finally {
+    await teardown(dom);
+  }
+});
+
+test("admin keeps a solid background when the published wallpaper is empty, unsafe or unavailable", async () => {
+  for (const wallpaper of ["", "javascript:alert(1)"]) {
+    const { dom, w, $ } = await setup({ publicAppearance: { ...defaultData, wallpaper }, login: false });
+    try {
+      await wait(() => $("#admin-favicon").getAttribute("href") === defaultData.favicon);
+      assert.equal(w.document.documentElement.hasAttribute("data-wallpaper"), false);
+      assert.equal(w.document.documentElement.style.getPropertyValue("--wallpaper-image"), "");
+    } finally {
+      await teardown(dom);
+    }
+  }
+  const { dom, w, state } = await setup({ publicStatus: 503, login: false });
+  try {
+    await wait(() => state.requests.length > 0);
+    assert.equal(w.document.documentElement.hasAttribute("data-wallpaper"), false);
+  } finally {
+    await teardown(dom);
+  }
+});
+
+test("article table of contents text is white except for the active/hover accent", async () => {
+  const css = await readFile("themes/minxi/source/css/main.css", "utf8");
+  for (const selector of [".toc-sidebar h2", ".toc a", ".toc-back"]) {
+    assert.match(css, new RegExp(`${selector.replaceAll(".", "\\.")}\\s*\\{[^}]*color:\\s*#fff;`));
+  }
+  assert.match(css, /\.toc a:hover,\s*\.toc a.active\s*\{[^}]*color:\s*var\(--accent\);/);
+});
 
 test("admin sees the current avatar/wallpaper/icon and its live preview", async () => {
   const { dom, $, w } = await setup();

@@ -1685,23 +1685,33 @@
 
   /* ---------------- 启动 ---------------- */
 
-  // 后台页面顶部的图标跟随「外观」设置（读取公开的 /appearance.json，纯装饰，失败就保留默认图标）。
-  async function refreshAdminFavicon() {
-    const link = document.getElementById("admin-favicon");
-    if (!link) return;
+  // 登录页与后台各标签页共用前台已发布的壁纸；只读取公开的配置，不使用 GitHub 令牌。
+  // main.css 的壁纸层由 html[data-wallpaper="on"] 和这三个 CSS 变量控制。
+  async function refreshAdminAppearance() {
     try {
       const response = await fetch(`${location.origin}/appearance.json`, { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
-      if (appearanceApi().isSafeImageUrl(data?.favicon)) link.href = data.favicon;
+      const api = appearanceApi();
+      const look = api.resolveAppearance(data);
+      const link = document.getElementById("admin-favicon");
+      if (link && api.isSafeImageUrl(data?.favicon)) link.href = look.favicon;
+      if (!look.wallpaper) return; // 没有壁纸或地址不安全时保持纯色背景。
+
+      const root = document.documentElement;
+      root.style.setProperty("--wallpaper-image", api.cssImage(look.wallpaper));
+      root.style.setProperty("--wallpaper-veil", api.veilAlpha(look.wallpaperDim));
+      root.style.setProperty("--wallpaper-blur", `${look.wallpaperBlur}px`);
+      root.dataset.wallpaper = "on";
+      if (look.wallpaperBlur > 0) root.dataset.wallpaperBlur = "on";
     } catch {
-      // 忽略：图标只是装饰，读取失败不影响后台功能。
+      // 公开配置不可用时保留默认图标与纯色背景，不影响登录/编辑。
     }
   }
 
   (async function init() {
     log("后台已就绪。请输入 GitHub 令牌登录。");
-    refreshAdminFavicon();
+    refreshAdminAppearance();
     const stored = readStoredToken();
     el.rememberInput.checked = Boolean(localStorage.getItem(REMEMBER_KEY));
     if (!stored) return;
