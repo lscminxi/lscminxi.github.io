@@ -2835,12 +2835,14 @@ html[data-theme="light"] .theme-toggle:hover {
 html[data-theme="light"] .theme-options [data-theme-option] {
   background: #f4f7fb;
 }
-@media (max-width: 900px) {
+/* 和其它顶栏按钮一样：小屏去掉边框与底色，只留图标 */
+@media (max-width: 760px) {
   .theme-toggle {
     border: 0;
     background: none;
-    width: 33px;
-    height: 33px;
+    padding: 8px;
+    width: auto;
+    height: auto;
   }
   html[data-theme="light"] .theme-toggle {
     background: none;
