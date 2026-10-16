@@ -651,3 +651,231 @@ code {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ------------------------------------------------------------------
+   「外观」选项卡里的可选背景列表（壁纸库）
+   访客端可以在站点右上角自由选择；这里只有 admin 能增删。
+   ------------------------------------------------------------------ */
+.wallpaper-library {
+  margin: 22px 0 6px;
+  padding: 16px 16px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0e131b;
+}
+.library-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.library-head h3 {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text);
+}
+.wallpaper-library .list {
+  border-top: 0;
+  margin-top: 6px;
+}
+.wallpaper-library .row:last-child {
+  border-bottom: 0;
+}
+.wallpaper-add {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.wallpaper-add-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wallpaper-add-actions .muted {
+  flex: 1;
+  min-width: 180px;
+}
+.thumb-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 9px var(--mono);
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------
+   「外观」右侧预览：标出正在预览哪一张可选背景（点列表里的缩略图或「预览」），
+   以及缩略图本身的按钮样式。颜色都用主题变量，深浅两套自动跟随。
+   ------------------------------------------------------------------ */
+.preview-tagline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.preview-tagline[hidden] {
+  display: none;
+}
+.thumb-button {
+  padding: 0;
+  cursor: pointer;
+}
+.thumb-button:hover {
+  border-color: var(--accent);
+}
+.row-previewing {
+  border-bottom-color: var(--accent);
+}
+.row-previewing .row-title {
+  color: var(--accent);
+}
+
+/* 顶栏的主题三选一（样式主体在 main.css 的浅色模式小节里） */
+.theme-options {
+  margin: 0 4px;
+}
+.theme-options .muted {
+  margin-right: 2px;
+}
+@media (max-width: 720px) {
+  .theme-options .muted {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+   浅色模式（后台）
+   和前台同一个机制：访客（这里就是站长自己）在顶栏选「浅色」时，
+   <html> 上会出现 data-theme="light"（见 client/theme.js）。
+   深色仍然是默认值，上面的规则一行没改。
+   ------------------------------------------------------------------ */
+html[data-theme="light"] .admin-topbar {
+  background: #f7f9fcf0;
+}
+html[data-theme="light"] .admin-user,
+html[data-theme="light"] .count {
+  border-color: #a9cfc2;
+}
+html[data-theme="light"] .lead {
+  color: #4c5966;
+}
+html[data-theme="light"] .field input,
+html[data-theme="light"] .field select,
+html[data-theme="light"] .code-area,
+html[data-theme="light"] .small-select,
+html[data-theme="light"] .log,
+html[data-theme="light"] code {
+  border-color: #d5dee9;
+  background: #ffffff;
+}
+html[data-theme="light"] code {
+  color: #2c3746;
+}
+html[data-theme="light"] .field input:focus,
+html[data-theme="light"] .field select:focus,
+html[data-theme="light"] .code-area:focus {
+  border-color: #4a9c88;
+}
+html[data-theme="light"] .btn {
+  border-color: #d5dee9;
+  background: #f2f6fa;
+}
+html[data-theme="light"] .btn:hover {
+  border-color: #4a9c88;
+}
+html[data-theme="light"] .btn.primary {
+  border-color: #9ec9bc;
+  background: #e7f5f1;
+}
+html[data-theme="light"] .btn.primary:hover {
+  background: #d8efe9;
+}
+html[data-theme="light"] .btn.danger {
+  border-color: #e5b6b9;
+  background: #fdeff0;
+  color: #a8332f;
+}
+html[data-theme="light"] .btn.danger:hover {
+  border-color: #cf8b8f;
+  color: #8c211e;
+}
+html[data-theme="light"] .error {
+  border: 0;
+  border-left: 2px solid #cf8b8f;
+  background: #fdeff0;
+  color: #a8332f;
+}
+html[data-theme="light"] .warn {
+  color: #8a6414;
+}
+html[data-theme="light"] .chip.ok {
+  border-color: #9ec9bc;
+}
+html[data-theme="light"] .chip.run {
+  border-color: #ddc48a;
+  color: #8a6414;
+}
+html[data-theme="light"] .chip.err {
+  border-color: #e5b6b9;
+  color: #a8332f;
+}
+html[data-theme="light"] .thumb {
+  background-color: #f2f6fa;
+}
+html[data-theme="light"] .log .t {
+  color: #6b7787;
+}
+html[data-theme="light"] .log .err {
+  color: #a8332f;
+}
+html[data-theme="light"] .toast {
+  border-color: #9ec9bc;
+  background: #e7f5f1;
+}
+html[data-theme="light"] .toast.err {
+  border-color: #e5b6b9;
+  background: #fdeff0;
+  color: #a8332f;
+}
+html[data-theme="light"] .modal {
+  background: #dfe6f0cc;
+}
+html[data-theme="light"] .modal-card p {
+  color: #4c5966;
+}
+html[data-theme="light"] .preview-card {
+  border-color: #d7dfe9;
+  background: #fffffff2;
+  box-shadow: 0 10px 30px rgba(23, 40, 66, 0.14);
+}
+html[data-theme="light"] .preview-avatar {
+  border-color: #b6d8ce;
+  background: #e9f6f2;
+}
+html[data-theme="light"] .preview-favicon {
+  border-color: #d5dee9;
+}
+html[data-theme="light"] .preview-favicon img {
+  background: #f2f6fa;
+}
+html[data-theme="light"] .wallpaper-library {
+  border-color: #d5dee9;
+  background: #ffffff;
+}
+html[data-theme="light"] #appearance-preview-note.err {
+  color: #a8332f;
+}
+/* 有壁纸时后台面板的半透明底色：深色压暗，浅色提亮 */
+html[data-theme="light"][data-wallpaper="on"] .admin-topbar {
+  background: rgba(247, 249, 252, 0.8);
+}
+html[data-theme="light"][data-wallpaper="on"] .admin-body .panel {
+  background: rgba(255, 255, 255, 0.9);
+}
+html[data-theme="light"][data-wallpaper="on"] .admin-body .statusbar,
+html[data-theme="light"][data-wallpaper="on"] .admin-body .tab.active {
+  background: rgba(244, 248, 252, 0.9);
+}

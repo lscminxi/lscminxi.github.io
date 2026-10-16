@@ -1,4 +1,10 @@
 <div class="header-hover-zone" aria-hidden="true"></div>
+<%# 页面最上方的半透明小箭头：提示「上面还有导航栏」。鼠标悬停或点击（触摸屏）都会拉出顶栏；
+    它是纯装饰 + 指针辅助，键盘用户直接 Tab 到导航链接即可（顶栏会随焦点滑出），
+    所以这里不放进 Tab 顺序，也不需要读屏朗读。 -%>
+<button class="header-hint" type="button" data-open-header tabindex="-1" aria-hidden="true">
+  <svg class="header-hint-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9.8 6 5.6 6-5.6"/></svg>
+</button>
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="<%- url_for('/') %>" aria-label="Minxi 的 blog 首页"><span class="brand-mark"><img class="brand-mark-image" src="https://cdn.luogu.com.cn/upload/usericon/1549479.png" alt="" width="39" height="39" decoding="async" referrerpolicy="no-referrer"></span><span>Minxi<span class="brand-suffix"> 的 blog</span></span></a>
@@ -8,6 +14,9 @@
       <a class="<%= is_tag() || is_category() || page.path === 'tags/index.html' ? 'active' : '' %>" href="<%- url_for('/tags/') %>">标签</a>
       <a class="<%= page.path === 'about/index.html' ? 'active' : '' %>" href="<%- url_for('/about/') %>">关于</a>
     </nav>
-    <div class="header-actions"><button class="search-trigger" aria-label="搜索文章"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><span>搜索</span><kbd>/</kbd></button></div>
+    <div class="header-actions"><button class="search-trigger" aria-label="搜索文章"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><span>搜索</span><kbd>/</kbd></button><button class="wallpaper-trigger" type="button" data-open-wallpaper aria-label="更换页面背景" hidden><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="9.8" r="1.6"/><path d="m4.8 17.2 4.5-4.2 3.5 3.1 2.5-2.1 4 4"/></svg><span>背景</span><kbd>B</kbd></button><button class="theme-toggle" type="button" data-theme-toggle hidden aria-label="切换主题">
+      <svg data-theme-icon="dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 13.6A8.2 8.2 0 1 1 10.4 4a6.6 6.6 0 0 0 9.6 9.6Z"/></svg>
+      <svg data-theme-icon="light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" hidden><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/></svg>
+    </button></div>
   </div>
 </header>

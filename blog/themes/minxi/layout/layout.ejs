@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <% const appearance = site_appearance(); -%>
-<html lang="zh-CN"<% if (appearance.hasWallpaper) { %> data-wallpaper="on"<% if (appearance.hasWallpaperBlur) { %> data-wallpaper-blur="on"<% } %><% } %>>
+<html lang="zh-CN" data-theme-default="<%= appearance.theme %>"<% if (appearance.hasWallpaper) { %> data-wallpaper="on" data-wallpaper-src="<%= appearance.wallpaper %>" data-wallpaper-dim="<%= appearance.wallpaperDim %>" data-wallpaper-blurpx="<%= appearance.wallpaperBlur %>"<% if (appearance.hasWallpaperBlur) { %> data-wallpaper-blur="on"<% } %><% } %>>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,15 +8,19 @@
   <% const pageTitle = is_home() ? config.title : (page.title || (is_archive() ? '文章归档' : (page.tag || page.category || '文章'))) + ' · ' + config.title; -%>
   <title><%= pageTitle %></title>
   <meta name="description" content="<%= page.description || config.description %>">
-  <meta name="theme-color" content="#0b0e14">
+  <meta name="theme-color" content="#0b0e14"><!-- 主题脚本会按当前主题更新它 -->
   <meta property="og:title" content="<%= pageTitle %>">
   <meta property="og:description" content="<%= page.description || config.description %>">
   <meta property="og:type" content="<%= is_post() ? 'article' : 'website' %>">
   <meta property="og:url" content="<%= config.url.replace(/\/$/, '') + url_for(page.path || '') %>">
   <link rel="canonical" href="<%= config.url.replace(/\/$/, '') + url_for(page.path || '') %>">
+  <%# 访客端主题与背景选择：两个同步脚本，在样式表之前先定下 data-theme / 上次选的背景，
+      因此不会先闪一下深色或默认壁纸（见 client/theme.js、client/wallpaper.js）。 -%>
+  <script src="<%- url_for('/js/theme.js') %>?v=theme-1"></script>
+  <script src="<%- url_for('/js/wallpaper.js') %>?v=wallpaper-1"></script>
   <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>">
   <% if (appearance.faviconType === 'image/png') { %><link rel="apple-touch-icon" href="<%= url_for(appearance.favicon) %>">
-  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=header-hover-1">
+  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=nav-2">
   <link rel="stylesheet" href="<%- url_for('/vendor/katex/katex.min.css') %>">
   <% if (appearance.hasWallpaper) { %><style>
     :root {
@@ -25,7 +29,7 @@
       --wallpaper-blur: <%= appearance.wallpaperBlur %>px;
     }
   </style>
-  <% } %><script src="<%- url_for('/js/main.js') %>" defer></script>
+  <% } %><script src="<%- url_for('/js/main.js') %>?v=nav-2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>
@@ -39,5 +43,28 @@
     <div class="search-footer"><span>本地全文搜索 · 不追踪，不上传</span><kbd>ESC 关闭</kbd></div>
   </dialog>
   <button id="back-top" class="back-top" aria-label="返回顶部" hidden>↑</button>
+  <%# 背景选择：所有人都能换，但只改自己浏览器里的记录，不改站点文件（wallpapers 由 admin 维护）。 -%>
+  <dialog id="wallpaper-dialog" class="wallpaper-dialog" aria-labelledby="wallpaper-title" data-appearance="<%- url_for('/appearance.json') %>">
+    <div class="wallpaper-heading"><h2 id="wallpaper-title">选择背景</h2><button class="icon-button" id="close-wallpaper" type="button" aria-label="关闭背景选择">×</button></div>
+    <p class="wallpaper-lead">下面这些图片由站长管理。你的选择只保存在自己的浏览器里（localStorage），不会影响其他访客，也不会改动站点文件。</p>
+    <p class="wallpaper-current" id="wallpaper-current"></p>
+    <div class="wallpaper-grid" id="wallpaper-grid" role="group" aria-label="可选背景"></div>
+    <p class="wallpaper-status" id="wallpaper-status" role="status" hidden></p>
+    <form class="wallpaper-custom" id="wallpaper-url-form">
+      <label for="wallpaper-url">也可以填自己的图片外链</label>
+      <div class="wallpaper-custom-row">
+        <input id="wallpaper-url" type="text" spellcheck="false" autocomplete="off" placeholder="https://… 或 /images/壁纸.png" aria-label="自定义背景图片地址">
+        <button type="submit">使用此链接</button>
+      </div>
+    </form>
+    <div class="wallpaper-tune">
+      <label for="wallpaper-dim"><span>压暗</span><input id="wallpaper-dim" type="range" min="0" max="95" step="1"><output id="wallpaper-dim-value" for="wallpaper-dim"></output></label>
+      <label for="wallpaper-blur"><span>模糊</span><input id="wallpaper-blur" type="range" min="0" max="20" step="1"><output id="wallpaper-blur-value" for="wallpaper-blur"></output></label>
+    </div>
+    <div class="wallpaper-actions">
+      <button class="wallpaper-plain" id="wallpaper-reset" type="button">恢复站点默认</button>
+      <button class="wallpaper-primary" id="wallpaper-done" type="button">完成</button>
+    </div>
+  </dialog>
 </body>
 </html>

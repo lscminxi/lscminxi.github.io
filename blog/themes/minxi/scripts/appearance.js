@@ -32,6 +32,7 @@ hexo.extend.helper.register("appearance_default_favicon", () => DEFAULTS.favicon
 
 // 公开的只读副本：/appearance.json
 // 不包含时间戳，避免每次构建产生无意义的提交差异。
+// 访客端背景选择器读的也是这个文件：wallpapers 是 admin 维护的可选背景列表。
 hexo.extend.generator.register("appearance-data", function (locals) {
   const value = resolveAppearance(rawAppearance(hexo, locals));
   return {
@@ -43,6 +44,8 @@ hexo.extend.generator.register("appearance-data", function (locals) {
         favicon: value.favicon,
         wallpaperDim: value.wallpaperDim,
         wallpaperBlur: value.wallpaperBlur,
+        wallpapers: value.wallpapers,
+        theme: value.theme,
       },
       null,
       2,

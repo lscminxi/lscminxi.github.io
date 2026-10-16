@@ -17,6 +17,7 @@ const appearanceJs = await readFile("source/admin/appearance.js", "utf8");
 const appearancePath = "blog/source/_data/appearance.json";
 const imagePath = "blog/source/images/avatar.png";
 const postPath = "blog/source/_posts/test.md";
+const aboutPath = "blog/source/about/index.md";
 const defaultData = {
   avatar: "https://cdn.example.com/avatar.png",
   wallpaper: "/images/avatar.png",
@@ -51,6 +52,7 @@ async function setup({ fileText = JSON.stringify(defaultData), publicAppearance 
     [appearancePath, { sha: "appearance-sha", text: fileText }],
     [imagePath, { sha: "image-sha", text: "binary" }],
     [postPath, { sha: "post-sha", text: "---\ntitle: 测试文章\ndate: 2026-01-01 10:00:00\n---\n正文" }],
+    [aboutPath, { sha: "about-sha", text: "---\ntitle: 关于我\nlayout: page\n---\n你好" }],
   ]);
   const state = { writes: [], requests: [] };
   const reply = (status, data) => ({
@@ -116,7 +118,7 @@ const teardown = async (dom) => {
 /* ---------------- 共享规则（前后台一致） ---------------- */
 
 test("missing, malformed or hostile appearance data always falls back to safe defaults", () => {
-  const fallback = { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0 };
+  const fallback = { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0, wallpapers: [], theme: "auto" };
   for (const input of [null, undefined, 0, "", "nope", [], true]) {
     assert.deepEqual(appearance.resolveAppearance(input), fallback);
   }
@@ -126,8 +128,12 @@ test("missing, malformed or hostile appearance data always falls back to safe de
     favicon: '"/><script>alert(1)</script>',
     wallpaperDim: "999",
     wallpaperBlur: -4,
+    wallpapers: [{ url: "javascript:alert(2)" }, { url: "https://ok/x.png", id: "ok" }],
   });
-  assert.deepEqual(hostile, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0 });
+  assert.deepEqual(hostile, {
+    avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0,
+    wallpapers: [{ id: "ok", url: "https://ok/x.png", label: "" }], theme: "auto",
+  });
 });
 
 test("only http(s) links and root-relative site paths are accepted", () => {
@@ -260,13 +266,15 @@ test("saving commits sanitized JSON to source/_data/appearance.json with the fil
     assert.equal(write.path, appearancePath);
     assert.equal(write.branch, "main");
     assert.equal(write.sha, "appearance-sha");
-    assert.equal(write.message, "feat(blog): update avatar and wallpaper");
+    assert.equal(write.message, "feat(blog): update appearance (avatar / wallpaper / wallpapers)");
     assert.deepEqual(JSON.parse(write.decoded), {
       avatar: "https://cdn.example.com/new-avatar.png",
       wallpaper: "",
       favicon: "/images/avatar.png",
       wallpaperDim: 88,
       wallpaperBlur: 14,
+      wallpapers: [],
+      theme: "auto",
     });
     await wait(() => files.get(appearancePath).text === write.decoded);
     await wait(() => $("#appearance-status").textContent.includes("已提交"));
@@ -357,7 +365,7 @@ test("a missing or malformed config file still lets the admin create it", async 
     $("#appearance-save").click();
     await wait(() => state.writes.length === 1);
     assert.equal(state.writes[0].sha, "appearance-sha", "Repairs the existing file instead of creating a new one");
-    assert.deepEqual(JSON.parse(state.writes[0].decoded), { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0 });
+    assert.deepEqual(JSON.parse(state.writes[0].decoded), { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0, wallpapers: [], theme: "auto" });
     await settleBuild($);
   } finally {
     await teardown(dom);
@@ -461,9 +469,238 @@ test("a hostile appearance.json cannot inject markup or CSS into the built site"
     assert(built.includes('<span class="avatar-mark">m<span>_</span></span>'), "Falls back to the letter avatar");
     assert(!built.includes("avatar-image"));
     const published = JSON.parse(await readFile(join(temp, "blog/public/appearance.json"), "utf8"));
-    assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0 });
+    assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0, wallpapers: [], theme: "auto" });
   } finally {
     await rm(temp, { recursive: true, force: true });
+  }
+});
+
+/* ---------------- 未保存的修改（防误触） ----------------
+   后台在「编辑好但没保存」时关闭标签页 / 刷新，浏览器要能弹出确认框。
+   这里用 beforeunload 事件 + window.MinxiAdmin.unsavedWork() 来验证行为与文案。 */
+
+const unloadProbe = (w) => {
+  const event = new w.Event("beforeunload", { cancelable: true });
+  w.dispatchEvent(event);
+  return { blocked: event.defaultPrevented, pending: [...w.MinxiAdmin.unsavedWork()] };
+};
+
+test("unsaved appearance edits block the page from closing silently", async () => {
+  const { dom, $, w, state } = await setup();
+  try {
+    [...$("#tabs").querySelectorAll(".tab")].find((tab) => tab.dataset.tab === "appearance").click();
+    await wait(() => $("#appearance-status").textContent.includes("已加载"));
+
+    // 刚加载完：干净，不该拦
+    assert.deepEqual(unloadProbe(w).pending, [], "刚加载完不应算未保存");
+    assert.equal(unloadProbe(w).blocked, false, "干净时不能弹提示");
+
+    // 改个地址 → 拦
+    $("#a-avatar").value = "https://cdn.example.com/new.png";
+    $("#a-avatar").dispatchEvent(new w.Event("input"));
+    const edited = unloadProbe(w);
+    assert.equal(edited.blocked, true, "有未保存修改时必须拦下关闭");
+    assert.deepEqual(edited.pending, ["「外观」里的设置"]);
+
+    // 改回去 → 又变干净（快照比对的是内容，不是「有没有点过」）
+    $("#a-avatar").value = defaultData.avatar;
+    $("#a-avatar").dispatchEvent(new w.Event("input"));
+    assert.equal(unloadProbe(w).blocked, false, "改回原样后不再提示");
+
+    // 调整壁纸库顺序同样算未保存
+    $("#a-wallpaper").value = "https://cdn.example.com/other.png";
+    $("#a-wallpaper").dispatchEvent(new w.Event("input"));
+    assert.equal(unloadProbe(w).blocked, true);
+
+    // 保存成功后解除提醒
+    $("#appearance-save").click();
+    await wait(() => state.writes.length === 1);
+    await wait(() => unloadProbe(w).blocked === false, "保存成功后必须解除提醒");
+    assert.equal(unloadProbe(w).blocked, false, "保存成功后必须解除提醒");
+    assert.deepEqual(unloadProbe(w).pending, []);
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
+  }
+});
+
+test("unsaved article edits block the page from closing until they are saved", async () => {
+  const { dom, $, w, state } = await setup();
+  try {
+    // 打开一篇文章：刚加载算干净
+    const row = [...$("#post-list").querySelectorAll(".row")].find((item) => item.textContent.includes("test"));
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => !$("#view-editor").hidden && $("#f-body").value.includes("正文"));
+    assert.equal(unloadProbe(w).blocked, false, "刚打开的文章不该算未保存");
+
+    // 改正文 → 拦，并说明是哪一篇
+    $("#f-body").value += "\n新写的一段";
+    $("#f-body").dispatchEvent(new w.Event("input"));
+    const edited = unloadProbe(w);
+    assert.equal(edited.blocked, true, "有未保存的文章修改时必须拦下关闭");
+    assert.deepEqual(edited.pending, ["文章「测试文章」"]);
+
+    // 标题也会跟着变（提示里用最新的标题）
+    $("#f-title").value = "改过的标题";
+    $("#f-title").dispatchEvent(new w.Event("input"));
+    assert.deepEqual(unloadProbe(w).pending, ["文章「改过的标题」"]);
+
+    // 保存成功后解除提醒
+    $("#save-post").click();
+    await wait(() => state.writes.some((write) => write.path.endsWith(".md")));
+    await wait(() => unloadProbe(w).blocked === false);
+    assert.deepEqual(unloadProbe(w).pending, []);
+
+    // 「← 返回列表」关掉编辑器后也不再提醒（有改动时先确认，见下一个用例）
+    $("#f-body").value += "\n又改了一下";
+    $("#f-body").dispatchEvent(new w.Event("input"));
+    assert.equal(unloadProbe(w).blocked, true);
+    $("#cancel-edit").click();
+    await wait(() => !$("#modal").hidden);
+    assert.equal(unloadProbe(w).blocked, true, "确认框还开着时草稿仍在，仍要拦关闭");
+    $("#modal-ok").click();
+    await wait(() => unloadProbe(w).blocked === false, "确认放弃后应真的离开编辑器");
+    assert.equal(unloadProbe(w).blocked, false, "离开编辑器后不该再拦");
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
+  }
+});
+
+test("leaving the editor with unsaved changes asks before throwing the draft away", async () => {
+  const { dom, $, w } = await setup();
+  const body = () => $("#f-body");
+  try {
+    // 干净的文章：点「← 返回列表」直接走，不打扰
+    const row = [...$("#post-list").querySelectorAll(".row")].find((item) => item.textContent.includes("test"));
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => !$("#view-editor").hidden && body().value.includes("正文"));
+    $("#cancel-edit").click();
+    await wait(() => $("#view-editor").hidden);
+    assert.equal($("#modal").hidden, true, "没有改动时不该弹确认框");
+
+    // 改一下正文再返回：先弹确认（要等「已加载」，否则编辑的是上一篇留下的旧文本）
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => $("#editor-status").textContent.includes("已加载"));
+    body().value += "\n还没保存的一段";
+    body().dispatchEvent(new w.Event("input"));
+    $("#cancel-edit").click();
+    await wait(() => !$("#modal").hidden, "有未保存改动时返回列表必须先确认");
+    assert.equal($("#modal-title").textContent, "还有未保存的修改");
+    assert($("#modal-text").textContent.includes("测试文章"), `确认框应点名是哪一篇：${$("#modal-text").textContent}`);
+    assert($("#modal-text").textContent.includes("返回列表后会丢失"));
+    assert.equal($("#modal-ok").textContent, "放弃修改");
+
+    // 点「取消」→ 留在编辑器，草稿一个字都不能少
+    $("#modal-cancel").click();
+    await wait(() => $("#modal").hidden);
+    assert.equal($("#view-editor").hidden, false, "取消后必须留在编辑器里");
+    assert(body().value.includes("还没保存的一段"), "取消后草稿必须还在");
+
+    // 再点返回 →「放弃修改」→ 回列表
+    $("#cancel-edit").click();
+    await wait(() => !$("#modal").hidden);
+    $("#modal-ok").click();
+    await wait(() => $("#view-editor").hidden, "确认放弃后应回到列表");
+    assert.equal($("#view-editor").hidden, true);
+
+    // 新建文章（还没填标题）也一样，文案改用「这篇新建的文章」
+    $("#new-post-button").click();
+    await wait(() => !$("#view-editor").hidden && $("#editor-title").textContent === "新建文章");
+    $("#f-title").value = "";
+    body().value = "刚起的草稿";
+    body().dispatchEvent(new w.Event("input"));
+    $("#cancel-edit").click();
+    await wait(() => !$("#modal").hidden);
+    assert(
+      $("#modal-text").textContent.includes("新建的文章"),
+      `新建文章未填标题时文案要说得通：${$("#modal-text").textContent}`,
+    );
+    $("#modal-cancel").click();
+    await wait(() => $("#modal").hidden);
+    assert.equal($("#view-editor").hidden, false);
+
+    // 填上标题：确认框里带上标题
+    $("#f-title").value = "半截稿子";
+    $("#f-title").dispatchEvent(new w.Event("input"));
+    $("#cancel-edit").click();
+    await wait(() => !$("#modal").hidden);
+    assert($("#modal-text").textContent.includes("「半截稿子」"), $("#modal-text").textContent);
+    $("#modal-ok").click();
+    await wait(() => $("#view-editor").hidden);
+
+    // 保存成功后返回不弹框（快照已经刷新）
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => $("#editor-status").textContent.includes("已加载"));
+    $("#save-post").click();
+    await wait(() => $("#editor-status").textContent.includes("已提交"));
+    $("#cancel-edit").click();
+    await wait(() => $("#view-editor").hidden);
+    assert.equal($("#modal").hidden, true, "保存后再返回不该再问");
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
+  }
+});
+
+test("leaving the editor while the post is still loading is quiet and safe", async () => {
+  const { dom, $, w } = await setup();
+  try {
+    // 卡住读文件的那次请求，模拟慢网络
+    let release = () => {};
+    const gate = new Promise((resolve) => (release = resolve));
+    const realFetch = w.fetch;
+    w.fetch = async (...args) => {
+      const isRead = (args[1]?.method || "GET") === "GET" && String(args[0]).includes("/contents/");
+      if (isRead) await gate;
+      return realFetch(...args);
+    };
+
+    const row = [...$("#post-list").querySelectorAll(".row")].find((item) => item.textContent.includes("test"));
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => $("#editor-status").textContent.includes("正在读取"));
+
+    // 还没读完就返回：没有内容可丢，所以不该弹确认框，也不该报错
+    $("#cancel-edit").click();
+    await wait(() => $("#view-editor").hidden);
+    assert.equal($("#modal").hidden, true, "还没读出来时返回不该弹确认框");
+
+    // 迟到的响应落回来时，不能写进已经关掉的编辑器
+    release();
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal($("#view-editor").hidden, true, "迟到的响应不该把编辑器又打开");
+    assert.equal($("#editor-status").textContent, "", "迟到响应后状态栏不该被写脏");
+    assert.equal(unloadProbe(w).blocked, false, "此时不该拦关闭页面");
+    assert.deepEqual(unloadProbe(w).pending, []);
+
+    // 之后再打开同一篇仍然正常
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => $("#editor-status").textContent.includes("已加载"));
+    assert($("#f-body").value.includes("正文"), "重新打开必须能正常读到内容");
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
+  }
+});
+
+test("unsaved about-page edits and clean sessions behave the same way", async () => {
+  const { dom, $, w } = await setup();
+  try {
+    // 没打开过任何面板 → 干净
+    assert.equal(unloadProbe(w).blocked, false);
+
+    [...$("#tabs").querySelectorAll(".tab")].find((tab) => tab.dataset.tab === "about").click();
+    await wait(() => $("#about-status").textContent.includes("已加载"));
+    assert.equal(unloadProbe(w).blocked, false, "刚加载完的简介不算未保存");
+
+    $("#about-editor").value += "\n再写一句";
+    $("#about-editor").dispatchEvent(new w.Event("input"));
+    const edited = unloadProbe(w);
+    assert.equal(edited.blocked, true);
+    assert.deepEqual(edited.pending, ["「个人简介」"]);
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
   }
 });
 

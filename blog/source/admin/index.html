@@ -8,11 +8,15 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css">
-  <link rel="stylesheet" href="./admin.css">
+  <link rel="stylesheet" href="/css/main.css?v=nav-2">
+  <link rel="stylesheet" href="./admin.css?v=theme-2">
+  <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
+       注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
+       不要写 EJS 标签，否则会直接漏到页面源码里。 -->
+  <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=fold-preview-2" defer></script>
-  <script src="./appearance.js?v=appearance-1" defer></script>
-  <script src="./admin.js?v=pin-3" defer></script>
+  <script src="./appearance.js?v=theme-1" defer></script>
+  <script src="./admin.js?v=theme-3" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -21,6 +25,12 @@
       <span class="admin-repo" id="repo-chip">lscminxi/lscminxi.github.io · main</span>
       <span class="admin-spacer"></span>
       <span class="admin-user" id="user-chip" hidden></span>
+      <div class="theme-options" role="group" aria-label="界面主题">
+        <span class="muted small">主题</span>
+        <button type="button" data-theme-option="auto" aria-pressed="true">跟随系统</button>
+        <button type="button" data-theme-option="light" aria-pressed="false">浅色</button>
+        <button type="button" data-theme-option="dark" aria-pressed="false">深色</button>
+      </div>
       <a class="btn ghost small" href="/">返回站点</a>
       <button class="btn ghost small" id="logout-button" type="button" hidden>退出登录</button>
     </div>
@@ -131,6 +141,13 @@
           <label class="field wide"><span>网页图标地址（浏览器标签页）</span>
             <input id="a-favicon" type="text" spellcheck="false" placeholder="/images/favicon.svg">
           </label>
+          <label class="field wide"><span>站点默认主题（访客随时能自己切换）</span>
+            <select id="a-theme">
+              <option value="auto">跟随系统偏好（auto）</option>
+              <option value="light">浅色（light）</option>
+              <option value="dark">深色（dark）</option>
+            </select>
+          </label>
           <label class="field"><span>壁纸压暗程度</span>
             <div class="range-row"><input id="a-dim" type="range" min="0" max="95" step="1"><output id="a-dim-value" for="a-dim">62%</output></div>
           </label>
@@ -147,6 +164,40 @@
             </div>
           </div>
         </div>
+        <div class="wallpaper-library">
+          <div class="library-head">
+            <h3>可选背景（所有访客都能自选）<span class="count" id="wallpaper-count">0</span></h3>
+            <span class="muted small">只有登录的 admin 能上传或下架</span>
+          </div>
+          <p class="muted small">
+            这里列出的图片会出现在站点右上角「背景」按钮里，任何访客都能点选。
+            访客的选择只写进他们自己的浏览器（localStorage），不会提交到仓库，也不会影响其他访客；
+            你把某张图「下架」后，选过它的访客会自动回到站点默认壁纸。
+            顺序即为访客看到的顺序，单张不超过 1 MB，最多 <span id="wallpaper-max">48</span> 张。
+          </p>
+          <div class="list" id="wallpaper-list"><p class="muted">还没有可选背景。</p></div>
+          <div class="wallpaper-add form-grid">
+            <label class="field"><span>从已上传的图片选</span>
+              <select id="wallpaper-image" class="small-select" aria-label="从已上传的图片选择"><option value="">（先在「图片」里上传）</option></select>
+            </label>
+            <label class="field"><span>外链地址</span>
+              <input id="wallpaper-url" type="text" spellcheck="false" placeholder="https://…">
+            </label>
+            <label class="field"><span>名称（可选，给访客看）</span>
+              <input id="wallpaper-label" type="text" maxlength="48" placeholder="例如：星空">
+            </label>
+            <div class="field wide">
+              <span>加入壁纸库</span>
+              <div class="wallpaper-add-actions">
+                <button class="btn small" id="wallpaper-add" type="button">用上面的地址加入</button>
+                <label class="btn ghost small" for="wallpaper-upload">上传多张图片（并加入壁纸库）</label>
+                <input id="wallpaper-upload" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" multiple hidden>
+                <span class="muted small">上传会立即提交图片文件；列表改动等点最下面的「保存并提交」。</span>
+              </div>
+            </div>
+          </div>
+          <p class="muted small" id="wallpaper-note" role="status"></p>
+        </div>
         <div class="appearance-preview" id="appearance-preview">
           <div class="preview-wallpaper" aria-hidden="true"></div>
           <div class="preview-veil" aria-hidden="true"></div>
@@ -156,6 +207,7 @@
             <span class="preview-favicon"><img id="preview-favicon-image" alt="网页图标预览"><span class="muted small">图标</span></span>
           </div>
         </div>
+        <p class="preview-tagline" id="appearance-preview-tagline" hidden><span class="chip ok" id="appearance-preview-tag"></span><button class="btn ghost small" id="appearance-preview-reset" type="button">回到站点默认预览</button></p>
         <p class="muted small" id="appearance-preview-note" role="status"></p>
         <div class="panel-actions">
           <button class="btn ghost small" id="appearance-defaults" type="button">填入默认值</button>
