@@ -705,6 +705,34 @@ code {
   color: var(--muted);
 }
 
+/* ------------------------------------------------------------------
+   「外观」右侧预览：标出正在预览哪一张可选背景（点列表里的缩略图或「预览」），
+   以及缩略图本身的按钮样式。颜色都用主题变量，深浅两套自动跟随。
+   ------------------------------------------------------------------ */
+.preview-tagline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.preview-tagline[hidden] {
+  display: none;
+}
+.thumb-button {
+  padding: 0;
+  cursor: pointer;
+}
+.thumb-button:hover {
+  border-color: var(--accent);
+}
+.row-previewing {
+  border-bottom-color: var(--accent);
+}
+.row-previewing .row-title {
+  color: var(--accent);
+}
+
 /* 顶栏的主题三选一（样式主体在 main.css 的浅色模式小节里） */
 .theme-options {
   margin: 0 4px;

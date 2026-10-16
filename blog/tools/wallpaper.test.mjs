@@ -472,6 +472,58 @@ const teardown = async (dom) => {
   dom.window.close();
 };
 
+test("clicking a gallery entry previews it (the preview is not stuck on the site default)", async () => {
+  const { dom, $, w } = await setupAdmin();
+  try {
+    const previewImage = () => $(".preview-wallpaper").style.backgroundImage;
+    const rows = () => [...$("#wallpaper-list").querySelectorAll(".row")];
+    const action = (row, label) => [...row.querySelectorAll("button")].find((button) => button.textContent === label);
+    // 初始：预览的是「页面壁纸」字段（站点默认），标签行隐藏
+    assert(previewImage().includes(siteWallpaper), `初始预览应为站点默认壁纸，实际 ${previewImage()}`);
+    assert.equal($("#appearance-preview-tagline").hidden, true);
+
+    // 点第一行的「预览」→ 预览换成第一张，字段不动，也不产生未保存提示
+    action(rows()[0], "预览").click();
+    assert(previewImage().includes("https://cdn.example.com/first.png"), `预览没跟着变：${previewImage()}`);
+    assert.equal($("#appearance-preview-tagline").hidden, false, "要标出正在预览哪一张");
+    assert.equal($("#appearance-preview-tag").textContent, "预览中：第一张");
+    assert.equal(rows()[0].classList.contains("row-previewing"), true, "被预览的行要有标记");
+    assert.equal($("#a-wallpaper").value, siteWallpaper, "预览只是预览，不能改「页面壁纸」字段");
+    // 注意：jsdom 里的数组与 Node 的 Array 原型不同，deepEqual 会因此失败，先复制一份
+    assert.deepEqual([...w.MinxiAdmin.unsavedWork()], [], "纯预览不该算未保存改动");
+
+    // 点缩略图同样能预览（缩略图本身就是按钮）
+    const thumb = rows()[1].querySelector(".thumb");
+    assert.equal(thumb.tagName, "BUTTON", "缩略图应可点击预览");
+    thumb.click();
+    assert(previewImage().includes("/images/old.png"), `缩略图点击后预览没变：${previewImage()}`);
+    assert.equal($("#appearance-preview-tag").textContent, "预览中：第二张");
+    assert.equal(rows()[0].classList.contains("row-previewing"), false, "同时只标记一张");
+
+    // 「回到站点默认预览」
+    $("#appearance-preview-reset").click();
+    assert(previewImage().includes(siteWallpaper), `没回到站点默认：${previewImage()}`);
+    assert.equal($("#appearance-preview-tagline").hidden, true);
+
+    // 手改「页面壁纸」也会让预览回到跟随该字段
+    action(rows()[1], "预览").click();
+    assert(previewImage().includes("/images/old.png"));
+    $("#a-wallpaper").value = "https://cdn.example.com/typed.png";
+    $("#a-wallpaper").dispatchEvent(new w.Event("input"));
+    assert(previewImage().includes("typed.png"), "改字段后预览应跟随字段");
+    assert.equal($("#appearance-preview-tagline").hidden, true, "跟随字段时不再标「预览中」");
+
+    // 「设为默认壁纸」同样让预览回到站点默认
+    action(rows()[0], "预览").click();
+    assert(previewImage().includes("first.png"));
+    action(rows()[0], "设为默认壁纸").click();
+    assert.equal($("#a-wallpaper").value, "https://cdn.example.com/first.png");
+    assert.equal($("#appearance-preview-tagline").hidden, true, "设为默认后应回到站点默认预览");
+  } finally {
+    await teardown(dom);
+  }
+});
+
 test("the admin panel lists the gallery and can add, reorder, default and retire entries", async () => {
   const { dom, $, state, w } = await setupAdmin();
   try {

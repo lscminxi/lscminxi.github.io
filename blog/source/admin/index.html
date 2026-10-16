@@ -9,12 +9,14 @@
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css?v=theme-1">
-  <link rel="stylesheet" href="./admin.css?v=theme-1">
-  <%# 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线下面的切换按钮。 -%>
+  <link rel="stylesheet" href="./admin.css?v=theme-2">
+  <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
+       注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
+       不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=fold-preview-2" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=theme-1" defer></script>
+  <script src="./admin.js?v=theme-2" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -205,6 +207,7 @@
             <span class="preview-favicon"><img id="preview-favicon-image" alt="网页图标预览"><span class="muted small">图标</span></span>
           </div>
         </div>
+        <p class="preview-tagline" id="appearance-preview-tagline" hidden><span class="chip ok" id="appearance-preview-tag"></span><button class="btn ghost small" id="appearance-preview-reset" type="button">回到站点默认预览</button></p>
         <p class="muted small" id="appearance-preview-note" role="status"></p>
         <div class="panel-actions">
           <button class="btn ghost small" id="appearance-defaults" type="button">填入默认值</button>

@@ -41,6 +41,8 @@
   let appearanceState = { sha: "", loaded: false };
   // 「可选背景」列表草稿：改动先留在页面里，点「保存并提交」才写进 appearance.json。
   let wallpaperDraft = [];
+  // 「可选背景」列表里点选后只影响右侧大预览，不写进配置、不影响保存内容。
+  let wallpaperPreview = null;
   let buildWatch = null;
   let postsRevision = 0;
   const deletingPosts = new Set();
@@ -66,6 +68,9 @@
     tabAbout: $("#tab-about"),
     tabLog: $("#tab-log"),
     appearancePreview: $("#appearance-preview"),
+    previewTagline: $("#appearance-preview-tagline"),
+    previewTag: $("#appearance-preview-tag"),
+    previewReset: $("#appearance-preview-reset"),
     appearanceStatus: $("#appearance-status"),
     appearanceSave: $("#appearance-save"),
     appearanceReload: $("#appearance-reload"),
@@ -564,6 +569,9 @@
     el.viewLogin.hidden = false;
     el.viewApp.hidden = true;
     el.viewEditor.hidden = true;
+    snapshots.editor = null;
+    snapshots.appearance = null;
+    snapshots.about = null;
     el.userChip.hidden = true;
     el.logoutButton.hidden = true;
     el.tokenInput.value = "";
@@ -1138,6 +1146,7 @@
   }
   function hideEditor() {
     editing = null;
+    snapshots.editor = null; // 已经离开编辑器，不再提醒
     el.viewEditor.hidden = true;
     el.viewApp.hidden = false;
     el.editorStatus.textContent = "";
@@ -1166,6 +1175,7 @@
       el.f.sample.checked = String(data.sample || "") === "true";
       setPinned(Number(data.sticky) > 0);
       el.f.body.value = body.replace(/^\n+/, "");
+      snapshots.editor = editorSnapshotValue();
       el.editorStatus.textContent = `已加载 ${path}（${(file.size / 1024).toFixed(1)} KB）`;
       log(`打开编辑：${path}`);
       updatePreview();
@@ -1190,6 +1200,7 @@
     setPinned(false);
     el.f.body.value = "";
     delete el.f.slug.dataset.touched;
+    snapshots.editor = editorSnapshotValue();
     el.editorStatus.textContent = "填写后点「保存并提交」。";
     showEditor();
     el.f.title.focus();
@@ -1253,6 +1264,7 @@
         submittedSha = removed.commit?.sha || "";
         postIndex.delete(editing.path);
         editing = { path: fields.path, sha: created.content?.sha || "", isNew: false };
+        snapshots.editor = editorSnapshotValue();
         log(`已重命名：${editing.path} → ${fields.path}（两次提交，commit ${created.commit?.sha?.slice(0, 7) || "?"}）`, "ok");
       } else {
         const result = await putFile(
@@ -1265,6 +1277,7 @@
         );
         submittedSha = result.commit?.sha || "";
         editing = { path: fields.path, sha: result.content?.sha || "", isNew: false };
+        snapshots.editor = editorSnapshotValue();
         log(
           `${editing.isNew ? "已新建" : "已保存"}：${fields.path}（commit ${
             result.commit?.sha?.slice(0, 7) || "?"
@@ -1330,6 +1343,70 @@
     }
   });
 
+  /* ---------------- 未保存的修改（防误触：关闭 / 刷新前提醒） ----------------
+     三个可编辑的地方各自记住「最后一次读取或保存成功时的内容」，
+     离开页面时只要有一处对不上，就弹出浏览器自带的确认框（离开 / 取消）。
+     主题按钮、图片预览这类只影响本机的操作不写进快照，因此不会误报。 */
+
+  const snapshots = { editor: null, appearance: null, about: null };
+
+  function editorSnapshotValue() {
+    return JSON.stringify({
+      title: el.f.title.value,
+      slug: el.f.slug.value,
+      date: el.f.date.value,
+      categories: el.f.categories.value,
+      tags: el.f.tags.value,
+      accent: el.f.accent.value,
+      description: el.f.description.value,
+      sample: el.f.sample.checked,
+      pinned,
+      body: el.f.body.value,
+    });
+  }
+
+  function appearanceSnapshotValue() {
+    try {
+      return JSON.stringify(readAppearanceForm());
+    } catch {
+      return null;
+    }
+  }
+
+  const aboutSnapshotValue = () => (el.aboutEditor ? el.aboutEditor.value : null);
+
+  /** 有未保存内容时返回简短说明（例如「文章「二分查找笔记」」），没有则返回空数组。 */
+  function unsavedWork() {
+    const pending = [];
+    if (
+      !el.viewEditor.hidden &&
+      editing &&
+      snapshots.editor !== null &&
+      editorSnapshotValue() !== snapshots.editor
+    ) {
+      const name = el.f.title.value.trim() || fileName(editing.path || "");
+      pending.push(editing.isNew ? `新建的文章${name ? `「${name}」` : ""}` : `文章「${name}」`);
+    }
+    if (snapshots.appearance !== null && appearanceSnapshotValue() !== snapshots.appearance) {
+      pending.push("「外观」里的设置");
+    }
+    if (snapshots.about !== null && aboutSnapshotValue() !== snapshots.about) {
+      pending.push("「个人简介」");
+    }
+    return pending;
+  }
+
+  window.addEventListener("beforeunload", (event) => {
+    const pending = unsavedWork();
+    if (!pending.length) return undefined;
+    // 现代浏览器只显示自带的提示语（"更改可能不会保存"），但两个字段都要设：
+    // preventDefault() 是标准做法，returnValue 兼容旧浏览器。
+    const message = `你有未保存的修改（${pending.join("、")}），离开或关闭页面后会丢失，确定要离开吗？`;
+    event.preventDefault();
+    event.returnValue = message;
+    return message;
+  });
+
   /* ---------------- 个人简介 / 关于页 ---------------- */
 
   async function loadAbout() {
@@ -1338,6 +1415,7 @@
       const file = await getFile(CONFIG.aboutPath);
       aboutState = { sha: file.sha, text: file.text };
       el.aboutEditor.value = file.text;
+      snapshots.about = aboutSnapshotValue();
       el.aboutStatus.textContent = `已加载（${(file.size / 1024).toFixed(1)} KB）`;
       log(`读取 ${CONFIG.aboutPath}`);
     } catch (error) {
@@ -1366,6 +1444,7 @@
         "docs(blog): update about page",
       );
       aboutState = { sha: result.content?.sha || aboutState.sha, text };
+      snapshots.about = aboutSnapshotValue();
       el.aboutStatus.textContent = `已提交（commit ${result.commit?.sha?.slice(0, 7) || "?"}），约 1–2 分钟后生效。`;
       log(`已保存 ${CONFIG.aboutPath}`, "ok");
       toast("个人简介已提交");
@@ -1408,6 +1487,8 @@
   }
 
   function fillAppearanceForm(value) {
+    // 重新加载 / 填入默认值：预览也回到「站点默认」，避免停留在上一张可选背景上。
+    wallpaperPreview = null;
     el.a.avatar.value = value.avatar;
     el.a.wallpaper.value = value.wallpaper;
     el.a.favicon.value = value.favicon;
@@ -1467,6 +1548,48 @@
   const wallpaperImageUrl = (path) =>
     `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodePath(path)}`;
 
+  /** 当前正在预览的是不是这一条。 */
+  const isPreviewing = (item) =>
+    Boolean(wallpaperPreview && item && wallpaperPreview.url === item.url);
+
+  /** 列表里点选一张：只改右侧大预览，不动「页面壁纸」字段，也不写配置。 */
+  function previewWallpaper(item) {
+    if (!item) return;
+    wallpaperPreview = { url: item.url, label: item.label || "" };
+    renderWallpaperLibrary();
+    renderAppearancePreview();
+    noteWallpaper(
+      `正在右侧预览「${item.label || item.url}」——访客选中它时首页大致的模样。想把它设成站点默认背景，请点「设为默认壁纸」。`,
+    );
+  }
+
+  /** 回到「站点默认壁纸」的预览（列表里没有任何一张处于预览中）。 */
+  function clearWallpaperPreview({ note = "" } = {}) {
+    if (!wallpaperPreview) {
+      if (note) noteWallpaper(note);
+      return false;
+    }
+    wallpaperPreview = null;
+    renderWallpaperLibrary();
+    renderAppearancePreview();
+    if (note) noteWallpaper(note);
+    return true;
+  }
+
+  /** 预览标签：标出正在预览哪一张，并提供「回到站点默认预览」。 */
+  function renderPreviewTagline() {
+    if (!el.previewTagline) return;
+    if (!wallpaperPreview) {
+      el.previewTagline.hidden = true;
+      if (el.previewTag) el.previewTag.textContent = "";
+      return;
+    }
+    el.previewTagline.hidden = false;
+    if (el.previewTag) {
+      el.previewTag.textContent = `预览中：${wallpaperPreview.label || wallpaperPreview.url}`;
+    }
+  }
+
   function renderWallpaperLibrary() {
     if (!el.wallpaperList) return;
     let max = 48;
@@ -1490,8 +1613,11 @@
     wallpaperDraft.forEach((item, index) => {
       const row = document.createElement("div");
       row.className = "row";
-      const thumb = document.createElement("span");
-      thumb.className = "thumb";
+      const thumb = document.createElement("button");
+      thumb.type = "button";
+      thumb.className = "thumb thumb-button";
+      thumb.title = "点一下预览这张背景";
+      thumb.setAttribute("aria-label", `预览背景：${item.label || item.url}`);
       const labelForThumb = () => {
         thumb.style.backgroundImage = "";
         thumb.classList.add("thumb-label");
@@ -1508,6 +1634,8 @@
         probe.src = preview;
         thumb.style.backgroundImage = `url("${preview}")`;
       }
+      // 缩略图本身就是按钮：点一下就在右侧大预览里看这张背景（纯预览，不改配置）。
+      thumb.addEventListener("click", () => previewWallpaper(item));
       const main = document.createElement("div");
       main.className = "row-main";
       const title = document.createElement("strong");
@@ -1536,12 +1664,20 @@
         });
         return button;
       };
+      const previewAction = document.createElement("button");
+      previewAction.className = "btn ghost small";
+      previewAction.type = "button";
+      previewAction.textContent = "预览";
+      previewAction.setAttribute("aria-pressed", String(isPreviewing(item)));
+      previewAction.addEventListener("click", () => previewWallpaper(item));
       const useAsDefault = document.createElement("button");
       useAsDefault.className = "btn ghost small";
       useAsDefault.type = "button";
       useAsDefault.textContent = "设为默认壁纸";
       useAsDefault.addEventListener("click", () => {
         el.a.wallpaper.value = item.url;
+        // 站点默认壁纸已改成这一张，预览回到「站点默认」，不必再标某一张为预览中。
+        wallpaperPreview = null;
         renderAppearancePreview();
         renderWallpaperLibrary();
         noteWallpaper("已填入「页面壁纸」作为站点默认背景，点「保存并提交」后生效。");
@@ -1558,10 +1694,18 @@
         );
         if (!ok) return;
         wallpaperDraft = wallpaperDraft.filter((entry) => entry.id !== item.id || entry.url !== item.url);
+        if (isPreviewing(item)) wallpaperPreview = null;
         renderWallpaperLibrary();
         noteWallpaper("已从列表移除，点「保存并提交」后正式下架。");
       });
-      actions.append(move("上移", -1, index === 0), move("下移", 1, index === wallpaperDraft.length - 1), useAsDefault, remove);
+      actions.append(
+        move("上移", -1, index === 0),
+        move("下移", 1, index === wallpaperDraft.length - 1),
+        previewAction,
+        useAsDefault,
+        remove,
+      );
+      if (isPreviewing(item)) row.className = "row row-previewing";
       row.append(thumb, main, actions);
       el.wallpaperList.append(row);
     });
@@ -1698,7 +1842,8 @@
     el.a.blurValue.textContent = `${draft.wallpaperBlur}px`;
 
     const safe = (value) => (api.isSafeImageUrl(value) ? value : "");
-    const wallpaper = safe(draft.wallpaper);
+    // 预览的壁纸优先级：列表里点选的那张 > 「页面壁纸」字段。
+    const wallpaper = safe(wallpaperPreview ? wallpaperPreview.url : draft.wallpaper);
     const avatar = safe(draft.avatar);
     const favicon = safe(draft.favicon);
 
@@ -1736,6 +1881,8 @@
       if (!favicon) faviconImage.removeAttribute("src");
       faviconImage.dataset.broken = String(!favicon || appearancePreviewFailures.favicon);
     }
+
+    renderPreviewTagline();
 
     if (errors.length) {
       el.appearanceNote.textContent = `⚠ ${errors.join(" ")}`;
@@ -1777,6 +1924,7 @@
         broken = "配置文件不是合法 JSON：保存会用当前表单内容覆盖它。";
       }
       fillAppearanceForm(api.resolveAppearance(raw));
+      snapshots.appearance = appearanceSnapshotValue();
       el.appearanceStatus.textContent =
         broken || `已加载（${file.size} B）· 保存后约 1–2 分钟发布`;
       if (broken) log(broken, "err");
@@ -1785,6 +1933,7 @@
       if (error.status === 404) {
         appearanceState = { sha: "", loaded: true };
         fillAppearanceForm(api.resolveAppearance(null));
+        snapshots.appearance = appearanceSnapshotValue();
         el.appearanceStatus.textContent = "配置文件还不存在，保存时会新建。";
         log(`${CONFIG.appearancePath} 不存在，将按默认值创建。`);
         return;
@@ -1829,7 +1978,9 @@
       el.appearanceStatus.textContent = `已提交（commit ${result.commit?.sha?.slice(0, 7) || "?"}），约 1–2 分钟后生效。`;
       // 回填清洗后的列表：不合法的地址或重复项在这里消失，页面与仓库保持一致。
       wallpaperDraft = value.wallpapers.map((item) => ({ ...item }));
+      wallpaperPreview = null; // 保存后回到「站点默认」的预览
       renderWallpaperLibrary();
+      snapshots.appearance = appearanceSnapshotValue();
       noteWallpaper(
         `可选背景已更新为 ${value.wallpapers.length} 张（commit ${result.commit?.sha?.slice(0, 7) || "?"}）。访客端列表约 1–2 分钟后更新；访客自己的选择不受影响。`,
         "ok",
@@ -1860,9 +2011,20 @@
     el.appearanceStatus.textContent =
       "已填入默认值（默认图标 /images/favicon.svg，无壁纸，可选背景清空）；点「保存并提交」后生效。";
   });
-  for (const input of [el.a.avatar, el.a.wallpaper, el.a.favicon, el.a.dim, el.a.blur, el.a.theme]) {
+  for (const input of [el.a.avatar, el.a.favicon, el.a.dim, el.a.blur, el.a.theme]) {
     input.addEventListener("input", renderAppearancePreview);
   }
+  // 手改「页面壁纸」= 想看的站点默认背景变了，预览跟随它，不再停留在某张可选背景上。
+  el.a.wallpaper.addEventListener("input", () => {
+    if (wallpaperPreview) {
+      wallpaperPreview = null;
+      renderWallpaperLibrary();
+    }
+    renderAppearancePreview();
+  });
+  el.previewReset?.addEventListener("click", () =>
+    clearWallpaperPreview({ note: "预览已回到站点默认壁纸。" }),
+  );
   el.appearancePicker.addEventListener("change", () => {
     if (el.appearancePicker.value) toast(`已选择 ${el.appearancePicker.value}，点右侧按钮填入对应字段`);
   });
@@ -2036,6 +2198,9 @@
       // 公开配置不可用时保留默认图标与纯色背景，不影响登录/编辑。
     }
   }
+
+  // 只读的状态出口：排查问题和回归测试都用它，不影响任何行为。
+  window.MinxiAdmin = { unsavedWork };
 
   (async function init() {
     log("后台已就绪。请输入 GitHub 令牌登录。");

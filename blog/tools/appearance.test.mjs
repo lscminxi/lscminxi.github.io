@@ -17,6 +17,7 @@ const appearanceJs = await readFile("source/admin/appearance.js", "utf8");
 const appearancePath = "blog/source/_data/appearance.json";
 const imagePath = "blog/source/images/avatar.png";
 const postPath = "blog/source/_posts/test.md";
+const aboutPath = "blog/source/about/index.md";
 const defaultData = {
   avatar: "https://cdn.example.com/avatar.png",
   wallpaper: "/images/avatar.png",
@@ -51,6 +52,7 @@ async function setup({ fileText = JSON.stringify(defaultData), publicAppearance 
     [appearancePath, { sha: "appearance-sha", text: fileText }],
     [imagePath, { sha: "image-sha", text: "binary" }],
     [postPath, { sha: "post-sha", text: "---\ntitle: 测试文章\ndate: 2026-01-01 10:00:00\n---\n正文" }],
+    [aboutPath, { sha: "about-sha", text: "---\ntitle: 关于我\nlayout: page\n---\n你好" }],
   ]);
   const state = { writes: [], requests: [] };
   const reply = (status, data) => ({
@@ -470,6 +472,115 @@ test("a hostile appearance.json cannot inject markup or CSS into the built site"
     assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0, wallpapers: [], theme: "auto" });
   } finally {
     await rm(temp, { recursive: true, force: true });
+  }
+});
+
+/* ---------------- 未保存的修改（防误触） ----------------
+   后台在「编辑好但没保存」时关闭标签页 / 刷新，浏览器要能弹出确认框。
+   这里用 beforeunload 事件 + window.MinxiAdmin.unsavedWork() 来验证行为与文案。 */
+
+const unloadProbe = (w) => {
+  const event = new w.Event("beforeunload", { cancelable: true });
+  w.dispatchEvent(event);
+  return { blocked: event.defaultPrevented, pending: [...w.MinxiAdmin.unsavedWork()] };
+};
+
+test("unsaved appearance edits block the page from closing silently", async () => {
+  const { dom, $, w, state } = await setup();
+  try {
+    [...$("#tabs").querySelectorAll(".tab")].find((tab) => tab.dataset.tab === "appearance").click();
+    await wait(() => $("#appearance-status").textContent.includes("已加载"));
+
+    // 刚加载完：干净，不该拦
+    assert.deepEqual(unloadProbe(w).pending, [], "刚加载完不应算未保存");
+    assert.equal(unloadProbe(w).blocked, false, "干净时不能弹提示");
+
+    // 改个地址 → 拦
+    $("#a-avatar").value = "https://cdn.example.com/new.png";
+    $("#a-avatar").dispatchEvent(new w.Event("input"));
+    const edited = unloadProbe(w);
+    assert.equal(edited.blocked, true, "有未保存修改时必须拦下关闭");
+    assert.deepEqual(edited.pending, ["「外观」里的设置"]);
+
+    // 改回去 → 又变干净（快照比对的是内容，不是「有没有点过」）
+    $("#a-avatar").value = defaultData.avatar;
+    $("#a-avatar").dispatchEvent(new w.Event("input"));
+    assert.equal(unloadProbe(w).blocked, false, "改回原样后不再提示");
+
+    // 调整壁纸库顺序同样算未保存
+    $("#a-wallpaper").value = "https://cdn.example.com/other.png";
+    $("#a-wallpaper").dispatchEvent(new w.Event("input"));
+    assert.equal(unloadProbe(w).blocked, true);
+
+    // 保存成功后解除提醒
+    $("#appearance-save").click();
+    await wait(() => state.writes.length === 1);
+    await wait(() => unloadProbe(w).blocked === false, "保存成功后必须解除提醒");
+    assert.equal(unloadProbe(w).blocked, false, "保存成功后必须解除提醒");
+    assert.deepEqual(unloadProbe(w).pending, []);
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
+  }
+});
+
+test("unsaved article edits block the page from closing until they are saved", async () => {
+  const { dom, $, w, state } = await setup();
+  try {
+    // 打开一篇文章：刚加载算干净
+    const row = [...$("#post-list").querySelectorAll(".row")].find((item) => item.textContent.includes("test"));
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "编辑").click();
+    await wait(() => !$("#view-editor").hidden && $("#f-body").value.includes("正文"));
+    assert.equal(unloadProbe(w).blocked, false, "刚打开的文章不该算未保存");
+
+    // 改正文 → 拦，并说明是哪一篇
+    $("#f-body").value += "\n新写的一段";
+    $("#f-body").dispatchEvent(new w.Event("input"));
+    const edited = unloadProbe(w);
+    assert.equal(edited.blocked, true, "有未保存的文章修改时必须拦下关闭");
+    assert.deepEqual(edited.pending, ["文章「测试文章」"]);
+
+    // 标题也会跟着变（提示里用最新的标题）
+    $("#f-title").value = "改过的标题";
+    $("#f-title").dispatchEvent(new w.Event("input"));
+    assert.deepEqual(unloadProbe(w).pending, ["文章「改过的标题」"]);
+
+    // 保存成功后解除提醒
+    $("#save-post").click();
+    await wait(() => state.writes.some((write) => write.path.endsWith(".md")));
+    await wait(() => unloadProbe(w).blocked === false);
+    assert.deepEqual(unloadProbe(w).pending, []);
+
+    // 「← 返回列表」关掉编辑器后也不再提醒
+    $("#f-body").value += "\n又改了一下";
+    $("#f-body").dispatchEvent(new w.Event("input"));
+    assert.equal(unloadProbe(w).blocked, true);
+    $("#cancel-edit").click();
+    assert.equal(unloadProbe(w).blocked, false, "离开编辑器后不该再拦");
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
+  }
+});
+
+test("unsaved about-page edits and clean sessions behave the same way", async () => {
+  const { dom, $, w } = await setup();
+  try {
+    // 没打开过任何面板 → 干净
+    assert.equal(unloadProbe(w).blocked, false);
+
+    [...$("#tabs").querySelectorAll(".tab")].find((tab) => tab.dataset.tab === "about").click();
+    await wait(() => $("#about-status").textContent.includes("已加载"));
+    assert.equal(unloadProbe(w).blocked, false, "刚加载完的简介不算未保存");
+
+    $("#about-editor").value += "\n再写一句";
+    $("#about-editor").dispatchEvent(new w.Event("input"));
+    const edited = unloadProbe(w);
+    assert.equal(edited.blocked, true);
+    assert.deepEqual(edited.pending, ["「个人简介」"]);
+  } finally {
+    await new Promise((r) => setTimeout(r, 30));
+    dom.window.close();
   }
 });
 
