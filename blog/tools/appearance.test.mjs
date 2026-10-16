@@ -116,7 +116,7 @@ const teardown = async (dom) => {
 /* ---------------- 共享规则（前后台一致） ---------------- */
 
 test("missing, malformed or hostile appearance data always falls back to safe defaults", () => {
-  const fallback = { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0 };
+  const fallback = { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0, wallpapers: [] };
   for (const input of [null, undefined, 0, "", "nope", [], true]) {
     assert.deepEqual(appearance.resolveAppearance(input), fallback);
   }
@@ -126,8 +126,12 @@ test("missing, malformed or hostile appearance data always falls back to safe de
     favicon: '"/><script>alert(1)</script>',
     wallpaperDim: "999",
     wallpaperBlur: -4,
+    wallpapers: [{ url: "javascript:alert(2)" }, { url: "https://ok/x.png", id: "ok" }],
   });
-  assert.deepEqual(hostile, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0 });
+  assert.deepEqual(hostile, {
+    avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0,
+    wallpapers: [{ id: "ok", url: "https://ok/x.png", label: "" }],
+  });
 });
 
 test("only http(s) links and root-relative site paths are accepted", () => {
@@ -260,13 +264,14 @@ test("saving commits sanitized JSON to source/_data/appearance.json with the fil
     assert.equal(write.path, appearancePath);
     assert.equal(write.branch, "main");
     assert.equal(write.sha, "appearance-sha");
-    assert.equal(write.message, "feat(blog): update avatar and wallpaper");
+    assert.equal(write.message, "feat(blog): update appearance (avatar / wallpaper / wallpapers)");
     assert.deepEqual(JSON.parse(write.decoded), {
       avatar: "https://cdn.example.com/new-avatar.png",
       wallpaper: "",
       favicon: "/images/avatar.png",
       wallpaperDim: 88,
       wallpaperBlur: 14,
+      wallpapers: [],
     });
     await wait(() => files.get(appearancePath).text === write.decoded);
     await wait(() => $("#appearance-status").textContent.includes("已提交"));
@@ -357,7 +362,7 @@ test("a missing or malformed config file still lets the admin create it", async 
     $("#appearance-save").click();
     await wait(() => state.writes.length === 1);
     assert.equal(state.writes[0].sha, "appearance-sha", "Repairs the existing file instead of creating a new one");
-    assert.deepEqual(JSON.parse(state.writes[0].decoded), { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0 });
+    assert.deepEqual(JSON.parse(state.writes[0].decoded), { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 62, wallpaperBlur: 0, wallpapers: [] });
     await settleBuild($);
   } finally {
     await teardown(dom);
@@ -461,7 +466,7 @@ test("a hostile appearance.json cannot inject markup or CSS into the built site"
     assert(built.includes('<span class="avatar-mark">m<span>_</span></span>'), "Falls back to the letter avatar");
     assert(!built.includes("avatar-image"));
     const published = JSON.parse(await readFile(join(temp, "blog/public/appearance.json"), "utf8"));
-    assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0 });
+    assert.deepEqual(published, { avatar: "", wallpaper: "", favicon: "/images/favicon.svg", wallpaperDim: 95, wallpaperBlur: 0, wallpapers: [] });
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

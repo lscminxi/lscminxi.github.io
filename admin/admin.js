@@ -39,6 +39,8 @@
   let editing = null; // { path, sha, isNew }
   let aboutState = { sha: "", text: "" };
   let appearanceState = { sha: "", loaded: false };
+  // 「可选背景」列表草稿：改动先留在页面里，点「保存并提交」才写进 appearance.json。
+  let wallpaperDraft = [];
   let buildWatch = null;
   let postsRevision = 0;
   const deletingPosts = new Set();
@@ -70,6 +72,15 @@
     appearanceDefaults: $("#appearance-defaults"),
     appearanceNote: $("#appearance-preview-note"),
     appearancePicker: $("#a-image"),
+    wallpaperList: $("#wallpaper-list"),
+    wallpaperCount: $("#wallpaper-count"),
+    wallpaperMax: $("#wallpaper-max"),
+    wallpaperNote: $("#wallpaper-note"),
+    wallpaperImage: $("#wallpaper-image"),
+    wallpaperUrl: $("#wallpaper-url"),
+    wallpaperLabel: $("#wallpaper-label"),
+    wallpaperAdd: $("#wallpaper-add"),
+    wallpaperUpload: $("#wallpaper-upload"),
     a: {
       avatar: $("#a-avatar"),
       wallpaper: $("#a-wallpaper"),
@@ -150,6 +161,65 @@
       reader.onerror = () => reject(new Error("读取文件失败"));
       reader.readAsArrayBuffer(file);
     });
+
+  /* ---------------- 上传准备：格式检查 + 大图自动压缩 ----------------
+   * GitHub Contents API 单文件上限约 1 MB，而壁纸/照片动辄好几 MB。
+   * 浏览器能解码的位图（jpg/png/webp）会先等比缩小并重新编码，再上传压缩后的版本；
+   * 动图（gif）与矢量图（svg）没有可靠的压缩方式，仍然按原样提示超限。
+   */
+  const SHRINKABLE = ["png", "jpg", "jpeg", "webp", "avif"];
+  const MAX_IMAGE_SIDE = 2400; // 超过这个边长就等比缩小，保证清晰度足够又明显省体积
+
+  async function shrinkImage(file, extension) {
+    if (typeof createImageBitmap !== "function") return null;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width || 1, bitmap.height || 1));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((bitmap.width || 1) * scale));
+      canvas.height = Math.max(1, Math.round((bitmap.height || 1) * scale));
+      const context = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
+      if (!context || typeof canvas.toBlob !== "function") return null;
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+      // PNG 可能带透明通道，保留 PNG；其余统一转成更小的 WebP。
+      const type = extension === "png" ? "image/png" : "image/webp";
+      const nextExtension = type === "image/png" ? "png" : "webp";
+      for (const quality of [0.92, 0.85, 0.78, 0.7, 0.62, 0.55, 0.45]) {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+        if (blob && blob.size <= CONFIG.maxUploadBytes) {
+          return { blob, extension: nextExtension, size: blob.size };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 返回 { name, blob, compressed } 或 { error }；调用方负责提示与提交。 */
+  async function prepareUpload(file) {
+    const extension = file.name.split(".").pop().toLowerCase();
+    if (!CONFIG.imageExtensions.includes(extension)) {
+      return { error: `只支持 ${CONFIG.imageExtensions.join("/")}` };
+    }
+    const safe = slugify(file.name.replace(/\.[^.]+$/, "")) || `image-${Date.now()}`;
+    if (file.size <= CONFIG.maxUploadBytes) {
+      return { name: `${safe}.${extension}`, blob: file, compressed: false };
+    }
+    if (!SHRINKABLE.includes(extension)) {
+      return { error: "超过 1 MB，且这种格式无法自动压缩（动图/矢量图请先自行压缩）" };
+    }
+    const shrunk = await shrinkImage(file, extension);
+    if (!shrunk) return { error: "超过 1 MB，且在本地压缩失败（可换 JPG/PNG/WebP 再试一次）" };
+    return {
+      name: `${safe}.${shrunk.extension}`,
+      blob: shrunk.blob,
+      compressed: true,
+      originalSize: file.size,
+      size: shrunk.size,
+    };
+  }
 
   const encodePath = (path) =>
     path.split("/").map(encodeURIComponent).join("/");
@@ -761,6 +831,8 @@
     renderImages();
     renderImageSelect();
     renderAppearancePicker();
+    renderWallpaperPicker();
+    renderWallpaperLibrary();
     renderAppearancePreview();
   }
 
@@ -887,9 +959,16 @@
   async function removeImage(path) {
     const image = imageIndex.get(path);
     if (!image) return;
+    const publicPath = `/${path.replace(/^blog\/source\//, "")}`;
+    const used = [
+      el.a.wallpaper?.value.trim() === publicPath ? "站点默认壁纸" : "",
+      wallpaperDraft.some((item) => item.url === publicPath) ? "可选背景（访客自选）" : "",
+    ].filter(Boolean);
     const ok = await confirmDialog(
       "删除图片",
-      `确定删除 ${image.name} 吗？如果还有文章引用它，页面上会出现坏图。`,
+      `确定删除 ${image.name} 吗？如果还有文章引用它，页面上会出现坏图。${
+        used.length ? `\n\n注意：它正被用作${used.join("、")}，删除后访客会看到坏图或回落到默认值。` : ""
+      }`,
       "删除并提交",
     );
     if (!ok) return;
@@ -912,23 +991,16 @@
     el.uploadInput.value = "";
     if (!files.length) return;
     for (const file of files) {
-      const extension = file.name.split(".").pop().toLowerCase();
-      if (!CONFIG.imageExtensions.includes(extension)) {
-        toast(`跳过 ${file.name}：只支持 ${CONFIG.imageExtensions.join("/")}`, "err");
-        log(`上传被跳过（格式不支持）：${file.name}`, "err");
+      const prepared = await prepareUpload(file);
+      if (prepared.error) {
+        toast(`跳过 ${file.name}：${prepared.error}`, "err");
+        log(`上传被跳过：${file.name}（${prepared.error}）`, "err");
         continue;
       }
-      if (file.size > CONFIG.maxUploadBytes) {
-        toast(`跳过 ${file.name}：超过 1 MB 限制`, "err");
-        log(`上传被跳过（超过 1 MB）：${file.name}`, "err");
-        continue;
-      }
-      const safe =
-        slugify(file.name.replace(/\.[^.]+$/, "")) || `image-${Date.now()}`;
-      const name = `${safe}.${extension}`;
+      const { name, blob, compressed } = prepared;
       const path = `${CONFIG.imagesDir}/${name}`;
       try {
-        const base64 = await fileToBase64(file);
+        const base64 = await fileToBase64(blob);
         const existing = imageIndex.get(path);
         const result = await putBinary(
           path,
@@ -936,16 +1008,21 @@
           existing?.sha,
           `chore(blog): upload image ${name}`,
         );
-        log(`已上传图片：${path}（commit ${result.commit?.sha?.slice(0, 7) || "?"}）`, "ok");
-        toast(`已上传 ${name}，正文可用 /images/${name}`);
-        imageIndex.set(path, { sha: result.content?.sha || existing?.sha || "", name, size: file.size });
+        log(
+          `已上传图片：${path}（${Math.round(blob.size / 1024)} KB${compressed ? `，已从 ${Math.round(file.size / 1024)} KB 压缩` : ""}，commit ${result.commit?.sha?.slice(0, 7) || "?"}）`,
+          "ok",
+        );
+        toast(compressed ? `已压缩并上传 ${name}，正文可用 /images/${name}` : `已上传 ${name}，正文可用 /images/${name}`);
+        imageIndex.set(path, { sha: result.content?.sha || existing?.sha || "", name, size: blob.size });
       } catch (error) {
         log(`上传失败 ${file.name}：${describeError(error)}`, "err");
         toast(describeError(error), "err");
       }
     }
+    refreshKnownLocalImages();
     renderImages();
     renderImageSelect();
+    renderWallpaperPicker();
     refreshBuildStatus().catch(() => {});
     watchBuild();
   });
@@ -1324,6 +1401,7 @@
       favicon: el.a.favicon.value.trim(),
       wallpaperDim: Number(el.a.dim.value),
       wallpaperBlur: Number(el.a.blur.value),
+      wallpapers: wallpaperDraft.map((item) => ({ ...item })),
     };
   }
 
@@ -1333,8 +1411,10 @@
     el.a.favicon.value = value.favicon;
     el.a.dim.value = String(value.wallpaperDim);
     el.a.blur.value = String(value.wallpaperBlur);
+    wallpaperDraft = value.wallpapers.map((item) => ({ ...item }));
     appearancePreviewFailures.avatar = false;
     appearancePreviewFailures.favicon = false;
+    renderWallpaperLibrary();
     renderAppearancePreview();
   }
 
@@ -1363,8 +1443,240 @@
         );
       }
     }
+    // 可选背景：地址同样必须在保存前是合法的；数量上限与解析规则一致。
+    const gallery = api.resolveWallpaperGallery(draft.wallpapers);
+    if (gallery.length > api.MAX_WALLPAPERS) {
+      errors.push(`可选背景最多 ${api.MAX_WALLPAPERS} 张，请先下架一些。`);
+    }
+    if (gallery.length !== (draft.wallpapers || []).length) {
+      warnings.push("有背景地址不合法或重复，保存时会被丢弃。");
+    }
+    for (const item of gallery) {
+      if (item.url.startsWith("/") && !knownLocalImages.has(item.url)) {
+        warnings.push(`可选背景 ${item.url} 不在已上传的图片列表里，发布后会显示为坏图。`);
+      }
+    }
     return { errors, warnings };
   }
+
+  /* ---------------- 外观：可选背景（壁纸库） ---------------- */
+
+  const wallpaperImageUrl = (path) =>
+    `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodePath(path)}`;
+
+  function renderWallpaperLibrary() {
+    if (!el.wallpaperList) return;
+    let max = 48;
+    try {
+      max = appearanceApi().MAX_WALLPAPERS;
+    } catch {
+      /* 模块没加载时只影响上限提示 */
+    }
+    if (el.wallpaperMax) el.wallpaperMax.textContent = String(max);
+    el.wallpaperCount.textContent = String(wallpaperDraft.length);
+    el.wallpaperList.textContent = "";
+    if (!wallpaperDraft.length) {
+      el.wallpaperList.append(
+        Object.assign(document.createElement("p"), {
+          className: "muted",
+          textContent: "还没有可选背景。添加后，访客可以在「背景」里自选。",
+        }),
+      );
+      return;
+    }
+    wallpaperDraft.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      const thumb = document.createElement("span");
+      thumb.className = "thumb";
+      const labelForThumb = () => {
+        thumb.style.backgroundImage = "";
+        thumb.classList.add("thumb-label");
+        thumb.textContent = item.label || "无法预览";
+      };
+      if (/\.svg$/i.test(item.url)) {
+        thumb.textContent = "SVG";
+        thumb.classList.add("thumb-label");
+      } else {
+        // 站内图片走 raw 地址预览；外链可能被防盗链拦住，失败时显示名称而不是空白方块。
+        const preview = item.url.startsWith("/") ? wallpaperImageUrl(item.url.replace(/^\//, "")) : item.url;
+        const probe = new Image();
+        probe.addEventListener("error", labelForThumb);
+        probe.src = preview;
+        thumb.style.backgroundImage = `url("${preview}")`;
+      }
+      const main = document.createElement("div");
+      main.className = "row-main";
+      const title = document.createElement("strong");
+      title.className = "row-title";
+      title.textContent = item.label || `未命名背景 ${index + 1}`;
+      const meta = document.createElement("div");
+      meta.className = "row-meta";
+      meta.textContent = `${item.url}  ·  id ${item.id}${item.url === el.a.wallpaper.value.trim() ? "  ·  当前站点默认壁纸" : ""}`;
+      main.append(title, meta);
+
+      const actions = document.createElement("div");
+      actions.className = "row-actions";
+      const move = (label, delta, disabled) => {
+        const button = document.createElement("button");
+        button.className = "btn ghost small";
+        button.type = "button";
+        button.textContent = label;
+        button.disabled = disabled;
+        button.addEventListener("click", () => {
+          const next = index + delta;
+          if (next < 0 || next >= wallpaperDraft.length) return;
+          const [entry] = wallpaperDraft.splice(index, 1);
+          wallpaperDraft.splice(next, 0, entry);
+          renderWallpaperLibrary();
+          noteWallpaper("顺序已调整，点「保存并提交」后访客看到的顺序才会更新。");
+        });
+        return button;
+      };
+      const useAsDefault = document.createElement("button");
+      useAsDefault.className = "btn ghost small";
+      useAsDefault.type = "button";
+      useAsDefault.textContent = "设为默认壁纸";
+      useAsDefault.addEventListener("click", () => {
+        el.a.wallpaper.value = item.url;
+        renderAppearancePreview();
+        renderWallpaperLibrary();
+        noteWallpaper("已填入「页面壁纸」作为站点默认背景，点「保存并提交」后生效。");
+      });
+      const remove = document.createElement("button");
+      remove.className = "btn danger small";
+      remove.type = "button";
+      remove.textContent = "下架";
+      remove.addEventListener("click", async () => {
+        const ok = await confirmDialog(
+          "下架背景",
+          `确定把「${item.label || item.url}」从可选背景里移除吗？\n\n已经选过它的访客会自动回到站点默认壁纸。图片文件本身不会被删除，可以随时重新加入。`,
+          "下架并保存",
+        );
+        if (!ok) return;
+        wallpaperDraft = wallpaperDraft.filter((entry) => entry.id !== item.id || entry.url !== item.url);
+        renderWallpaperLibrary();
+        noteWallpaper("已从列表移除，点「保存并提交」后正式下架。");
+      });
+      actions.append(move("上移", -1, index === 0), move("下移", 1, index === wallpaperDraft.length - 1), useAsDefault, remove);
+      row.append(thumb, main, actions);
+      el.wallpaperList.append(row);
+    });
+  }
+
+  function noteWallpaper(message, kind = "") {
+    if (!el.wallpaperNote) return;
+    el.wallpaperNote.textContent = message || "";
+    el.wallpaperNote.className = `small ${kind}`.trim();
+  }
+
+  /** 供「外观」里的图片库下拉使用（与正文插图的下拉分开，避免互相覆盖选择）。 */
+  function renderWallpaperPicker() {
+    if (!el.wallpaperImage) return;
+    const current = el.wallpaperImage.value;
+    el.wallpaperImage.textContent = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = imageIndex.size ? "从已上传的图片选择…" : "（先在「图片」里上传）";
+    el.wallpaperImage.append(placeholder);
+    for (const [path, image] of [...imageIndex.entries()].sort((a, b) =>
+      a[1].name.localeCompare(b[1].name),
+    )) {
+      const option = document.createElement("option");
+      option.value = `/${path.replace(/^blog\/source\//, "")}`;
+      option.textContent = image.name;
+      el.wallpaperImage.append(option);
+    }
+    el.wallpaperImage.value = [...el.wallpaperImage.options].some((option) => option.value === current)
+      ? current
+      : "";
+  }
+
+  /** 把一张（已清洗的）背景加入草稿列表；重复地址会被拒绝。 */
+  function addWallpaper(url, label = "") {
+    const api = appearanceApi();
+    const next = api.resolveWallpaperGallery([{ url, label }]);
+    if (!next.length) {
+      noteWallpaper("地址不合法：只接受 https:// 外链或 /images/… 站内路径。", "err");
+      return false;
+    }
+    const entry = next[0];
+    if (wallpaperDraft.some((item) => item.url === entry.url)) {
+      noteWallpaper("这张图已经在可选背景里了。", "err");
+      return false;
+    }
+    if (wallpaperDraft.length >= api.MAX_WALLPAPERS) {
+      noteWallpaper(`最多 ${api.MAX_WALLPAPERS} 张，请先下架一些。`, "err");
+      return false;
+    }
+    wallpaperDraft.push(entry);
+    renderWallpaperLibrary();
+    return true;
+  }
+
+  el.wallpaperAdd?.addEventListener("click", () => {
+    const typed = el.wallpaperUrl.value.trim();
+    const url = typed || el.wallpaperImage.value;
+    if (!url) {
+      noteWallpaper("请选择一张已上传的图片，或填一个外链地址。", "err");
+      return;
+    }
+    const fallbackLabel = fileName(url).replace(/\.[a-z0-9]+$/i, "");
+    if (addWallpaper(url, el.wallpaperLabel.value.trim() || fallbackLabel)) {
+      el.wallpaperUrl.value = "";
+      el.wallpaperLabel.value = "";
+      el.wallpaperImage.value = "";
+      noteWallpaper("已加入列表，点「保存并提交」后访客就能看到这张背景。");
+    }
+  });
+  el.wallpaperImage?.addEventListener("change", () => {
+    if (el.wallpaperImage.value) noteWallpaper(`已选择 ${el.wallpaperImage.value}，可填个名称再点「用上面的地址加入」。`);
+  });
+
+  // 上传多张背景图片：图片文件立即提交到 images/，列表改动等「保存并提交」。
+  el.wallpaperUpload?.addEventListener("change", async () => {
+    const files = [...el.wallpaperUpload.files];
+    el.wallpaperUpload.value = "";
+    if (!files.length) return;
+    let added = 0;
+    let compressed = 0;
+    for (const file of files) {
+      const prepared = await prepareUpload(file);
+      if (prepared.error) {
+        noteWallpaper(`跳过 ${file.name}：${prepared.error}`, "err");
+        continue;
+      }
+      const { name, blob } = prepared;
+      const path = `${CONFIG.imagesDir}/${name}`;
+      try {
+        const base64 = await fileToBase64(blob);
+        const existing = imageIndex.get(path);
+        const result = await putBinary(path, base64, existing?.sha, `chore(blog): upload wallpaper ${name}`);
+        imageIndex.set(path, { sha: result.content?.sha || existing?.sha || "", name, size: blob.size });
+        if (prepared.compressed) compressed++;
+        log(
+          `已上传背景图片：${path}（${Math.round(blob.size / 1024)} KB${prepared.compressed ? `，已从 ${Math.round(file.size / 1024)} KB 压缩` : ""}，commit ${result.commit?.sha?.slice(0, 7) || "?"}）`,
+          "ok",
+        );
+        if (addWallpaper(`/images/${name}`, file.name.replace(/\.[^.]+$/, ""))) added++;
+      } catch (error) {
+        log(`上传失败 ${file.name}：${describeError(error)}`, "err");
+        noteWallpaper(`上传失败：${describeError(error)}`, "err");
+      }
+    }
+    // 刚上传的图片要立刻算进「已上传列表」，否则保存外形时会被误判为找不到文件。
+    refreshKnownLocalImages();
+    renderImages();
+    renderImageSelect();
+    renderWallpaperPicker();
+    renderAppearancePicker();
+    if (added) {
+      noteWallpaper(
+        `已上传 ${added} 张并加入列表${compressed ? `（其中 ${compressed} 张超过 1 MB，已自动压缩）` : ""}，点「保存并提交」后访客即可选择。`,
+      );
+    }
+    watchBuild();
+  });
 
   function renderAppearancePreview() {
     if (!el.appearancePreview || !el.a.avatar) return;
@@ -1508,12 +1820,19 @@
         CONFIG.appearancePath,
         JSON.stringify(value, null, 2) + "\n",
         appearanceState.sha,
-        "feat(blog): update avatar and wallpaper",
+        "feat(blog): update appearance (avatar / wallpaper / wallpapers)",
       );
       appearanceState = { sha: result.content?.sha || appearanceState.sha, loaded: true };
       el.appearanceStatus.textContent = `已提交（commit ${result.commit?.sha?.slice(0, 7) || "?"}），约 1–2 分钟后生效。`;
+      // 回填清洗后的列表：不合法的地址或重复项在这里消失，页面与仓库保持一致。
+      wallpaperDraft = value.wallpapers.map((item) => ({ ...item }));
+      renderWallpaperLibrary();
+      noteWallpaper(
+        `可选背景已更新为 ${value.wallpapers.length} 张（commit ${result.commit?.sha?.slice(0, 7) || "?"}）。访客端列表约 1–2 分钟后更新；访客自己的选择不受影响。`,
+        "ok",
+      );
       log(`已保存 ${CONFIG.appearancePath}`, "ok");
-      toast("头像 / 壁纸设置已提交");
+      toast("头像 / 壁纸 / 可选背景已提交");
       watchBuild();
     } catch (error) {
       el.appearanceStatus.textContent = describeError(error);
@@ -1535,7 +1854,8 @@
       return;
     }
     fillAppearanceForm(api.resolveAppearance(null));
-    el.appearanceStatus.textContent = "已填入默认值（默认图标 /images/favicon.svg，无壁纸）；点「保存并提交」后生效。";
+    el.appearanceStatus.textContent =
+      "已填入默认值（默认图标 /images/favicon.svg，无壁纸，可选背景清空）；点「保存并提交」后生效。";
   });
   for (const input of [el.a.avatar, el.a.wallpaper, el.a.favicon, el.a.dim, el.a.blur]) {
     input.addEventListener("input", renderAppearancePreview);
@@ -1654,7 +1974,12 @@
     }
     if (tab === "appearance") {
       if (!appearanceState.loaded) await loadAppearance();
-      else renderAppearancePreview();
+      else {
+        // 期间可能在「图片」里上传或删除了图片，回到这一页时重绘列表与预览。
+        renderWallpaperLibrary();
+        renderWallpaperPicker();
+        renderAppearancePreview();
+      }
     }
   });
 

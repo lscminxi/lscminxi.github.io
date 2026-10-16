@@ -8,11 +8,11 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css">
-  <link rel="stylesheet" href="./admin.css">
+  <link rel="stylesheet" href="/css/main.css?v=wallpaper-1">
+  <link rel="stylesheet" href="./admin.css?v=wallpaper-1">
   <script src="./preview.js?v=fold-preview-2" defer></script>
-  <script src="./appearance.js?v=appearance-1" defer></script>
-  <script src="./admin.js?v=pin-3" defer></script>
+  <script src="./appearance.js?v=wallpaper-1" defer></script>
+  <script src="./admin.js?v=wallpaper-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -146,6 +146,40 @@
               <button class="btn ghost small" type="button" data-appearance-fill="favicon">设为图标</button>
             </div>
           </div>
+        </div>
+        <div class="wallpaper-library">
+          <div class="library-head">
+            <h3>可选背景（所有访客都能自选）<span class="count" id="wallpaper-count">0</span></h3>
+            <span class="muted small">只有登录的 admin 能上传或下架</span>
+          </div>
+          <p class="muted small">
+            这里列出的图片会出现在站点右上角「背景」按钮里，任何访客都能点选。
+            访客的选择只写进他们自己的浏览器（localStorage），不会提交到仓库，也不会影响其他访客；
+            你把某张图「下架」后，选过它的访客会自动回到站点默认壁纸。
+            顺序即为访客看到的顺序，单张不超过 1 MB，最多 <span id="wallpaper-max">48</span> 张。
+          </p>
+          <div class="list" id="wallpaper-list"><p class="muted">还没有可选背景。</p></div>
+          <div class="wallpaper-add form-grid">
+            <label class="field"><span>从已上传的图片选</span>
+              <select id="wallpaper-image" class="small-select" aria-label="从已上传的图片选择"><option value="">（先在「图片」里上传）</option></select>
+            </label>
+            <label class="field"><span>外链地址</span>
+              <input id="wallpaper-url" type="text" spellcheck="false" placeholder="https://…">
+            </label>
+            <label class="field"><span>名称（可选，给访客看）</span>
+              <input id="wallpaper-label" type="text" maxlength="48" placeholder="例如：星空">
+            </label>
+            <div class="field wide">
+              <span>加入壁纸库</span>
+              <div class="wallpaper-add-actions">
+                <button class="btn small" id="wallpaper-add" type="button">用上面的地址加入</button>
+                <label class="btn ghost small" for="wallpaper-upload">上传多张图片（并加入壁纸库）</label>
+                <input id="wallpaper-upload" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" multiple hidden>
+                <span class="muted small">上传会立即提交图片文件；列表改动等点最下面的「保存并提交」。</span>
+              </div>
+            </div>
+          </div>
+          <p class="muted small" id="wallpaper-note" role="status"></p>
         </div>
         <div class="appearance-preview" id="appearance-preview">
           <div class="preview-wallpaper" aria-hidden="true"></div>

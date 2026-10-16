@@ -85,7 +85,11 @@
   };
   document
     .querySelectorAll(".search-trigger")
-    .forEach((button) => button.addEventListener("click", openSearch));
+    // 只有搜索按钮才打开搜索框：其它按钮即使复用了样式类也不受影响。
+    .forEach((button) => {
+      if (button.matches("[data-open-wallpaper], [data-open-search='false']")) return;
+      button.addEventListener("click", openSearch);
+    });
   document
     .querySelector("#close-search")
     .addEventListener("click", () => dialog.close());

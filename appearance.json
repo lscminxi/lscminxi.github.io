@@ -3,5 +3,17 @@
   "wallpaper": "https://cdn.luogu.com.cn/upload/image_hosting/b6e3lyp1.png",
   "favicon": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
   "wallpaperDim": 48,
-  "wallpaperBlur": 0
+  "wallpaperBlur": 0,
+  "wallpapers": [
+    {
+      "id": "b6e3lyp1-116s2ku",
+      "url": "https://cdn.luogu.com.cn/upload/image_hosting/b6e3lyp1.png",
+      "label": "站点默认壁纸"
+    },
+    {
+      "id": "ht2x3cgh-9f5pyg",
+      "url": "https://cdn.luogu.com.cn/upload/image_hosting/ht2x3cgh.webp",
+      "label": "备用壁纸"
+    }
+  ]
 }

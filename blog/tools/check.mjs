@@ -41,6 +41,31 @@ if (look.avatar) {
 } else {
   assert(!avatar, "No avatar image is rendered when none is configured");
 }
+// 访客可自选背景（wallpapers）：公开 JSON 必须与源码一致，
+// 站内路径必须真实存在，并且页面里要有「背景」选择器的标记与脚本。
+const configured = appearance.resolveAppearance(
+  JSON.parse(await readFile(join("source", "_data", "appearance.json"), "utf8")),
+);
+assert.deepEqual(look, configured, "public/appearance.json must match source/_data/appearance.json");
+assert(index.includes('id="wallpaper-dialog"'), "Background picker dialog is missing");
+assert(index.includes("/js/wallpaper.js"), "Background picker script is missing");
+assert(index.includes("data-open-wallpaper"), "Background picker trigger is missing");
+const defaultSrc = /data-wallpaper-src="([^"]*)"/.exec(index);
+assert.equal(
+  decoded(defaultSrc?.[1] ?? ""),
+  look.wallpaper,
+  "The picker must be able to read the default wallpaper from the page",
+);
+for (const item of look.wallpapers) {
+  assert.match(item.id, /^[a-z0-9_-]+$/, `Invalid wallpaper id: ${item.id}`);
+  assert(appearance.isSafeImageUrl(item.url), `Unsafe wallpaper URL: ${item.url}`);
+  assert(typeof item.label === "string" && item.label.length <= appearance.MAX_LABEL_LENGTH);
+  if (item.url.startsWith("/")) {
+    await stat(join(root, "." + decodeURIComponent(item.url.split(/[?#]/)[0])));
+  }
+}
+assert(look.wallpapers.length <= appearance.MAX_WALLPAPERS, "Too many wallpapers in the gallery");
+
 const wallpaperRule = /--wallpaper-image:\s*([^;]+);/.exec(index);
 if (look.wallpaper) {
   assert.equal(index.includes('data-wallpaper="on"'), true, "Wallpaper layer must be enabled");

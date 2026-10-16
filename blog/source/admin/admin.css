@@ -651,3 +651,56 @@ code {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ------------------------------------------------------------------
+   「外观」选项卡里的可选背景列表（壁纸库）
+   访客端可以在站点右上角自由选择；这里只有 admin 能增删。
+   ------------------------------------------------------------------ */
+.wallpaper-library {
+  margin: 22px 0 6px;
+  padding: 16px 16px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0e131b;
+}
+.library-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.library-head h3 {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text);
+}
+.wallpaper-library .list {
+  border-top: 0;
+  margin-top: 6px;
+}
+.wallpaper-library .row:last-child {
+  border-bottom: 0;
+}
+.wallpaper-add {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.wallpaper-add-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wallpaper-add-actions .muted {
+  flex: 1;
+  min-width: 180px;
+}
+.thumb-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 9px var(--mono);
+  color: var(--muted);
+}

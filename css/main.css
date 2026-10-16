@@ -195,7 +195,8 @@ svg {
   align-items: center;
   gap: 20px;
 }
-.search-trigger {
+.search-trigger,
+.wallpaper-trigger {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -206,12 +207,18 @@ svg {
   padding: 6px 9px;
   font-size: 12px;
 }
-.search-trigger kbd {
-  margin-left: 23px;
+.search-trigger kbd,
+.wallpaper-trigger kbd {
+  margin-left: 12px;
   background: #1e242e;
   padding: 0 6px;
   border-radius: 3px;
   font: 11px/19px var(--mono);
+}
+/* 没有脚本时按钮没有意义：client/wallpaper.js 会移除 hidden。
+   注意：脚本没跑起来时 [hidden] 必须仍然生效（作者样式会盖掉浏览器默认的 [hidden]）。 */
+.wallpaper-trigger[hidden] {
+  display: none;
 }
 .github-link {
   color: #9fa8b6;
@@ -1539,13 +1546,16 @@ body.search-open {
   .header-actions {
     gap: 0;
   }
-  .search-trigger {
+  .search-trigger,
+  .wallpaper-trigger {
     border: 0;
     background: none;
     padding: 8px;
   }
   .search-trigger span,
   .search-trigger kbd,
+  .wallpaper-trigger span,
+  .wallpaper-trigger kbd,
   .github-link {
     display: none;
   }
@@ -2002,6 +2012,218 @@ html[data-wallpaper="on"] .site-header {
   }
   html[data-wallpaper="on"] .site-header {
     background: #0b0e14ed;
+  }
+}
+
+/* ------------------------------------------------------------------
+   访客端背景选择（所有人都能用，只写进自己的 localStorage）
+   逻辑在 js/wallpaper.js（由 client/wallpaper.js 打包），
+   可选图片列表来自 /appearance.json 的 wallpapers 字段（只有 admin 能改）。
+   ------------------------------------------------------------------ */
+.wallpaper-dialog {
+  width: min(680px, calc(100% - 32px));
+  max-height: 86vh;
+  overflow: auto;
+  border: 1px solid #384554;
+  background: #121924;
+  color: var(--text);
+  border-radius: 12px;
+  padding: 22px;
+  margin: 8vh auto auto;
+  box-shadow: 0 30px 90px #0009;
+}
+.wallpaper-dialog::backdrop {
+  background: #03060dbd;
+  backdrop-filter: blur(6px);
+}
+.wallpaper-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.wallpaper-heading h2 {
+  font-size: 17px;
+  font-weight: 550;
+}
+.wallpaper-lead,
+.wallpaper-current {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.wallpaper-current {
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.wallpaper-tile {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d151e;
+  color: var(--muted);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+}
+.wallpaper-tile:hover {
+  border-color: #48675e;
+}
+.wallpaper-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wallpaper-tile.active {
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.wallpaper-thumb {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: #0b0e14 center / cover no-repeat;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 6px;
+  overflow: hidden;
+}
+.wallpaper-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wallpaper-thumb--plain {
+  background-image:
+    linear-gradient(135deg, #182130 25%, transparent 25% 75%, #182130 75%),
+    linear-gradient(135deg, #182130 25%, #0d151e 25% 75%, #182130 75%);
+  background-size: 14px 14px;
+  background-position: 0 0, 7px 7px;
+}
+.wallpaper-name {
+  display: block;
+  padding: 7px 9px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.wallpaper-status {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.wallpaper-status.ok {
+  color: var(--accent);
+}
+.wallpaper-status.err {
+  color: #f0a0a6;
+}
+.wallpaper-custom > label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.wallpaper-custom-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #48675e;
+  background: #0d151e;
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+.wallpaper-custom-row:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wallpaper-custom-row input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+.wallpaper-custom-row button {
+  flex: none;
+  border: 1px solid #3d6b5e;
+  background: #172721;
+  color: var(--accent);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+.wallpaper-tune {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 20px;
+  margin: 14px 0;
+}
+.wallpaper-tune label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.wallpaper-tune input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.wallpaper-tune output {
+  font: 10px var(--mono);
+  color: var(--accent);
+  min-width: 34px;
+  text-align: right;
+}
+.wallpaper-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.wallpaper-actions button {
+  border: 1px solid var(--line);
+  background: #1b2531;
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.wallpaper-actions .wallpaper-primary {
+  border-color: #3d6b5e;
+  background: #172721;
+  color: var(--accent);
+}
+.wallpaper-actions button:hover {
+  border-color: var(--accent);
+}
+@media (max-width: 560px) {
+  .wallpaper-dialog {
+    padding: 16px;
+    margin-top: 5vh;
+  }
+  .wallpaper-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+  .wallpaper-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
   }
 }
 
