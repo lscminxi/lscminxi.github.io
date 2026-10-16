@@ -223,6 +223,155 @@
   const headings = document.querySelectorAll(
     ".article-content h2[id], .article-content h3[id]",
   );
+  /* ---------------- 顶栏导航：展开 / 收起 ----------------
+     顶栏默认收在屏幕外，鼠标移到页面最上方（或最上面那个小箭头）就滑出来。
+     展开状态完全由这里的 .header-open 类控制，CSS 里的 :hover 写法只在没有 JS 时兜底：
+     元素快速滑入/滑出时，浏览器可能把 :hover 状态留在旧值上，于是「鼠标只是划过去
+     又马上移开，导航栏却一直挂在页面上」。这里改成每次指针移动都按「现在到底在不在
+     顶栏上方」重新判断，不再依赖 :hover，所以不会卡住。 */
+  const header = document.querySelector(".site-header");
+  if (header) {
+    const root = document.documentElement;
+    const zone = document.querySelector(".header-hover-zone");
+    const hint = document.querySelector("[data-open-header]");
+    const CLOSE_DELAY = 700; // 指针离开顶栏后停留一会儿再收起
+    let closeTimer = 0;
+    let inside = false; // 指针当前是否真的在顶栏 / 感应区 / 小箭头上
+    let pinned = false; // 触摸屏点开（没有悬停）时固定住，直到点别处
+    let lastCheck = 0;
+    let pointer = null; // 最后一次看到的指针位置，用于收起前再确认一次
+
+    // 告诉 CSS「交给 JS 了」，:hover 那套兜底规则随之失效
+    root.classList.add("header-js");
+    const isOpen = () => root.classList.contains("header-open");
+
+    const open = () => {
+      window.clearTimeout(closeTimer);
+      if (isOpen()) return;
+      root.classList.add("header-open");
+    };
+    const close = () => {
+      window.clearTimeout(closeTimer);
+      pinned = false;
+      inside = false;
+      if (isOpen()) root.classList.remove("header-open");
+    };
+    const scheduleClose = (delay = CLOSE_DELAY) => {
+      if (pinned) return;
+      window.clearTimeout(closeTimer);
+      closeTimer = window.setTimeout(() => {
+        if (pinned) return;
+        // 收起前再按「此刻」的几何确认一次：顶栏滑出的这 0.6 秒里指针可能已经
+        // 停在它上面了（这时不该收起），而这段静止期间不会再有 pointermove。
+        if (pointer && overHeader(pointer.x, pointer.y)) {
+          inside = true;
+          return;
+        }
+        pointer = null;
+        close();
+      }, delay);
+    };
+    // 用实际几何判断（getBoundingClientRect 会算上滑入滑出的 transform）
+    const overHeader = (x, y) =>
+      [header, zone, hint].some((node) => {
+        if (!node) return false;
+        const box = node.getBoundingClientRect();
+        return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+      });
+
+    for (const node of [zone, hint, header]) {
+      node?.addEventListener("pointerenter", (event) => {
+        if (event.pointerType === "touch") return; // 触摸没有「悬停」
+        if (typeof event.clientX === "number" && typeof event.clientY === "number") {
+          pointer = { x: event.clientX, y: event.clientY };
+        }
+        inside = true;
+        open();
+      });
+    }
+    const leave = () => {
+      inside = false;
+      scheduleClose();
+    };
+    header.addEventListener("pointerleave", leave);
+    zone?.addEventListener("pointerleave", leave);
+
+    // 兜底判断：指针一移动就重新算一次，不依赖 :hover 的旧状态
+    document.addEventListener(
+      "pointermove",
+      (event) => {
+        if (event.pointerType === "touch" || !isOpen()) return;
+        pointer = { x: event.clientX, y: event.clientY };
+        const now = Date.now();
+        if (now - lastCheck < 80) return; // 稍微节流，避免每次移动都算
+        lastCheck = now;
+        const isInside = overHeader(event.clientX, event.clientY);
+        if (isInside === inside) return;
+        inside = isInside;
+        if (isInside) window.clearTimeout(closeTimer);
+        else scheduleClose();
+      },
+      { passive: true },
+    );
+
+    // 指针移出窗口（含从浏览器顶边滑出去）：马上收起，别让它悬在那儿
+    document.addEventListener("mouseleave", () => {
+      pointer = null; // 指针已经不在页面上了，旧坐标不能再用
+      if (isOpen()) scheduleClose(120);
+    });
+    window.addEventListener("blur", () => {
+      pointer = null;
+      close();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        pointer = null;
+        close();
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
+    // 点到顶栏以外的地方就收起（点顶栏内部不动，比如正在点导航链接）
+    document.addEventListener("pointerdown", (event) => {
+      if (!isOpen()) return;
+      if (header.contains(event.target)) return;
+      if (hint?.contains(event.target) || zone?.contains(event.target)) return;
+      close();
+    });
+    // 点小箭头：收起时点开、展开时点收；触摸 / 键盘触发（没有悬停）就先固定住
+    hint?.addEventListener("click", (event) => {
+      const touch = event.pointerType === "touch" || event.detail === 0; // 触摸 / 键盘触发
+      if (isOpen()) {
+        // 触摸屏再点一下收起；鼠标点击通常就是「我要用导航」，保持展开
+        if (touch) close();
+        else window.clearTimeout(closeTimer);
+        return;
+      }
+      if (touch) pinned = true; // 触摸没有悬停，点开后先固定住
+      open();
+    });
+    // 键盘 Tab 进顶栏也要看得见（CSS 里也有 :focus-within，这里同步一下状态）
+    header.addEventListener("focusin", () => {
+      pinned = false;
+      open();
+    });
+    header.addEventListener("focusout", () => {
+      window.clearTimeout(closeTimer);
+      closeTimer = window.setTimeout(() => {
+        if (!header.contains(document.activeElement)) close();
+      }, 120);
+    });
+
+    // 只读状态出口：方便排查问题和回归测试
+    window.MinxiHeader = {
+      open,
+      close,
+      isOpen,
+      state: () => ({ open: isOpen(), pinned, inside }),
+    };
+  }
+
   if ("IntersectionObserver" in window && headings.length) {
     const observer = new IntersectionObserver(
       (entries) => {

@@ -77,6 +77,23 @@ assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
 assert(css.includes('html[data-theme="light"] .article-content'), "Light overrides for articles are missing");
 
+// 顶栏：展开状态由 main.js 判断后加类，靠 :hover 会卡住（详见 tools/nav.test.mjs）
+assert(index.includes('class="header-hint"'), "Top hint arrow is missing");
+assert(index.includes("data-open-header"), "Top hint arrow trigger is missing");
+assert(index.includes('class="header-hover-zone"'), "Header hover zone is missing");
+assert(/js\/main\.js\?v=/.test(index), "Header script must be cache-busted");
+assert(/css\/main\.css\?v=/.test(index), "Header stylesheet must be cache-busted");
+assert(css.includes("html.header-open .site-header"), "Header open state must be class driven");
+const bareCss = css.replace(/\/\*[\s\S]*?\*\//g, " "); // 注释里也有选择器，先剥掉
+const hoverOpeners = [...bareCss.matchAll(/([^{}]+)\{/g)]
+  .flatMap((match) => match[1].split(","))
+  .map((selector) => selector.replace(/\s+/g, " ").trim())
+  .filter((selector) => /:hover/.test(selector) && /(\.site-header|\.site-header:hover)$/.test(selector));
+assert(hoverOpeners.length >= 3, `Header hover fallback rules are missing (${hoverOpeners.length})`);
+for (const selector of hoverOpeners) {
+  assert(selector.startsWith("html:not(.header-js)"), `Header opens from bare :hover, it will stick: ${selector}`);
+}
+
 const wallpaperRule = /--wallpaper-image:\s*([^;]+);/.exec(index);
 if (look.wallpaper) {
   assert.equal(index.includes('data-wallpaper="on"'), true, "Wallpaper layer must be enabled");

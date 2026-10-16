@@ -20,7 +20,7 @@
   <script src="<%- url_for('/js/wallpaper.js') %>?v=wallpaper-1"></script>
   <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>">
   <% if (appearance.faviconType === 'image/png') { %><link rel="apple-touch-icon" href="<%= url_for(appearance.favicon) %>">
-  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=theme-1">
+  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=nav-1">
   <link rel="stylesheet" href="<%- url_for('/vendor/katex/katex.min.css') %>">
   <% if (appearance.hasWallpaper) { %><style>
     :root {
@@ -29,7 +29,7 @@
       --wallpaper-blur: <%= appearance.wallpaperBlur %>px;
     }
   </style>
-  <% } %><script src="<%- url_for('/js/main.js') %>" defer></script>
+  <% } %><script src="<%- url_for('/js/main.js') %>?v=nav-1" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>

@@ -1,4 +1,10 @@
 <div class="header-hover-zone" aria-hidden="true"></div>
+<%# 页面最上方的半透明小箭头：提示「上面还有导航栏」。鼠标悬停或点击（触摸屏）都会拉出顶栏；
+    它是纯装饰 + 指针辅助，键盘用户直接 Tab 到导航链接即可（顶栏会随焦点滑出），
+    所以这里不放进 Tab 顺序，也不需要读屏朗读。 -%>
+<button class="header-hint" type="button" data-open-header tabindex="-1" aria-hidden="true">
+  <svg class="header-hint-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9.8 6 5.6 6-5.6"/></svg>
+</button>
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="<%- url_for('/') %>" aria-label="Minxi 的 blog 首页"><span class="brand-mark"><img class="brand-mark-image" src="https://cdn.luogu.com.cn/upload/usericon/1549479.png" alt="" width="39" height="39" decoding="async" referrerpolicy="no-referrer"></span><span>Minxi<span class="brand-suffix"> 的 blog</span></span></a>
