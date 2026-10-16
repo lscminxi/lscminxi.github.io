@@ -21,6 +21,7 @@ const DEFAULTS = Object.freeze({
   wallpaperDim: 62, // 0–95：壁纸压暗程度（百分比），保证深色主题下的可读性
   wallpaperBlur: 0, // 0–20：壁纸模糊半径（px）
   wallpapers: Object.freeze([]), // 访客可自选的壁纸库；站点默认壁纸由 wallpaper 决定
+  theme: 'auto', // 新访客看到的主题：auto（跟随系统）/ light / dark
 });
 
 const MAX_URL_LENGTH = 2000;
@@ -31,6 +32,10 @@ const MAX_ID_LENGTH = 64;
 // 访客自己选择的背景只保存在浏览器里（localStorage），不提交任何东西到仓库。
 const VISITOR_STORAGE_KEY = 'minxi.wallpaper';
 const VISITOR_MODES = Object.freeze(['default', 'none', 'gallery', 'custom']);
+
+// 主题（浅色 / 深色）同样是访客自己的选择，键名与取值都在这里统一维护。
+const THEME_STORAGE_KEY = 'minxi.theme';
+const THEME_MODES = Object.freeze(['auto', 'light', 'dark']); // auto = 跟随系统
 
 const FAVICON_TYPES = Object.freeze({
   png: 'image/png',
@@ -234,6 +239,32 @@ function resolveVisitorWallpaper(stored, gallery = [], site = {}, options = {}) 
   return { ...base, dim: choice.dim ?? base.dim, blur: choice.blur ?? base.blur };
 }
 
+/** 主题模式：只接受 auto / light / dark，其它输入一律回落到 auto。 */
+function normalizeTheme(value) {
+  if (typeof value !== 'string') return DEFAULTS.theme;
+  const mode = value.trim().toLowerCase();
+  return THEME_MODES.includes(mode) ? mode : DEFAULTS.theme;
+}
+
+/**
+ * 访客选的主题（可能是旧格式或被手工改坏）→ 'auto' | 'light' | 'dark' | null。
+ * null 表示「访客没有选过」，这时才使用站点默认值 / 系统偏好。
+ */
+function normalizeThemeChoice(value) {
+  if (typeof value !== 'string') return null;
+  const mode = value.trim().toLowerCase();
+  return THEME_MODES.includes(mode) && mode !== 'auto' ? mode : null;
+}
+
+/** 结合访客选择、站点默认值与系统偏好，算出最终要用的主题。 */
+function resolveTheme(choice, siteDefault, prefersLight = false) {
+  const picked = normalizeThemeChoice(choice);
+  if (picked) return picked;
+  const preset = normalizeTheme(siteDefault);
+  if (preset !== 'auto') return preset;
+  return prefersLight ? 'light' : 'dark';
+}
+
 /**
  * 把任意（可能被手工改坏、甚至恶意构造的）输入整理成可信的外观设置。
  * 缺失或不合法的字段会回落到默认值，绝不抛出异常，保证构建永远可用。
@@ -250,6 +281,7 @@ function resolveAppearance(input) {
     wallpaperDim: clampNumber(source.wallpaperDim, 0, 95, DEFAULTS.wallpaperDim),
     wallpaperBlur: clampNumber(source.wallpaperBlur, 0, 20, DEFAULTS.wallpaperBlur),
     wallpapers: resolveWallpaperGallery(source.wallpapers),
+    theme: normalizeTheme(source.theme),
   };
 }
 
@@ -275,6 +307,7 @@ const FIELD_HINTS = Object.freeze({
   avatar: '头像图片地址。可以填 https:// 外链，也可以先用「图片」标签页上传，再填 /images/文件名。',
   wallpaper: '页面壁纸地址（站点默认壁纸）。留空表示不使用壁纸，恢复纯色深色背景。',
   favicon: '浏览器标签页图标地址。默认 /images/favicon.svg。',
+  theme: '新访客看到的主题：auto 跟随系统偏好，也可以固定为浅色或深色。访客随时能自己切换，选择只存在他的浏览器里。',
   wallpaperDim: '壁纸压暗程度：数值越大壁纸越暗、正文越清晰。0 表示完全不压暗。',
   wallpaperBlur: '壁纸模糊半径（px）。0 表示不模糊；数值较大时更柔和但更耗性能。',
   wallpapers: '访客可自选的背景列表。只有登录后台的 admin 能增删；访客的选择只存在自己的浏览器里。',
@@ -287,6 +320,11 @@ module.exports = {
   MAX_LABEL_LENGTH,
   VISITOR_STORAGE_KEY,
   VISITOR_MODES,
+  THEME_STORAGE_KEY,
+  THEME_MODES,
+  normalizeTheme,
+  normalizeThemeChoice,
+  resolveTheme,
   isSafeImageUrl,
   resolveAppearance,
   resolveWallpaperGallery,

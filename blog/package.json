@@ -14,7 +14,8 @@
     "test:preview": "npm run assets && node --test tools/preview.test.mjs",
     "test:appearance": "npm run assets && node --test tools/appearance.test.mjs",
     "test:delete": "node --test tools/deletion.test.mjs",
-    "test:wallpaper": "npm run assets && npm run build && node --test tools/wallpaper.test.mjs"
+    "test:wallpaper": "npm run assets && npm run build && node --test tools/wallpaper.test.mjs",
+    "test:theme": "npm run assets && npm run build && node --test tools/theme.test.mjs"
   },
   "engines": {
     "node": ">=22"

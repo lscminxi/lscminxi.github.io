@@ -66,6 +66,17 @@ for (const item of look.wallpapers) {
 }
 assert(look.wallpapers.length <= appearance.MAX_WALLPAPERS, "Too many wallpapers in the gallery");
 
+// 主题：默认值必须写进页面，浅色样式与脚本都要随构建产物发布。
+assert(["auto", "light", "dark"].includes(look.theme), `Invalid theme: ${look.theme}`);
+const themeDefault = /data-theme-default="([^"]*)"/.exec(index);
+assert.equal(themeDefault?.[1], look.theme, "Theme default must match appearance.json");
+assert(index.includes("/js/theme.js"), "Theme script is missing");
+assert(index.includes("data-theme-toggle"), "Theme toggle button is missing");
+const css = await readFile(join(root, "css", "main.css"), "utf8");
+assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
+assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
+assert(css.includes('html[data-theme="light"] .article-content'), "Light overrides for articles are missing");
+
 const wallpaperRule = /--wallpaper-image:\s*([^;]+);/.exec(index);
 if (look.wallpaper) {
   assert.equal(index.includes('data-wallpaper="on"'), true, "Wallpaper layer must be enabled");

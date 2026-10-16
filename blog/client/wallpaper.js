@@ -14,6 +14,7 @@
  * 地址校验与站点构建共用 lib/appearance.cjs 的同一套规则。
  */
 import appearance from '../lib/appearance.cjs';
+import { appearanceJson, appearanceDataUrl } from './data.js';
 
 const KEY = appearance.VISITOR_STORAGE_KEY;
 const root = document.documentElement;
@@ -127,20 +128,11 @@ function select(choice) {
 
 /* ---------------- 壁纸库 ---------------- */
 
-function appearanceDataUrl() {
-  const dialog = document.getElementById('wallpaper-dialog');
-  return dialog?.dataset.appearance || '/appearance.json';
-}
-
 function loadGallery({ force = false } = {}) {
   if (galleryPromise && !force) return galleryPromise;
-  const url = appearanceDataUrl();
-  galleryPromise = fetch(url, { cache: 'no-cache' })
-    .then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    })
+  galleryPromise = appearanceJson(appearanceDataUrl())
     .then((data) => {
+      if (!data) throw new Error('appearance.json unavailable');
       const look = appearance.resolveAppearance(data);
       gallery = look.wallpapers;
       galleryReady = true;

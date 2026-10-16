@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <% const appearance = site_appearance(); -%>
-<html lang="zh-CN"<% if (appearance.hasWallpaper) { %> data-wallpaper="on" data-wallpaper-src="<%= appearance.wallpaper %>" data-wallpaper-dim="<%= appearance.wallpaperDim %>" data-wallpaper-blurpx="<%= appearance.wallpaperBlur %>"<% if (appearance.hasWallpaperBlur) { %> data-wallpaper-blur="on"<% } %><% } %>>
+<html lang="zh-CN" data-theme-default="<%= appearance.theme %>"<% if (appearance.hasWallpaper) { %> data-wallpaper="on" data-wallpaper-src="<%= appearance.wallpaper %>" data-wallpaper-dim="<%= appearance.wallpaperDim %>" data-wallpaper-blurpx="<%= appearance.wallpaperBlur %>"<% if (appearance.hasWallpaperBlur) { %> data-wallpaper-blur="on"<% } %><% } %>>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,17 +8,19 @@
   <% const pageTitle = is_home() ? config.title : (page.title || (is_archive() ? '文章归档' : (page.tag || page.category || '文章'))) + ' · ' + config.title; -%>
   <title><%= pageTitle %></title>
   <meta name="description" content="<%= page.description || config.description %>">
-  <meta name="theme-color" content="#0b0e14">
+  <meta name="theme-color" content="#0b0e14"><!-- 主题脚本会按当前主题更新它 -->
   <meta property="og:title" content="<%= pageTitle %>">
   <meta property="og:description" content="<%= page.description || config.description %>">
   <meta property="og:type" content="<%= is_post() ? 'article' : 'website' %>">
   <meta property="og:url" content="<%= config.url.replace(/\/$/, '') + url_for(page.path || '') %>">
   <link rel="canonical" href="<%= config.url.replace(/\/$/, '') + url_for(page.path || '') %>">
-  <%# 访客端背景选择：同步脚本，先应用访客自己选的背景，再接线对话框（见 client/wallpaper.js）。 -%>
+  <%# 访客端主题与背景选择：两个同步脚本，在样式表之前先定下 data-theme / 上次选的背景，
+      因此不会先闪一下深色或默认壁纸（见 client/theme.js、client/wallpaper.js）。 -%>
+  <script src="<%- url_for('/js/theme.js') %>?v=theme-1"></script>
   <script src="<%- url_for('/js/wallpaper.js') %>?v=wallpaper-1"></script>
   <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>">
   <% if (appearance.faviconType === 'image/png') { %><link rel="apple-touch-icon" href="<%= url_for(appearance.favicon) %>">
-  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=wallpaper-1">
+  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=theme-1">
   <link rel="stylesheet" href="<%- url_for('/vendor/katex/katex.min.css') %>">
   <% if (appearance.hasWallpaper) { %><style>
     :root {

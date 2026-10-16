@@ -27,4 +27,10 @@ await build({
   bundle: true, minify: true, format: 'iife', platform: 'browser',
   target: ['es2020'], legalComments: 'eof',
 });
-console.log('✓ Local KaTeX fonts/CSS, safe Markdown preview, appearance and wallpaper bundles prepared.');
+// 访客端主题：同样在 <head> 中同步加载，先把 data-theme 写好再解析样式表。
+await build({
+  entryPoints: ['client/theme.js'], outfile: 'themes/minxi/source/js/theme.js',
+  bundle: true, minify: true, format: 'iife', platform: 'browser',
+  target: ['es2020'], legalComments: 'eof',
+});
+console.log('✓ Local KaTeX fonts/CSS, safe Markdown preview, appearance, wallpaper and theme bundles prepared.');

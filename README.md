@@ -2,7 +2,7 @@
 
 > 一个幼儿园小班水平的 Oier · lsc_minxi 的 OI 学习记录
 
-基于 **Hexo 8 + 自定义 Minxi 深色主题 + GitHub Pages**。无需数据库，文章使用 Markdown 编写。主题本身不依赖外部字体或前端框架；头像、壁纸和网页图标在 `/admin/` 的「外观」里配置，可以填外链，也可以先用后台的「图片」上传再填 `/images/文件名`。此外，站点右上角的「背景」按钮让**任何访客**都能从站长维护的壁纸库里挑一张背景，选择只存在自己的浏览器里，不影响别人，也不会提交到仓库。
+基于 **Hexo 8 + 自定义 Minxi 深色主题 + GitHub Pages**。无需数据库，文章使用 Markdown 编写。主题本身不依赖外部字体或前端框架；头像、壁纸和网页图标在 `/admin/` 的「外观」里配置，可以填外链，也可以先用后台的「图片」上传再填 `/images/文件名`。此外，站点右上角的「背景」按钮让**任何访客**都能从站长维护的壁纸库里挑一张背景；旁边的主题按钮可以在**浅色 / 深色**之间切换（默认跟随系统偏好）。这些选择只存在访客自己的浏览器里，不影响别人，也不会提交到仓库。
 
 ## 本地预览
 
@@ -63,7 +63,7 @@ description: 用一句话介绍题目和核心思路。
 
 后台页面地址：**https://lscminxi.github.io/admin/**。导航里没有入口，页面也带 `noindex`，不会出现在搜索结果里。
 
-> 维护提示：`/admin/` 的静态资源都带 `?v=` 版本号（`index.html` 里的 `admin.css` / `admin.js` / `appearance.js`，主题里的 `main.css` / `wallpaper.js` 同理）。**改动这些文件后请顺手把版本号 +1**（例如 `?v=wallpaper-2`），否则浏览器会继续使用缓存里的旧脚本，页面上会出现「新功能不生效 / 面板是空的」之类的假故障。
+> 维护提示：`/admin/` 的静态资源都带 `?v=` 版本号（`index.html` 里的 `admin.css` / `admin.js` / `appearance.js`，主题里的 `main.css` / `wallpaper.js` / `theme.js` 同理）。**改动这些文件后请顺手把版本号 +1**（例如 `?v=wallpaper-2`），否则浏览器会继续使用缓存里的旧脚本，页面上会出现「新功能不生效 / 面板是空的」之类的假故障。
 
 站点是纯静态的 GitHub Pages，没有自己的服务器，所以后台**不保存任何账号密码**：
 
@@ -71,7 +71,7 @@ description: 用一句话介绍题目和核心思路。
 2. **文章**：列出 `blog/source/_posts/` 下全部文章，可新建、在线编辑（标题、文件名、日期、分类、标签、描述、强调色、示例标记、Markdown 正文）、实时删除。编辑器支持「编辑 / 分屏 / 预览」，正文输入后自动更新预览，无需保存；提供「插入公式」按钮。预览在本地浏览器中生成，不调用 GitHub；预览用沙箱和 HTML 清洗阻止脚本执行。代码高亮与目录以发布页为准。改文件名会自动「新建 + 删除旧文件」。
 3. **图片**：上传到 `blog/source/images/`（GitHub Contents API 单文件上限约 1 MB），可复制 `/images/xxx.png` 写法、插入正文或删除。超过 1 MB 的 JPG / PNG / WebP / AVIF 会在浏览器里先等比缩小（长边 ≤ 2400）并重新编码，再上传压缩后的版本（照片转 WebP，PNG 保留透明）；GIF / SVG 无法可靠压缩，仍会提示超限。
 4. **个人简介**：直接编辑 `blog/source/about/index.md`。
-5. **外观**：修改**头像**、**页面壁纸（站点默认）**和**网页图标**，可调壁纸压暗程度与模糊半径，并有实时预览；下面的「可选背景」列表就是访客能自选的壁纸库，可以**一次上传多张图片**、填外链、调整顺序、**设为默认壁纸**或**下架**。设置写入 `blog/source/_data/appearance.json`，同样是「只有 admin 能改」：写权限由 GitHub 判断，账号还要在 `CONFIG.allowedLogins` 名单里，普通访客看到的只是构建好的静态页面，无法改动。访客的挑选只写进他们自己的 `localStorage`，不产生任何提交。详见「[头像、壁纸与网页图标](#头像壁纸与网页图标外观)」和「[访客自选背景](#访客自选背景wallpapers)」。
+5. **外观**：修改**头像**、**页面壁纸（站点默认）**、**网页图标**和**站点默认主题**（`auto` / `light` / `dark`，访客随时能自己切换），可调壁纸压暗程度与模糊半径，并有实时预览；下面的「可选背景」列表就是访客能自选的壁纸库，可以**一次上传多张图片**、填外链、调整顺序、**设为默认壁纸**或**下架**。设置写入 `blog/source/_data/appearance.json`，同样是「只有 admin 能改」：写权限由 GitHub 判断，账号还要在 `CONFIG.allowedLogins` 名单里，普通访客看到的只是构建好的静态页面，无法改动。访客的挑选只写进他们自己的 `localStorage`，不产生任何提交。详见「[头像、壁纸与网页图标](#头像壁纸与网页图标外观)」和「[访客自选背景](#访客自选背景wallpapers)」。
 6. **构建状态**：显示 GitHub Actions 结果；删除/保存文章后跟踪本次提交，避免把旧任务误报为成功。构建完成后仍需等待 Pages 发布，源码删除不等于公开网页已下线。
 
 每次保存都以你的身份提交到 `main`。`.github/workflows/deploy.yml` 里的 `publish-root` 任务会自动构建、检查并把生成的静态文件提交回仓库（提交信息带 `[skip ci]`，不会循环触发），分支发布模式下会显式请求 Pages 重建（因为 `GITHUB_TOKEN` 的提交不会自动触发新工作流），通常几分钟后生效。也就是说：**用后台写完文章不需要再手动跑 `publish:prepare`**；在本地改源码时仍然建议手动跑一次，方便先检查。
@@ -102,6 +102,7 @@ description: 用一句话介绍题目和核心思路。
   "favicon": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
   "wallpaperDim": 48,
   "wallpaperBlur": 0,
+  "theme": "auto",
   "wallpapers": [
     {
       "id": "b6e3lyp1-116s2ku",
@@ -119,7 +120,7 @@ description: 用一句话介绍题目和核心思路。
 | `favicon` | 浏览器标签页图标；`type` 由扩展名推断，`.png` 时额外输出 `apple-touch-icon`。 |
 | `wallpaperDim` | 壁纸压暗程度（0–95），数值越大壁纸越暗、正文越清晰。 |
 | `wallpaperBlur` | 壁纸模糊半径（0–20 px）。0 表示不模糊。 |
-| `wallpapers` | 访客可自选的背景列表（最多 48 张），详见下一节。 |
+| `theme` | 站点默认主题：`auto`（跟随系统偏好）/ `light`（浅色）/ `dark`（深色）。任何访客都能在页面上自己切换，详见「浅色模式」一节。 |
 
 改法有两种：
 
@@ -157,6 +158,20 @@ description: 用一句话介绍题目和核心思路。
 - 头像是外链时可能被 CDN 防盗链拦住（图片打不开时卡片会自动显示字母标记 `m_`）。稳妥做法：在后台「图片」里上传图片（超 1 MB 的照片会自动压缩），再用「外观」里的「图片库」按钮填 `/images/文件名`。
 - 壁纸只在配置了图片时才生效：`layout.ejs` 输出 `html[data-wallpaper="on"]` 与 `--wallpaper-image` / `--wallpaper-veil` / `--wallpaper-blur` 变量，样式在 `main.css` 结尾；页面顶栏会变得更透明，压暗层和暗角保证正文对比度。
 - 外观相关回归测试：`cd blog && npm run test:appearance`（共享校验规则、后台面板、保存时的 SHA/分支/内容、拒绝恶意地址、以及「恶意 JSON → 构建产物无注入」）。`npm run build && npm run check` 还会校验构建产物与 `appearance.json` 一致。
+
+### 浅色模式
+
+深色仍然是默认外观（原有配色一行未改，两套主题互不干扰）。任何访客都能切换浅色：
+
+- **顶栏按钮**：站点右上角多了一个小图标（太阳 / 月亮），点一下就在浅色和深色之间切换；按钮在没有 JavaScript 时不会出现，因此不会留下点不动的空按钮。
+- **跟随系统**：没有主动选过的访客会跟随**站点默认主题**；站点默认值设为 `auto` 时再跟随系统的浅色 / 深色偏好，并在系统切换时实时跟着变。
+- **管理后台**：`/admin/` 顶栏有「跟随系统 / 浅色 / 深色」三选一，同样只影响你自己的浏览器；想改全站默认值用「外观」里的**站点默认主题**（写入 `appearance.json` 的 `theme` 字段）。
+
+关键点和背景选择一致：**只写访客自己的 `localStorage`（键名 `minxi.theme`）**——不提交、不影响其他访客、不需要登录。清掉这个键（或点「跟随系统」）就回到站点默认值。
+
+实现上：`blog/client/theme.js` 由 `npm run assets` 打包成 `/js/theme.js`，在 `<head>` 中**先于样式表**同步加载，因此在第一帧就写好了 `html[data-theme]`，不会先闪一下深色；`<meta name="theme-color">` 也会跟着当前主题换成对应的底色。取自系统的偏好通过 `matchMedia('(prefers-color-scheme: light)')` 读取；页面加载完成后会再读一次公开的 `/appearance.json`，用来校正「站长改了默认值但访客的 HTML 仍是缓存版本」的情况。浅色样式是 `main.css` 结尾一个**带作用域**的覆盖块（`html[data-theme="light"] …`）加一组语义化令牌（`--bg` / `--panel` / `--line` / `--text` / `--accent`…），深色规则保持原样；壁纸的压暗层走 `--veil-rgb` 变量，浅色下换成提亮层，正文对比度仍然有保障。
+
+回归测试：`cd blog && npm run test:theme`（主题值清洗与回落、访客选择 / 跟随系统 / 站点默认值三级优先级、首次绘制不闪烁、后台三选一与 `theme` 字段写回、恶意 `theme` 值的构建产物检查）。此外还守着两件事：**深色里每一处硬编码颜色都必须有对应的浅色覆盖**，以及**浅色下不允许残留深色面板**——改动配色后如果漏了覆盖，测试会直接列出缺哪一条。
 
 ## 数学公式与实时预览
 
@@ -264,11 +279,12 @@ blog/
   package-lock.json           # 可重复安装的锁定版本
   scaffolds/post.md           # 新文章模板
   lib/                        # 折叠框、公式选项与外观规则（Hexo 与浏览器共用）
-  client/                     # 浏览器端入口：后台 preview/appearance、访客端 wallpaper
+  client/                     # 浏览器端入口：后台 preview/appearance、访客端 wallpaper/theme
   tools/check.mjs             # 构建产物检查
   tools/export.mjs            # 同步静态产物到现有 Pages 根目录
   tools/appearance.test.mjs   # 外观（头像 / 壁纸 / 图标）回归测试
   tools/wallpaper.test.mjs    # 访客自选背景（壁纸库、上传 / 下架）回归测试
+  tools/theme.test.mjs        # 深浅主题（切换、覆盖完整性、后台默认值）回归测试
   source/
     _posts/                   # Markdown 文章
     _data/appearance.json     # 头像 / 壁纸 / 网页图标 / 可选背景（后台「外观」写入）
@@ -284,13 +300,14 @@ blog/
     source/css/main.css       # 主题与响应式样式
     source/js/main.js          # 搜索、筛选、复制、目录、返回顶部
     source/js/wallpaper.js     # 访客端背景选择器（npm run assets 生成，勿手改）
+    source/js/theme.js         # 访客端深浅主题（npm run assets 生成，勿手改）
     source/images/favicon.svg
 ```
 
-修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改头像、壁纸、网页图标、访客可选背景：`blog/source/_data/appearance.json`，或者直接在 `/admin/` 后台的「外观」里改。修改主题色：`main.css` 中的 `:root` 变量。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`。
+修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改头像、壁纸、网页图标、访客可选背景：`blog/source/_data/appearance.json`，或者直接在 `/admin/` 后台的「外观」里改。修改主题色：`main.css` 中的 `:root` 变量（深色）与紧随其后 `html[data-theme="light"]` 的浅色令牌。修改站点默认主题：`appearance.json` 的 `theme` 字段，或者后台「外观」→「站点默认主题」。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`。
 
 ## 安全与隐私
 
-站点是纯静态页面，无账号系统、无统计追踪。头像、壁纸、网页图标和访客可选背景列表同样只能由 `/admin/` 的 admin 修改（写权限由 GitHub 判定）。访客可以自选背景，但选择只写进自己浏览器的 `localStorage`，不会上传、不会提交、不会影响其他访客——站点的公开文件始终保持不变。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 后台同样没有账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`，详见「在线管理后台」一节。
+站点是纯静态页面，无账号系统、无统计追踪。头像、壁纸、网页图标和访客可选背景列表同样只能由 `/admin/` 的 admin 修改（写权限由 GitHub 判定）。访客可以自选背景和深浅主题，但这些选择只写进自己浏览器的 `localStorage`，不会上传、不会提交、不会影响其他访客——站点的公开文件始终保持不变。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 后台同样没有账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`，详见「在线管理后台」一节。
 
 2026-10-14 的 `npm audit` 检测到 Hexo 上游构建依赖的 9 条报告（7 high、2 moderate），对应 `braces` / `sprintf-js` 的拒绝服务问题及其依赖链。`npm audit fix` 无法在当前兼容版本下消除；工具建议的 `--force` 会把 Hexo 降级到旧主版本，因此未执行。依赖仅运行于本地或 CI 构建，未打包进公开页面，但不要使用不可信的模板、插件或配置；来自外部的 PR 应在隔离的 GitHub runner 中构建，且不能获得发布权限。后续升级 Hexo 后请重新运行审计。

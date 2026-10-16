@@ -704,3 +704,150 @@ code {
   font: 9px var(--mono);
   color: var(--muted);
 }
+
+/* 顶栏的主题三选一（样式主体在 main.css 的浅色模式小节里） */
+.theme-options {
+  margin: 0 4px;
+}
+.theme-options .muted {
+  margin-right: 2px;
+}
+@media (max-width: 720px) {
+  .theme-options .muted {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+   浅色模式（后台）
+   和前台同一个机制：访客（这里就是站长自己）在顶栏选「浅色」时，
+   <html> 上会出现 data-theme="light"（见 client/theme.js）。
+   深色仍然是默认值，上面的规则一行没改。
+   ------------------------------------------------------------------ */
+html[data-theme="light"] .admin-topbar {
+  background: #f7f9fcf0;
+}
+html[data-theme="light"] .admin-user,
+html[data-theme="light"] .count {
+  border-color: #a9cfc2;
+}
+html[data-theme="light"] .lead {
+  color: #4c5966;
+}
+html[data-theme="light"] .field input,
+html[data-theme="light"] .field select,
+html[data-theme="light"] .code-area,
+html[data-theme="light"] .small-select,
+html[data-theme="light"] .log,
+html[data-theme="light"] code {
+  border-color: #d5dee9;
+  background: #ffffff;
+}
+html[data-theme="light"] code {
+  color: #2c3746;
+}
+html[data-theme="light"] .field input:focus,
+html[data-theme="light"] .field select:focus,
+html[data-theme="light"] .code-area:focus {
+  border-color: #4a9c88;
+}
+html[data-theme="light"] .btn {
+  border-color: #d5dee9;
+  background: #f2f6fa;
+}
+html[data-theme="light"] .btn:hover {
+  border-color: #4a9c88;
+}
+html[data-theme="light"] .btn.primary {
+  border-color: #9ec9bc;
+  background: #e7f5f1;
+}
+html[data-theme="light"] .btn.primary:hover {
+  background: #d8efe9;
+}
+html[data-theme="light"] .btn.danger {
+  border-color: #e5b6b9;
+  background: #fdeff0;
+  color: #a8332f;
+}
+html[data-theme="light"] .btn.danger:hover {
+  border-color: #cf8b8f;
+  color: #8c211e;
+}
+html[data-theme="light"] .error {
+  border: 0;
+  border-left: 2px solid #cf8b8f;
+  background: #fdeff0;
+  color: #a8332f;
+}
+html[data-theme="light"] .warn {
+  color: #8a6414;
+}
+html[data-theme="light"] .chip.ok {
+  border-color: #9ec9bc;
+}
+html[data-theme="light"] .chip.run {
+  border-color: #ddc48a;
+  color: #8a6414;
+}
+html[data-theme="light"] .chip.err {
+  border-color: #e5b6b9;
+  color: #a8332f;
+}
+html[data-theme="light"] .thumb {
+  background-color: #f2f6fa;
+}
+html[data-theme="light"] .log .t {
+  color: #6b7787;
+}
+html[data-theme="light"] .log .err {
+  color: #a8332f;
+}
+html[data-theme="light"] .toast {
+  border-color: #9ec9bc;
+  background: #e7f5f1;
+}
+html[data-theme="light"] .toast.err {
+  border-color: #e5b6b9;
+  background: #fdeff0;
+  color: #a8332f;
+}
+html[data-theme="light"] .modal {
+  background: #dfe6f0cc;
+}
+html[data-theme="light"] .modal-card p {
+  color: #4c5966;
+}
+html[data-theme="light"] .preview-card {
+  border-color: #d7dfe9;
+  background: #fffffff2;
+  box-shadow: 0 10px 30px rgba(23, 40, 66, 0.14);
+}
+html[data-theme="light"] .preview-avatar {
+  border-color: #b6d8ce;
+  background: #e9f6f2;
+}
+html[data-theme="light"] .preview-favicon {
+  border-color: #d5dee9;
+}
+html[data-theme="light"] .preview-favicon img {
+  background: #f2f6fa;
+}
+html[data-theme="light"] .wallpaper-library {
+  border-color: #d5dee9;
+  background: #ffffff;
+}
+html[data-theme="light"] #appearance-preview-note.err {
+  color: #a8332f;
+}
+/* 有壁纸时后台面板的半透明底色：深色压暗，浅色提亮 */
+html[data-theme="light"][data-wallpaper="on"] .admin-topbar {
+  background: rgba(247, 249, 252, 0.8);
+}
+html[data-theme="light"][data-wallpaper="on"] .admin-body .panel {
+  background: rgba(255, 255, 255, 0.9);
+}
+html[data-theme="light"][data-wallpaper="on"] .admin-body .statusbar,
+html[data-theme="light"][data-wallpaper="on"] .admin-body .tab.active {
+  background: rgba(244, 248, 252, 0.9);
+}

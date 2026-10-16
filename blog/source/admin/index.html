@@ -8,11 +8,13 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css?v=wallpaper-1">
-  <link rel="stylesheet" href="./admin.css?v=wallpaper-1">
+  <link rel="stylesheet" href="/css/main.css?v=theme-1">
+  <link rel="stylesheet" href="./admin.css?v=theme-1">
+  <%# 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线下面的切换按钮。 -%>
+  <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=fold-preview-2" defer></script>
-  <script src="./appearance.js?v=wallpaper-1" defer></script>
-  <script src="./admin.js?v=wallpaper-1" defer></script>
+  <script src="./appearance.js?v=theme-1" defer></script>
+  <script src="./admin.js?v=theme-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -21,6 +23,12 @@
       <span class="admin-repo" id="repo-chip">lscminxi/lscminxi.github.io · main</span>
       <span class="admin-spacer"></span>
       <span class="admin-user" id="user-chip" hidden></span>
+      <div class="theme-options" role="group" aria-label="界面主题">
+        <span class="muted small">主题</span>
+        <button type="button" data-theme-option="auto" aria-pressed="true">跟随系统</button>
+        <button type="button" data-theme-option="light" aria-pressed="false">浅色</button>
+        <button type="button" data-theme-option="dark" aria-pressed="false">深色</button>
+      </div>
       <a class="btn ghost small" href="/">返回站点</a>
       <button class="btn ghost small" id="logout-button" type="button" hidden>退出登录</button>
     </div>
@@ -130,6 +138,13 @@
           </label>
           <label class="field wide"><span>网页图标地址（浏览器标签页）</span>
             <input id="a-favicon" type="text" spellcheck="false" placeholder="/images/favicon.svg">
+          </label>
+          <label class="field wide"><span>站点默认主题（访客随时能自己切换）</span>
+            <select id="a-theme">
+              <option value="auto">跟随系统偏好（auto）</option>
+              <option value="light">浅色（light）</option>
+              <option value="dark">深色（dark）</option>
+            </select>
           </label>
           <label class="field"><span>壁纸压暗程度</span>
             <div class="range-row"><input id="a-dim" type="range" min="0" max="95" step="1"><output id="a-dim-value" for="a-dim">62%</output></div>

@@ -45,6 +45,7 @@ hexo.extend.generator.register("appearance-data", function (locals) {
         wallpaperDim: value.wallpaperDim,
         wallpaperBlur: value.wallpaperBlur,
         wallpapers: value.wallpapers,
+        theme: value.theme,
       },
       null,
       2,

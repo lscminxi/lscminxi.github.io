@@ -87,6 +87,7 @@
       favicon: $("#a-favicon"),
       dim: $("#a-dim"),
       blur: $("#a-blur"),
+      theme: $("#a-theme"),
       dimValue: $("#a-dim-value"),
       blurValue: $("#a-blur-value"),
     },
@@ -1402,6 +1403,7 @@
       wallpaperDim: Number(el.a.dim.value),
       wallpaperBlur: Number(el.a.blur.value),
       wallpapers: wallpaperDraft.map((item) => ({ ...item })),
+      theme: el.a.theme.value,
     };
   }
 
@@ -1411,6 +1413,7 @@
     el.a.favicon.value = value.favicon;
     el.a.dim.value = String(value.wallpaperDim);
     el.a.blur.value = String(value.wallpaperBlur);
+    el.a.theme.value = value.theme;
     wallpaperDraft = value.wallpapers.map((item) => ({ ...item }));
     appearancePreviewFailures.avatar = false;
     appearancePreviewFailures.favicon = false;
@@ -1857,7 +1860,7 @@
     el.appearanceStatus.textContent =
       "已填入默认值（默认图标 /images/favicon.svg，无壁纸，可选背景清空）；点「保存并提交」后生效。";
   });
-  for (const input of [el.a.avatar, el.a.wallpaper, el.a.favicon, el.a.dim, el.a.blur]) {
+  for (const input of [el.a.avatar, el.a.wallpaper, el.a.favicon, el.a.dim, el.a.blur, el.a.theme]) {
     input.addEventListener("input", renderAppearancePreview);
   }
   el.appearancePicker.addEventListener("change", () => {
