@@ -1290,6 +1290,7 @@ svg {
 .toc-sidebar h2 {
   font-size: 12px;
   font-weight: 500;
+  color: #fff;
   margin-bottom: 16px;
 }
 .toc-sidebar h2 span {
@@ -1313,7 +1314,7 @@ svg {
   padding-left: 13px;
 }
 .toc a {
-  color: #7f8c9e;
+  color: #fff;
 }
 .toc a:hover,
 .toc a.active {
@@ -1321,7 +1322,7 @@ svg {
 }
 .toc-back {
   font-size: 10px;
-  color: var(--dim);
+  color: #fff;
   display: block;
   margin-top: 20px;
 }

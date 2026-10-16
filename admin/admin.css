@@ -1,7 +1,18 @@
-/* 管理后台样式：复用 /css/main.css 的暗色变量与字体 */
+/* 管理后台样式：复用 /css/main.css 的暗色变量、字体和壁纸层 */
 .admin-body {
   min-height: 100vh;
   padding-bottom: 60px;
+}
+/* 让背景壁纸在面板下隐约可见，同时保留深色底以确保表单可读。 */
+html[data-wallpaper="on"] .admin-body .panel {
+  background: rgba(17, 21, 29, 0.9);
+}
+html[data-wallpaper="on"] .admin-body .statusbar,
+html[data-wallpaper="on"] .admin-body .tab.active {
+  background: rgba(21, 26, 35, 0.9);
+}
+html[data-wallpaper="on"] .admin-topbar {
+  background: rgba(11, 14, 20, 0.78);
 }
 .admin-topbar {
   position: sticky;
