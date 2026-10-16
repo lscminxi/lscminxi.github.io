@@ -237,17 +237,19 @@ test("the stylesheet drives the header from a class, not from :hover", () => {
   assert(/\.site-header:focus-within \{/.test(css), "键盘焦点仍要能展开顶栏");
 });
 
-test("the hint arrow is subtle, theme aware and respects reduced motion", () => {
+test("the hint arrow is a bare, subtle chevron that respects reduced motion", () => {
   const hint = /\.header-hint \{[\s\S]*?\n\}/.exec(css)?.[0] || "";
   assert(hint, "缺少 .header-hint 样式");
   assert(/opacity: 0\.\d/.test(hint), "半透明（opacity 小于 1）");
-  assert(/background: var\(--hint-bg\)/.test(hint), "底色走令牌，深浅主题各自取值");
-  assert(/color: var\(--accent\)/.test(hint), "颜色跟随主题强调色");
+  assert(/color: var\(--accent\)/.test(hint), "颜色跟随主题强调色（深浅自动跟着变）");
+  // 只有箭头本身：不带底衬／绿幕／模糊层
+  assert(!/background:(?!\s*none)/.test(hint), `小箭头不该有底色：${hint.match(/background:[^;]+/)?.[0]}`);
+  assert(!/backdrop-filter/.test(hint), "小箭头不该有毛玻璃底衬");
+  assert(!/background-image|linear-gradient|rgba\(\s*\d/.test(hint), "小箭头不该有渐变或半透明色块");
   assert(/pointer-events: none/.test(css), "展开后小箭头不应挡住点击");
   assert(/prefers-reduced-motion: reduce[\s\S]*?header-hint-icon[\s\S]*?animation: none/.test(css), "尊重「减少动态效果」");
-  // 深浅两套令牌都要有
-  assert(/--hint-bg: linear-gradient\(180deg, rgba\(92, 224, 196/.test(css), "深色主题的箭头底色");
-  assert(/--hint-bg: linear-gradient\(180deg, rgba\(15, 122, 106/.test(css), "浅色主题的箭头底色");
+  // 底衬用的令牌不该再留着（留着就说明还有别处在画那块绿）
+  assert(!/--hint-bg/.test(css), "已经没有底衬了，--hint-bg 令牌不该再存在");
 });
 
 test("the page ships the arrow, the script version and the trigger markup", () => {

@@ -138,7 +138,7 @@ html:not(.header-js) .site-header:focus-within {
 }
 /* 页面最上方的半透明小箭头：提示「上面还有导航栏」。
    鼠标悬停/点击都能拉出顶栏；顶栏展开后它淡出，收起来时再出现。
-   颜色全部走令牌（--hint-bg / --accent），深浅两套主题自动跟着变。 */
+   不带任何底衬（只有箭头本身），颜色走 --accent，深浅两套主题自动跟着变。 */
 .header-hint {
   position: fixed;
   top: 0;
@@ -152,12 +152,10 @@ html:not(.header-js) .site-header:focus-within {
   height: 16px;
   padding: 1px 0 0;
   border: 0;
-  border-radius: 0 0 12px 12px;
-  background: var(--hint-bg);
+  background: none;
   color: var(--accent);
   opacity: 0.5;
   cursor: pointer;
-  backdrop-filter: blur(6px);
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.25s ease, height 0.25s ease, transform 0.25s ease;
 }
@@ -2355,7 +2353,6 @@ html {
   --veil-vignette: 0.66;
   --header-veil: 0.78;
   /* 页面最上方提示箭头的底色：向下淡出，压在壁纸/内容上也好看 */
-  --hint-bg: linear-gradient(180deg, rgba(92, 224, 196, 0.22), rgba(92, 224, 196, 0.04));
 }
 html[data-theme="light"] {
   color-scheme: light;
@@ -2374,7 +2371,6 @@ html[data-theme="light"] {
   --veil-max: 0.9;
   --veil-vignette: 0.52;
   --header-veil: 0.72;
-  --hint-bg: linear-gradient(180deg, rgba(15, 122, 106, 0.2), rgba(15, 122, 106, 0.04));
 }
 /* ------------------------------------------------------------------
    主题：浅色 / 深色
