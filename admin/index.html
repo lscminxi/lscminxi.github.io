@@ -16,7 +16,7 @@
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=fold-preview-2" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=theme-3" defer></script>
+  <script src="./admin.js?v=owner-auth-4" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -46,6 +46,8 @@
         <strong>GitHub 令牌</strong>登录，浏览器直接调用 GitHub API 读写仓库文件：
         新建文章、在线编辑、上传图片、实时删除，全部以你的身份提交到
         <code>main</code> 分支，随后由 GitHub Actions 自动生成并发布静态页面。
+        登录时会通过 GitHub 确认令牌对应的账号；目前只有 <code>@lscminxi</code>
+        且令牌拥有仓库写权限才能进入。其他账号、身份校验失败或账号信息缺失都会被拒绝。
       </p>
       <form id="login-form" class="login-form" autocomplete="off">
         <label class="field">

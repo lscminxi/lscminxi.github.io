@@ -36,6 +36,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run check
+      - run: npm run test:admin-auth
       - name: Detect existing Pages publishing mode
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         id: pages
