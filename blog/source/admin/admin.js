@@ -10,15 +10,15 @@
  * 安全说明：
  *  - 令牌只保存在当前浏览器（sessionStorage，或勾选「记住」后的 localStorage），退出登录即清除。
  *  - 令牌只会发送到 api.github.com，本站没有任何后端，不会上传到别处。
- *  - 真正的权限由 GitHub 判断：没有仓库写权限的令牌无法提交任何改动。
- *    CONFIG.allowedLogins 只是额外的一层界面限制，可按需要增删账号。
+ *  - 真正的写权限由 GitHub 判断；此外，必须通过 /user 确认令牌对应的账号，且账号在允许名单中。
+ *  - 身份接口失败、账号信息缺失或允许名单为空时一律拒绝登录（fail closed）。
  */
 (() => {
   const CONFIG = {
     owner: "lscminxi",
     repo: "lscminxi.github.io",
     branch: "main",
-    allowedLogins: ["lscminxi"], // 留空数组 [] 表示任何有写权限的账号都可以登录
+    allowedLogins: ["lscminxi"], // 仅允许名单中的账号；留空或配置错误时拒绝所有人
     api: "https://api.github.com",
     siteUrl: "https://lscminxi.github.io",
     postsDir: "blog/source/_posts",
@@ -521,24 +521,42 @@
 
   async function authenticate(value) {
     token = value;
+
+    // /user 是唯一可信的令牌身份来源。网络/API 出错时不能退回到仓库所有者，
+    // 否则任意有仓库写权限的账号都可能绕过 allowedLogins 检查。
+    let identity;
+    try {
+      identity = await api("/user");
+    } catch (error) {
+      throw new Error(`无法验证 GitHub 登录身份，已拒绝访问。${describeError(error)}`);
+    }
+    const login = typeof identity?.login === "string" ? identity.login.trim() : "";
+    if (!login) {
+      throw new Error("GitHub 未返回有效的登录账号，已拒绝访问。请重新登录后重试。");
+    }
+
+    const allowedLogins = Array.isArray(CONFIG.allowedLogins)
+      ? CONFIG.allowedLogins
+          .filter((name) => typeof name === "string")
+          .map((name) => name.trim())
+          .filter(Boolean)
+      : [];
+    if (!allowedLogins.length) {
+      throw new Error("管理后台没有配置允许登录的账号，已拒绝访问。");
+    }
+    if (!allowedLogins.some((name) => name.toLowerCase() === login.toLowerCase())) {
+      throw new Error(
+        `账号 @${login} 无权使用管理后台。仅允许 @${allowedLogins.join(", @")} 登录。`,
+      );
+    }
+
     const repo = await api(repoPath(""));
     if (!repo.permissions?.push) {
       throw new Error(
         "这个令牌对该仓库没有写权限。请在 GitHub 上把令牌仓库权限设为 Contents: Read and write。",
       );
     }
-    let login = "";
-    try {
-      login = (await api("/user")).login || "";
-    } catch (error) {
-      log(`无法读取账号信息（${describeError(error)}），已跳过账号名单检查。`, "err");
-    }
-    if (login && CONFIG.allowedLogins.length && !CONFIG.allowedLogins.includes(login)) {
-      throw new Error(
-        `账号 ${login} 不在允许名单内（${CONFIG.allowedLogins.join(", ")}）。如需放行，请修改 admin/admin.js 里的 CONFIG.allowedLogins。`,
-      );
-    }
-    currentUser = login || repo.owner?.login || "已授权账号";
+    currentUser = login;
     el.repoChip.textContent = `${CONFIG.owner}/${CONFIG.repo} · ${CONFIG.branch}`;
     el.actionsLink.href = `https://github.com/${CONFIG.owner}/${CONFIG.repo}/actions`;
     return repo;

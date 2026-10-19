@@ -67,7 +67,7 @@ description: 用一句话介绍题目和核心思路。
 
 站点是纯静态的 GitHub Pages，没有自己的服务器，所以后台**不保存任何账号密码**：
 
-1. **登录**：粘贴你自己的 GitHub Fine-grained Personal Access Token（Repository access 只选 `lscminxi/lscminxi.github.io`，权限 `Contents: Read and write`）。浏览器直接用它调用 `api.github.com` 校验仓库写权限，并检查账号是否在 `admin.js` 的 `CONFIG.allowedLogins` 名单里（默认只有 `lscminxi`）。
+1. **登录**：粘贴你自己的 GitHub Fine-grained Personal Access Token（Repository access 只选 `lscminxi/lscminxi.github.io`，权限 `Contents: Read and write`）。登录时先通过 GitHub API `/user` 验证令牌对应的账号，目前只允许 `lscminxi`（GitHub 登录名大小写不敏感）；然后才检查令牌是否有仓库写权限。身份接口不可用、账号信息缺失或 `CONFIG.allowedLogins` 为空时都会拒绝登录，不会回退到仓库所有者账号。
 2. **文章**：列出 `blog/source/_posts/` 下全部文章，可新建、在线编辑（标题、文件名、日期、分类、标签、描述、强调色、示例标记、Markdown 正文）、实时删除。编辑器支持「编辑 / 分屏 / 预览」，正文输入后自动更新预览，无需保存；提供「插入公式」按钮。预览在本地浏览器中生成，不调用 GitHub；预览用沙箱和 HTML 清洗阻止脚本执行。代码高亮与目录以发布页为准。改文件名会自动「新建 + 删除旧文件」。
 3. **图片**：上传到 `blog/source/images/`（GitHub Contents API 单文件上限约 1 MB），可复制 `/images/xxx.png` 写法、插入正文或删除。超过 1 MB 的 JPG / PNG / WebP / AVIF 会在浏览器里先等比缩小（长边 ≤ 2400）并重新编码，再上传压缩后的版本（照片转 WebP，PNG 保留透明）；GIF / SVG 无法可靠压缩，仍会提示超限。
 4. **个人简介**：直接编辑 `blog/source/about/index.md`。
@@ -80,7 +80,8 @@ description: 用一句话介绍题目和核心思路。
 
 - 令牌只保存在当前浏览器（默认 `sessionStorage`，关掉标签页就失效；勾选「记住」才写入 `localStorage`），点「退出登录」立即清除。
 - 令牌只会发送到 `api.github.com`。本站没有后端，不存在第三方收集或统计。
-- 真正的写权限由 GitHub 判断，没有仓库写权限的令牌改不了任何文件；账号名单只是界面上的额外一层限制。
+- 管理后台只接受 `CONFIG.allowedLogins` 中的 GitHub 账号（当前仅 `lscminxi`），并要求令牌具备该仓库的写权限；身份验证失败时一律拒绝。
+- **权限边界说明**：GitHub Pages 是纯静态站点，账号名单是后台登录页的访问门槛，不是服务端授权系统。已拥有仓库写权限的人仍可绕过网页直接调用 GitHub API 或在 GitHub 上提交；若要取消他们的实际写权限，需要在 GitHub 仓库设置中移除对应的协作者/组织写权限。
 - 建议为这个站点单独生成一个只对该仓库生效的细粒度令牌、设置较短有效期，不用时在 GitHub 上撤销。
 
 ### 删除文章说明
@@ -90,6 +91,8 @@ description: 用一句话介绍题目和核心思路。
 **自动发布工作流必须已合并到 `main`**：只在预览分支有修复，无法使旧 `main` 工作流更新根目录发布文件。工作流需要 `contents: write` 和 `pages: write`；构建状态里看到旧任务成功并不能证明本次删除已经发布。
 
 删除回归测试：`cd blog && npm run test:delete`。使用模拟 API，不会删除真实仓库中的文章；包含隔离临时目录里的「删空博客 → 构建 → 检查 → 导出 → 清除旧静态页」测试。
+
+后台权限回归测试：`cd blog && npm run test:admin-auth`。使用模拟 GitHub API，验证只有允许的账号且令牌有仓库写权限时能登录；其他账号、身份接口失败/缺失、空名单、无写权限及不允许账号的已保存令牌都会被拒绝。该测试也会在 GitHub Actions 的构建检查中自动运行。
 
 ### 防误触：没保存就关闭时会先提醒
 
@@ -333,10 +336,10 @@ blog/
     source/images/favicon.svg
 ```
 
-修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改头像、壁纸、网页图标、访客可选背景：`blog/source/_data/appearance.json`，或者直接在 `/admin/` 后台的「外观」里改。修改主题色：`main.css` 中的 `:root` 变量（深色）与紧随其后 `html[data-theme="light"]` 的浅色令牌。修改站点默认主题：`appearance.json` 的 `theme` 字段，或者后台「外观」→「站点默认主题」。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`。
+修改名称、简介、署名：`blog/_config.yml`。修改个人介绍：`blog/source/about/index.md`，或者直接在 `/admin/` 后台的「个人简介」里改。修改头像、壁纸、网页图标、访客可选背景：`blog/source/_data/appearance.json`，或者直接在 `/admin/` 后台的「外观」里改。修改主题色：`main.css` 中的 `:root` 变量（深色）与紧随其后 `html[data-theme="light"]` 的浅色令牌。修改站点默认主题：`appearance.json` 的 `theme` 字段，或者后台「外观」→「站点默认主题」。修改后台允许的账号、仓库或分支：`blog/source/admin/admin.js` 顶部的 `CONFIG`（当前仅允许 `lscminxi`；允许名单为空时会拒绝所有人登录）。
 
 ## 安全与隐私
 
-站点是纯静态页面，无账号系统、无统计追踪。头像、壁纸、网页图标和访客可选背景列表同样只能由 `/admin/` 的 admin 修改（写权限由 GitHub 判定）。访客可以自选背景和深浅主题，但这些选择只写进自己浏览器的 `localStorage`，不会上传、不会提交、不会影响其他访客——站点的公开文件始终保持不变。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 后台同样没有账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`，详见「在线管理后台」一节。
+站点是纯静态页面，无账号系统、无统计追踪。头像、壁纸、网页图标和访客可选背景列表同样只能由 `/admin/` 的 admin 修改（后台只接受允许名单中的 GitHub 账号，且令牌必须有仓库写权限）。访客可以自选背景和深浅主题，但这些选择只写进自己浏览器的 `localStorage`，不会上传、不会提交、不会影响其他访客——站点的公开文件始终保持不变。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 没有服务端账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`。账号名单能限制网页后台登录，但不能取代 GitHub 仓库协作者权限；详见「在线管理后台」一节。
 
 2026-10-14 的 `npm audit` 检测到 Hexo 上游构建依赖的 9 条报告（7 high、2 moderate），对应 `braces` / `sprintf-js` 的拒绝服务问题及其依赖链。`npm audit fix` 无法在当前兼容版本下消除；工具建议的 `--force` 会把 Hexo 降级到旧主版本，因此未执行。依赖仅运行于本地或 CI 构建，未打包进公开页面，但不要使用不可信的模板、插件或配置；来自外部的 PR 应在隔离的 GitHub runner 中构建，且不能获得发布权限。后续升级 Hexo 后请重新运行审计。
