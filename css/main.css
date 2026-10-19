@@ -2452,6 +2452,15 @@ html[data-wallpaper="on"] .site-header {
   opacity: 0.6;
   cursor: wait;
 }
+.auth-oauth-button {
+  width: 100%;
+}
+.auth-divider {
+  color: var(--dim);
+  font-size: 11px;
+  text-align: center;
+  margin-top: 14px;
+}
 .auth-error {
   color: var(--purple);
   font-size: 12px;

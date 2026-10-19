@@ -1,0 +1,8 @@
+{
+  "provider": "local",
+  "oauth": {
+    "client_id": "",
+    "worker_url": "",
+    "scope": "read:user"
+  }
+}

@@ -84,9 +84,14 @@
       <button class="wallpaper-primary" id="wallpaper-done" type="button">完成</button>
     </div>
   </dialog>
-    <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+    <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title" data-auth-provider="local" data-oauth-client-id="" data-oauth-worker-url="" data-oauth-scope="read:user">
     <div class="auth-heading"><h2 id="auth-title">登录</h2><button class="icon-button" id="auth-close" type="button" aria-label="关闭登录">×</button></div>
     <div id="auth-login-panel">
+      <div id="auth-oauth-panel" hidden>
+        <button class="auth-submit auth-oauth-button" id="auth-oauth-button" type="button">使用 GitHub 登录</button>
+        <p class="auth-note">会跳转到 GitHub 官方授权页确认身份，授权后自动跳回；本站不会接触你的 GitHub 密码，令牌用完即弃、不保存。</p>
+        <p class="auth-divider">或使用快捷登录（无需授权）</p>
+      </div>
       <p class="auth-lead">用 <strong>GitHub 用户名 + 图形验证码</strong> 快捷登录，不需要密码，也不需要令牌。登录后可以给文章评论和点赞。</p>
       <form id="auth-form" class="auth-form" autocomplete="off">
         <label class="auth-field"><span>GitHub 用户名</span><input id="auth-username" type="text" placeholder="例如 lscminxi" spellcheck="false" required></label>

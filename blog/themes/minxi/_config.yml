@@ -14,3 +14,15 @@ comments:
     repo_id: ""
     category: Announcements
     category_id: ""
+
+# 访客登录
+# provider: local = GitHub 用户名 + 图形验证码（零配置，轻量门禁）
+# provider: oauth = 真正的 GitHub OAuth 登录。需先按 README「GitHub OAuth 登录」部署
+#                   oauth-worker/ 里的小后端，再把下面 client_id 与 worker_url 填好；
+#                   没填全时会自动回落到 local，不会坏页。client_secret 绝不要填到这里。
+auth:
+  provider: local
+  oauth:
+    client_id: ""
+    worker_url: ""
+    scope: "read:user"

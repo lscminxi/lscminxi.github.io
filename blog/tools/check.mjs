@@ -87,6 +87,16 @@ if (aPost) {
   assert(postHtml.includes("data-like-button"), "Post like button is missing");
   assert(postHtml.includes("data-comment-form"), "Post comment form is missing");
 }
+// GitHub OAuth：公开配置与回调页必须随构建发布（client_secret 永不出现在构建产物里）。
+const authConfig = JSON.parse(await readFile(join(root, "auth-config.json"), "utf8"));
+assert(["local", "oauth"].includes(authConfig.provider), `Invalid auth provider: ${authConfig.provider}`);
+assert(!JSON.stringify(authConfig).includes("client_secret"), "client_secret must never be published");
+const callbackHtml = await readFile(join(root, "auth", "callback", "index.html"), "utf8");
+assert(callbackHtml.includes('id="oauth-status"'), "OAuth callback page is missing its status element");
+assert(callbackHtml.includes("/js/auth.js"), "OAuth callback page must load auth.js");
+assert(index.includes('id="auth-oauth-button"'), "GitHub OAuth login button is missing");
+assert(!index.includes("client_secret"), "client_secret must never appear in pages");
+
 const adminHtml = await readFile(join(root, "admin", "index.html"), "utf8");
 assert(adminHtml.includes('id="view-noaccess"'), "Admin no-access view is missing");
 assert(adminHtml.includes("你无权限进入"), "Admin no-access message is missing");

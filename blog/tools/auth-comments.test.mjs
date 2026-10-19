@@ -12,6 +12,8 @@ const postTpl = await readFile("themes/minxi/layout/post.ejs", "utf8");
 const adminHtml = await readFile("source/admin/index.html", "utf8");
 const adminJs = await readFile("source/admin/admin.js", "utf8");
 const authBundle = await readFile("themes/minxi/source/js/auth.js", "utf8");
+const workerJs = await readFile("../oauth-worker/worker.js", "utf8");
+const callbackHtml = await readFile("source/auth/callback/index.html", "utf8");
 
 const waitFor = async (predicate) => {
   for (let i = 0; i < 200; i++) {
@@ -33,7 +35,7 @@ const pageHtml = `<!DOCTYPE html><html lang="zh-CN"><head><title>t</title></head
   <form data-comment-form><textarea data-comment-input rows="3"></textarea><p data-comment-error hidden></p><button type="submit">发表评论</button></form>
   <div data-comment-list></div></div>
 </section>
-<dialog id="auth-dialog"><div id="auth-login-panel"><form id="auth-form">
+<dialog id="auth-dialog"><div id="auth-login-panel"><div id="auth-oauth-panel" hidden><button id="auth-oauth-button" type="button">使用 GitHub 登录</button></div><form id="auth-form">
 <input id="auth-username"><canvas id="auth-captcha" width="120" height="44"></canvas>
 <button id="auth-refresh" type="button">换一张</button><input id="auth-code">
 <p id="auth-error" hidden></p><button id="auth-submit" type="submit">验证并登录</button></form></div>
@@ -85,6 +87,8 @@ test("templates expose a visible login button, dialogs and per-post comments", (
   assert.match(layout, /id="auth-noaccess-dialog"/);
   assert.match(layout, /你无权限进入/);
   assert.match(layout, /\/js\/auth\.js/);
+  assert.match(layout, /id="auth-oauth-button"/);
+  assert.match(layout, /data-oauth-client-id/);
   assert.match(postTpl, /data-comments/);
   assert.match(postTpl, /data-like-button/);
   assert.match(postTpl, /data-comment-form/);
@@ -211,4 +215,113 @@ test("admin source keeps the token allowlist as the real backend gate", () => {
   assert.match(adminJs, /allowedLogins:\s*\["lscminxi"\]/);
   assert.match(adminJs, /你无权限进入后台：账号/);
   assert.match(adminHtml, /id="view-noaccess"/);
+});
+
+test("OAuth helpers build the GitHub authorize URL and callback URI", () => {
+  assert.equal(
+    auth.oauthRedirectUri("https://lscminxi.github.io/"),
+    "https://lscminxi.github.io/auth/callback/",
+  );
+  const url = new URL(auth.buildAuthorizeUrl({
+    clientId: "Iv1.test",
+    redirectUri: auth.oauthRedirectUri("https://lscminxi.github.io"),
+    state: "state-123",
+  }));
+  assert.equal(url.origin + url.pathname, "https://github.com/login/oauth/authorize");
+  assert.equal(url.searchParams.get("client_id"), "Iv1.test");
+  assert.equal(url.searchParams.get("redirect_uri"), "https://lscminxi.github.io/auth/callback/");
+  assert.equal(url.searchParams.get("state"), "state-123");
+  assert.equal(url.searchParams.get("scope"), "read:user");
+  assert.equal(auth.buildAuthorizeUrl({ clientId: "", redirectUri: "x", state: "y" }), "");
+  assert.equal(auth.makeOAuthState(() => [0, 15, 255]), "000fff");
+});
+
+test("startOAuth stores a CSRF state and hands off to GitHub when configured", async () => {
+  const { dom, w, $ } = await setup();
+  try {
+    const dialog = $("#auth-dialog");
+    dialog.dataset.oauthClientId = "Iv1.test";
+    dialog.dataset.oauthWorkerUrl = "https://auth.example.workers.dev";
+    const config = w.MinxiAuth.oauthConfig();
+    assert.equal(config.clientId, "Iv1.test");
+    assert.equal(config.workerUrl, "https://auth.example.workers.dev");
+    assert.equal(config.scope, "read:user");
+    w.MinxiAuth.openLogin();
+    assert.equal($("#auth-oauth-panel").hidden, false);
+    assert.equal(w.MinxiAuth.startOAuth(), true);
+    assert.match(w.sessionStorage.getItem(auth.OAUTH_STATE_KEY), /^[0-9a-f]{32}$/);
+    assert.ok(w.sessionStorage.getItem(auth.OAUTH_RETURN_KEY));
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("OAuth callback exchanges the code via the worker, verifies identity and stores the session", async () => {
+  const dom = new JSDOM(
+    `<!DOCTYPE html><html lang="zh-CN"><head><title>正在登录</title></head><body><p id="oauth-status"></p></body></html>`,
+    { url: "https://lscminxi.github.io/auth/callback/?code=code-123&state=state-xyz", runScripts: "outside-only" },
+  );
+  const w = dom.window;
+  try {
+    w.sessionStorage.setItem(auth.OAUTH_STATE_KEY, "state-xyz");
+    w.sessionStorage.setItem(auth.OAUTH_RETURN_KEY, "https://lscminxi.github.io/2026/01/01/demo/");
+    const calls = [];
+    w.fetch = async (input, options = {}) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === "/auth-config.json") {
+        return { ok: true, json: async () => ({ provider: "oauth", oauth: { client_id: "Iv1.test", worker_url: "https://auth.example.workers.dev", scope: "read:user" } }) };
+      }
+      if (url === "https://auth.example.workers.dev/exchange") {
+        assert.equal(JSON.parse(options.body).code, "code-123");
+        return { ok: true, json: async () => ({ access_token: "token-not-real", token_type: "bearer" }) };
+      }
+      if (url === "https://api.github.com/user") {
+        assert.equal(options.headers.Authorization, "Bearer token-not-real");
+        return { ok: true, json: async () => ({ login: "oauth-visitor", avatar_url: "https://avatars.githubusercontent.com/x" }) };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+    w.eval(authBundle);
+    await waitFor(() => Boolean(w.localStorage.getItem(auth.AUTH_STORAGE_KEY)));
+    const session = JSON.parse(w.localStorage.getItem(auth.AUTH_STORAGE_KEY));
+    assert.equal(session.login, "oauth-visitor");
+    // 令牌用完即弃：任何存储里都不许留 access token
+    assert.equal(JSON.stringify(session).includes("token-not-real"), false);
+    assert.equal(w.sessionStorage.getItem("token-not-real"), null);
+    assert.equal(calls.filter((u) => u.includes("/exchange")).length, 1);
+    assert.match(w.document.querySelector("#oauth-status").textContent, /oauth-visitor/);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("OAuth callback rejects a mismatched state without calling the worker", async () => {
+  const dom = new JSDOM(
+    `<!DOCTYPE html><html lang="zh-CN"><head><title>正在登录</title></head><body><p id="oauth-status"></p></body></html>`,
+    { url: "https://lscminxi.github.io/auth/callback/?code=code-123&state=wrong", runScripts: "outside-only" },
+  );
+  const w = dom.window;
+  try {
+    w.sessionStorage.setItem(auth.OAUTH_STATE_KEY, "state-xyz");
+    let fetched = false;
+    w.fetch = async () => { fetched = true; throw new Error("should not fetch"); };
+    w.eval(authBundle);
+    await waitFor(() => /state 不一致/.test(w.document.querySelector("#oauth-status").textContent));
+    assert.equal(fetched, false);
+    assert.equal(w.localStorage.getItem(auth.AUTH_STORAGE_KEY), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("worker source keeps the secret server-side and only exchanges codes", () => {
+  assert.match(workerJs, /GITHUB_CLIENT_SECRET/);
+  assert.match(workerJs, /env\.GITHUB_CLIENT_SECRET/);
+  assert.match(workerJs, /\/exchange/);
+  assert.match(workerJs, /ALLOWED_ORIGINS/);
+  assert(!/client_secret\s*[:=]\s*["'][A-Za-z0-9]/.test(workerJs.replace(/client_secret: env\.GITHUB_CLIENT_SECRET/, "")),
+    "worker must not hardcode a client secret value");
+  assert.match(callbackHtml, /id="oauth-status"/);
+  assert.match(callbackHtml, /\/js\/auth\.js/);
 });

@@ -261,6 +261,16 @@ $$
 
 全过程**不索要 GitHub 密码、也不索要令牌**，会话只写进访客自己浏览器的 `localStorage`（键名 `minxi.auth.user`）。点头像可打开账号面板，可退出登录或尝试「进入后台」。
 
+### 启用真正的 GitHub OAuth 登录（可选，需一个免费小后端）
+
+上面的快捷登录只校验用户名存在；想让访客走 GitHub 官方授权页登录（真 OAuth），需要一个几十行的小后端替静态站保管 `client_secret` 并换令牌（GitHub 的换令牌接口不允许浏览器跨域，密钥也不能写进公开页面）。仓库已备好现成的 Cloudflare Worker（`oauth-worker/`，免费、不存令牌），启用只要三步（详细图文版见 [`oauth-worker/README.md`](oauth-worker/README.md)）：
+
+1. GitHub 建 OAuth App（回调地址填 `https://lscminxi.github.io/auth/callback/`），拿到 Client ID 与 Client Secret；
+2. Cloudflare 部署 `oauth-worker/worker.js`，把 Client ID、Client Secret（用 Secret 类型）、`ALLOWED_ORIGINS=https://lscminxi.github.io` 填进环境变量，记下 `*.workers.dev` 地址并打开 `/health` 看到 `{"ok":true}`；
+3. 把 `blog/themes/minxi/_config.yml` 的 `auth.provider` 改为 `oauth`，填 `client_id` 与 `worker_url`，再 `npm run publish:prepare` 发布。
+
+启用后登录弹窗顶部出现「使用 GitHub 登录」：跳转 GitHub 授权（只申请 `read:user`）→ 回到 `/auth/callback/` → 经 Worker 换令牌 → 向 GitHub 确认身份 → 跳回原页面并保持登录；令牌用完即弃、不保存。未填全配置时自动回落到验证码快捷登录；本地/预览域名因回调地址不匹配，同样保留快捷登录。OAuth 登录仍不授予后台权限（后台照旧只认站长令牌）。
+
 ### 谁能进后台
 
 - **只有站长 `lscminxi` 能进后台**，这一点没有变：`/admin/` 仍然只认 GitHub 令牌经 `/user` 验证后的账号在 `allowedLogins` 名单里、且令牌有仓库写权限；访客快捷登录不授予任何后台权限（也不能代替令牌）。

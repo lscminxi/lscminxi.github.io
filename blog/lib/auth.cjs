@@ -70,6 +70,39 @@ function normalizeSession(value) {
   return { login, avatarUrl, name, loggedInAt: Number(value.loggedInAt) || 0 };
 }
 
+const OAUTH_STATE_KEY = 'minxi.oauth.state';
+const OAUTH_RETURN_KEY = 'minxi.oauth.return';
+
+/** 生成 OAuth state（防 CSRF）。randomBytes 可注入便于测试；默认用 Math.random 兜底。 */
+function makeOAuthState(randomBytes) {
+  const bytes = typeof randomBytes === 'function' ? randomBytes(16) : null;
+  if (bytes && bytes.length) {
+    return [...bytes].map((b) => Number(b).toString(16).padStart(2, '0')).join('');
+  }
+  let out = '';
+  for (let i = 0; i < 32; i += 1) out += Math.floor(Math.random() * 16).toString(16);
+  return out;
+}
+
+/** 拼 GitHub OAuth 授权地址（网页版流程第一步，浏览器直接跳转，无需密钥）。 */
+function buildAuthorizeUrl({ clientId, redirectUri, state, scope = 'read:user' } = {}) {
+  const id = typeof clientId === 'string' ? clientId.trim() : '';
+  if (!id || !redirectUri || !state) return '';
+  const params = new URLSearchParams({
+    client_id: id,
+    redirect_uri: redirectUri,
+    scope,
+    state,
+    allow_signup: 'true',
+  });
+  return `https://github.com/login/oauth/authorize?${params.toString()}`;
+}
+
+/** 回调地址：固定为站点根下的 /auth/callback/，需与 OAuth App 里登记的完全一致。 */
+function oauthRedirectUri(origin) {
+  return `${String(origin || '').replace(/\/+$/, '')}/auth/callback/`;
+}
+
 module.exports = {
   OWNER_LOGIN,
   AUTH_STORAGE_KEY,
@@ -83,4 +116,9 @@ module.exports = {
   captchaMatches,
   normalizeCommentText,
   normalizeSession,
+  OAUTH_STATE_KEY,
+  OAUTH_RETURN_KEY,
+  makeOAuthState,
+  buildAuthorizeUrl,
+  oauthRedirectUri,
 };

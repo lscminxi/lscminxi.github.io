@@ -130,6 +130,135 @@ function enterAdmin() {
   return true;
 }
 
+/* ---------------- GitHub OAuth（真登录，需小后端换令牌） ----------------
+ * 配置来自主题 _config.yml 的 auth.oauth，经 layout 写在 #auth-dialog 的 data-* 上。
+ * 未配置时 oauthConfig() 返回 null，登录弹窗自动回落到「用户名 + 验证码」。
+ * 流程：拼授权地址跳转 GitHub → 回调 /auth/callback/ 校验 state →
+ *       POST worker /exchange 换令牌 → GET api.github.com/user 确认身份 → 写会话跳回原页。
+ * 令牌只在回调处理期间存在于内存，拿到身份后即丢弃，不写任何存储。 */
+
+function oauthConfig() {
+  const dialog = dialogOf('#auth-dialog');
+  const clientId = dialog?.dataset.oauthClientId || '';
+  const workerUrl = (dialog?.dataset.oauthWorkerUrl || '').replace(/\/+$/, '');
+  if (!clientId || !workerUrl) return null;
+  return { clientId, workerUrl, scope: dialog.dataset.oauthScope || 'read:user' };
+}
+
+function randomState() {
+  try {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return auth.makeOAuthState(() => [...bytes]);
+  } catch {
+    return auth.makeOAuthState();
+  }
+}
+
+function startOAuth() {
+  const config = oauthConfig();
+  if (!config) return false;
+  const state = randomState();
+  try {
+    sessionStorage.setItem(auth.OAUTH_STATE_KEY, state);
+    sessionStorage.setItem(auth.OAUTH_RETURN_KEY, window.location.href);
+  } catch {
+    /* 存储不可用时 state 校验必然失败，回调会给出明确报错 */
+  }
+  const url = auth.buildAuthorizeUrl({
+    clientId: config.clientId,
+    redirectUri: auth.oauthRedirectUri(window.location.origin),
+    state,
+    scope: config.scope,
+  });
+  if (!url) return false;
+  window.location.href = url;
+  return true;
+}
+
+const isOAuthCallback = () => /\/auth\/callback\/?$/.test(window.location.pathname);
+
+async function handleOAuthCallback() {
+  const status = dialogOf('#oauth-status');
+  const say = (message) => {
+    if (status) status.textContent = message;
+  };
+  const params = new URLSearchParams(window.location.search);
+  const fail = (message) => {
+    say(`${message} 正在返回首页…`);
+    try {
+      sessionStorage.removeItem(auth.OAUTH_STATE_KEY);
+      sessionStorage.removeItem(auth.OAUTH_RETURN_KEY);
+    } catch { /* 忽略 */ }
+    window.setTimeout(() => { window.location.href = '/'; }, 1800);
+  };
+  if (params.get('error')) return fail(`GitHub 授权未完成（${params.get('error')}）。`);
+  const code = params.get('code') || '';
+  let expectedState = '';
+  try {
+    expectedState = sessionStorage.getItem(auth.OAUTH_STATE_KEY) || '';
+  } catch { /* 忽略 */ }
+  if (!code) return fail('没有收到 GitHub 的授权码，登录失败。');
+  if (!expectedState || params.get('state') !== expectedState) {
+    return fail('登录校验失败（state 不一致），请重新点「登录」。');
+  }
+  const config = oauthConfig() || (await fetchAuthConfig());
+  if (!config) return fail('站点还没有配置 OAuth 小后端，暂时无法完成 GitHub 登录。');
+  say('已收到 GitHub 授权，正在确认身份…');
+  try {
+    const exchange = await fetch(`${config.workerUrl}/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const exchanged = await exchange.json().catch(() => ({}));
+    if (!exchange.ok || !exchanged.access_token) {
+      return fail(`换取登录令牌失败（${exchanged.error || exchange.status}），请重新登录。`);
+    }
+    const profile = await fetch('https://api.github.com/user', {
+      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${exchanged.access_token}` },
+    });
+    if (!profile.ok) return fail('GitHub 身份确认失败，请重新登录。');
+    const data = await profile.json();
+    const session = auth.normalizeSession({
+      login: data.login || '',
+      avatarUrl: data.avatar_url || '',
+      name: data.name || '',
+      loggedInAt: Date.now(),
+    });
+    if (!session) return fail('GitHub 返回的账号信息不完整，登录失败。');
+    currentUser = session;
+    writeUser(session);
+    let back = '/';
+    try {
+      back = sessionStorage.getItem(auth.OAUTH_RETURN_KEY) || '/';
+      sessionStorage.removeItem(auth.OAUTH_STATE_KEY);
+      sessionStorage.removeItem(auth.OAUTH_RETURN_KEY);
+    } catch { /* 忽略 */ }
+    say(`欢迎，@${session.login}！正在跳回原来的页面…`);
+    window.setTimeout(() => { window.location.href = back; }, 450);
+    return undefined;
+  } catch {
+    return fail('网络出问题了，GitHub 登录没完成，请重新登录。');
+  }
+}
+
+/* 回调页是独立静态页，没有 #auth-dialog：改读构建时生成的公开 /auth-config.json。 */
+async function fetchAuthConfig() {
+  try {
+    const response = await fetch('/auth-config.json', { cache: 'no-cache' });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const clientId = data?.oauth?.client_id || '';
+    const workerUrl = String(data?.oauth?.worker_url || '').replace(/\/+$/, '');
+    return clientId && workerUrl
+      ? { clientId, workerUrl, scope: data.oauth.scope || 'read:user' }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ---------------- 登录 / 账号面板 ---------------- */
 
 function paintAuthUi() {
@@ -144,6 +273,8 @@ function paintAuthUi() {
     if (name) name.textContent = currentUser.login;
     if (avatar) avatar.src = currentUser.avatarUrl;
   });
+  const oauthPanel = dialogOf('#auth-oauth-panel');
+  if (oauthPanel) oauthPanel.hidden = !oauthConfig();
   const loginPanel = dialogOf('#auth-login-panel');
   const accountPanel = dialogOf('#auth-account-panel');
   if (loginPanel) loginPanel.hidden = Boolean(currentUser);
@@ -197,6 +328,9 @@ function wireAuthDialog() {
     if (code) code.value = '';
   });
   dialogOf('#auth-captcha')?.addEventListener('click', () => drawCaptcha(dialogOf('#auth-captcha')));
+  dialogOf('#auth-oauth-button')?.addEventListener('click', () => {
+    if (!startOAuth()) setError('GitHub 登录还没有配置好，请先用下面的快捷登录。');
+  });
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     setError('');
@@ -376,6 +510,10 @@ function wireGiscus(section) {
 /* ---------------- 初始化 ---------------- */
 
 function init() {
+  if (isOAuthCallback()) {
+    void handleOAuthCallback();
+    return;
+  }
   paintAuthUi();
   wireAuthDialog();
   document.querySelectorAll('[data-auth-login]').forEach((button) => button.addEventListener('click', openLogin));
@@ -463,6 +601,8 @@ window.MinxiAuth = {
     paintAuthUi();
     paintComments();
   },
+  startOAuth,
+  oauthConfig,
   refreshCaptcha: () => drawCaptcha(dialogOf('#auth-captcha')),
   getCaptchaCode: () => captchaCode, // 仅供回归测试读取当前验证码，不渲染到页面
   owner: OWNER,
