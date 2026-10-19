@@ -51,6 +51,9 @@
   const $$ = (selector) => [...document.querySelectorAll(selector)];
   const el = {
     viewLogin: $("#view-login"),
+    viewNoAccess: $("#view-noaccess"),
+    noAccessText: $("#noaccess-text"),
+    noAccessOwner: $("#noaccess-owner"),
     viewApp: $("#view-app"),
     viewEditor: $("#view-editor"),
     loginForm: $("#login-form"),
@@ -546,7 +549,7 @@
     }
     if (!allowedLogins.some((name) => name.toLowerCase() === login.toLowerCase())) {
       throw new Error(
-        `账号 @${login} 无权使用管理后台。仅允许 @${allowedLogins.join(", @")} 登录。`,
+        `你无权限进入后台：账号 @${login} 不是站长。仅允许 @${allowedLogins.join(", @")} 登录。`,
       );
     }
 
@@ -627,6 +630,36 @@
       logout();
       toast("已退出登录");
     }
+  });
+
+  /* 前台快捷登录（GitHub 用户名 + 验证码）的本地会话：所有人可登录，但只有站长能进后台。
+     在这里读到非站长访客时，直接展示「你无权限进入」，连令牌表单都不给（站长可点按钮切回）。 */
+  function visitorLogin() {
+    try {
+      const data = JSON.parse(localStorage.getItem("minxi.auth.user") || "null");
+      const login = typeof data?.login === "string" ? data.login.trim().replace(/^@+/, "") : "";
+      return /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(login) ? login : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function showNoAccess(login) {
+    if (el.noAccessText) {
+      el.noAccessText.textContent = login
+        ? `你当前以前台访客 @${login} 的身份登录。你无权限进入后台，只有站长 @${CONFIG.allowedLogins.join(", @")} 才能进入。`
+        : `你无权限进入后台，只有站长 @${CONFIG.allowedLogins.join(", @")} 才能进入。`;
+    }
+    el.viewLogin.hidden = true;
+    if (el.viewNoAccess) el.viewNoAccess.hidden = false;
+    el.viewApp.hidden = true;
+    el.viewEditor.hidden = true;
+  }
+
+  el.noAccessOwner?.addEventListener("click", () => {
+    if (el.viewNoAccess) el.viewNoAccess.hidden = true;
+    el.viewLogin.hidden = false;
+    el.tokenInput?.focus();
   });
 
   /* ---------------- 文件列表 ---------------- */
@@ -2246,6 +2279,13 @@
   (async function init() {
     log("后台已就绪。请输入 GitHub 令牌登录。");
     refreshAdminAppearance();
+    const visitor = visitorLogin();
+    const isOwnerVisitor = visitor && CONFIG.allowedLogins.some((name) => name.toLowerCase() === visitor.toLowerCase());
+    if (visitor && !isOwnerVisitor) {
+      // 非站长访客试图进后台：直接显示无权限，不尝试恢复任何令牌登录。
+      showNoAccess(visitor);
+      return;
+    }
     const stored = readStoredToken();
     el.rememberInput.checked = Boolean(localStorage.getItem(REMEMBER_KEY));
     if (!stored) return;

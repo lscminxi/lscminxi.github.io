@@ -1,3 +1,16 @@
 # 导航与个人资料
 nickname: lsc_minxi
 github: https://github.com/lscminxi
+
+# 评论与点赞
+# provider: local  = 评论/点赞保存在访客自己的浏览器（localStorage），零配置即可用（默认）
+# provider: giscus = 使用 GitHub Discussions 全站共享评论与反应（点赞），访客在 Giscus 里用 GitHub 登录。
+#                    启用前需按 README「评论与点赞」一节在仓库开启 Discussions、安装 giscus app，
+#                    再到 https://giscus.app 取得下面三项 ID 填进来；没填全时会自动回落到 local。
+comments:
+  provider: local
+  giscus:
+    repo: lscminxi/lscminxi.github.io
+    repo_id: ""
+    category: Announcements
+    category_id: ""

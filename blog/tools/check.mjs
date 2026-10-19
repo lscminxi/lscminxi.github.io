@@ -72,6 +72,27 @@ const themeDefault = /data-theme-default="([^"]*)"/.exec(index);
 assert.equal(themeDefault?.[1], look.theme, "Theme default must match appearance.json");
 assert(index.includes("/js/theme.js"), "Theme script is missing");
 assert(index.includes("data-theme-toggle"), "Theme toggle button is missing");
+// 访客登录与评论：每个页面都要有可见的登录按钮、登录/未登录提醒/无权限弹窗与脚本；
+// 文章页还要有评论区（评论 + 点赞）。后台只允许站长，访客进入时显示「你无权限进入」。
+assert(index.includes("/js/auth.js"), "Auth script is missing");
+assert(index.includes("data-auth-login"), "Visible login button is missing");
+assert(index.includes('id="auth-dialog"'), "Login dialog is missing");
+assert(index.includes('id="auth-captcha"'), "Login captcha is missing");
+assert(index.includes('id="auth-required-dialog"'), "Login-required dialog is missing");
+assert(index.includes('id="auth-noaccess-dialog"'), "No-access dialog is missing");
+const aPost = search[0];
+if (aPost) {
+  const postHtml = await readFile(join(root, "." + decodeURIComponent(aPost.url), "index.html"), "utf8");
+  assert(postHtml.includes("data-comments"), "Post comment section is missing");
+  assert(postHtml.includes("data-like-button"), "Post like button is missing");
+  assert(postHtml.includes("data-comment-form"), "Post comment form is missing");
+}
+const adminHtml = await readFile(join(root, "admin", "index.html"), "utf8");
+assert(adminHtml.includes('id="view-noaccess"'), "Admin no-access view is missing");
+assert(adminHtml.includes("你无权限进入"), "Admin no-access message is missing");
+const adminJsOut = await readFile(join(root, "admin", "admin.js"), "utf8");
+assert(adminJsOut.includes("allowedLogins"), "Admin allowlist guard is missing");
+
 const css = await readFile(join(root, "css", "main.css"), "utf8");
 assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");

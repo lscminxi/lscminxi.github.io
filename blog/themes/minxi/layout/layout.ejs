@@ -30,6 +30,7 @@
     }
   </style>
   <% } %><script src="<%- url_for('/js/main.js') %>?v=nav-2" defer></script>
+  <script src="<%- url_for('/js/auth.js') %>?v=auth-1" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>
@@ -64,6 +65,46 @@
     <div class="wallpaper-actions">
       <button class="wallpaper-plain" id="wallpaper-reset" type="button">恢复站点默认</button>
       <button class="wallpaper-primary" id="wallpaper-done" type="button">完成</button>
+    </div>
+  </dialog>
+  <%# 访客快捷登录：所有人可用（GitHub 用户名 + 图形验证码），登录后才能评论/点赞；
+      后台仍然只有站长能进，访客登录不授予任何后台权限。 -%>
+  <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+    <div class="auth-heading"><h2 id="auth-title">登录</h2><button class="icon-button" id="auth-close" type="button" aria-label="关闭登录">×</button></div>
+    <div id="auth-login-panel">
+      <p class="auth-lead">用 <strong>GitHub 用户名 + 图形验证码</strong> 快捷登录，不需要密码，也不需要令牌。登录后可以给文章评论和点赞。</p>
+      <form id="auth-form" class="auth-form" autocomplete="off">
+        <label class="auth-field"><span>GitHub 用户名</span><input id="auth-username" type="text" placeholder="例如 lscminxi" spellcheck="false" required></label>
+        <label class="auth-field"><span>图形验证码</span>
+          <span class="auth-captcha-row"><canvas id="auth-captcha" width="120" height="44" aria-label="图形验证码，点击可刷新"></canvas><button class="auth-refresh" id="auth-refresh" type="button">换一张</button><input id="auth-code" type="text" placeholder="输入图中字符" maxlength="6" spellcheck="false" required aria-label="输入图形验证码"></span>
+        </label>
+        <p class="auth-error" id="auth-error" role="alert" hidden></p>
+        <button class="auth-submit" id="auth-submit" type="submit">验证并登录</button>
+      </form>
+      <p class="auth-note">本站是静态页面，登录只会去 GitHub 公开接口确认用户名存在，不会索要你的 GitHub 密码。进入后台仍需站长本人用令牌验证。</p>
+    </div>
+    <div id="auth-account-panel" hidden>
+      <p class="auth-lead" id="auth-account-info"></p>
+      <div class="auth-account-actions">
+        <button class="auth-submit" id="auth-admin" type="button">进入后台</button>
+        <button class="auth-secondary" id="auth-logout" type="button">退出登录</button>
+        <button class="auth-secondary" id="auth-account-close" type="button">关闭</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="auth-required-dialog" class="auth-dialog" aria-labelledby="auth-required-title">
+    <div class="auth-heading"><h2 id="auth-required-title">请先登录</h2></div>
+    <p class="auth-lead" id="auth-required-text">你还没有登录，登录后才能使用此功能。</p>
+    <div class="auth-account-actions">
+      <button class="auth-submit" id="auth-required-go" type="button">去登录</button>
+      <button class="auth-secondary" id="auth-required-cancel" type="button">取消</button>
+    </div>
+  </dialog>
+  <dialog id="auth-noaccess-dialog" class="auth-dialog" aria-labelledby="auth-noaccess-title">
+    <div class="auth-heading"><h2 id="auth-noaccess-title">你无权限进入</h2></div>
+    <p class="auth-lead" id="auth-noaccess-text">你无权限进入后台，只有站长才能进入。</p>
+    <div class="auth-account-actions">
+      <button class="auth-submit" id="auth-noaccess-close" type="button">知道了</button>
     </div>
   </dialog>
 </body>

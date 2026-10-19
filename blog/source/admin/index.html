@@ -73,6 +73,18 @@
       </details>
     </section>
 
+    <!-- 无权限：访客（非站长）试图进入后台时显示 -->
+    <section class="panel login-panel" id="view-noaccess" hidden>
+      <div class="eyebrow"><span></span> ACCESS DENIED</div>
+      <h1>你无权限进入</h1>
+      <p class="lead" id="noaccess-text">你无权限进入后台，只有站长 <code>@lscminxi</code> 才能进入。</p>
+      <div class="panel-actions">
+        <a class="btn primary" href="/">返回站点首页</a>
+        <button class="btn ghost" id="noaccess-owner" type="button">我是站长，用令牌重新验证</button>
+      </div>
+      <p class="muted">说明：前台的「GitHub 用户名 + 验证码」快捷登录所有人都能用（评论、点赞），但它不授予后台权限。后台只认站长本人的 GitHub 令牌验证。</p>
+    </section>
+
     <!-- 控制台 -->
     <section id="view-app" hidden>
       <div class="statusbar">
