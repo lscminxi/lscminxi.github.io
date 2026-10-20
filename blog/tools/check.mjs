@@ -122,10 +122,15 @@ assert(adminHtml.includes("使用 GitHub 登录进入后台"), "Admin GitHub OAu
 const css = await readFile(join(root, "css", "main.css"), "utf8");
 assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
-// 浅色模式不要壁纸雾面：body::after 的提亮层必须关掉（深色压暗层保留）。
+// 深浅色都保留壁纸雾面：深色压暗 / 浅色提亮（走 --veil-rgb 与 --wallpaper-veil），
+// 浅色不许再用 background-image: none 把 body::after 的雾面关掉。
 assert(
-  /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
-  "Light theme must not put a fog veil over the wallpaper",
+  !/html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{\s*background-image:\s*none/.test(css),
+  "Light theme must keep the wallpaper veil (brightening layer)",
+);
+assert(
+  /html\[data-wallpaper="on"\] body::after\s*\{[^}]*rgba\(var\(--veil-rgb\), var\(--wallpaper-veil/.test(css),
+  "Wallpaper veil must use the theme-aware veil color and the dim setting",
 );
 // 行号与代码对齐：gutter 必须与代码同字号同行高，且两列顶部对齐。
 const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";

@@ -262,10 +262,14 @@ test("light mode is a scoped override: dark stays the untouched default", () => 
   // 壁纸层两套底色：深色压暗 / 浅色提亮（浅色只剩对话框遮罩等在用）
   assert(/--veil-rgb:\s*11, 14, 20/.test(css));
   assert(/--veil-rgb:\s*245, 247, 250/.test(css));
-  // 浅色模式必须删掉壁纸雾面（直接展示原图），深色压暗层保留
+  // 深浅色都保留壁纸雾面：深色压暗 / 浅色提亮，浅色不许再关掉 body::after
   assert(
-    /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
-    "light theme must not veil the wallpaper",
+    !/html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{\s*background-image:\s*none/.test(css),
+    "light theme must keep the wallpaper veil (brightening layer)",
+  );
+  assert(
+    /html\[data-wallpaper="on"\] body::after\s*\{[^}]*rgba\(var\(--veil-rgb\), var\(--wallpaper-veil/.test(css),
+    "wallpaper veil must use the theme-aware veil color and the dim setting",
   );
   // 代码行号对齐：行号列与代码同字号同行高、两列顶对齐
   const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";

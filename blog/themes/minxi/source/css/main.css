@@ -2684,7 +2684,7 @@ html[data-theme="light"] {
   --dim: #657181;
   --accent: #0f7a6a;
   --purple: #7a5ad4;
-  /* 壁纸层底色（只剩对话框遮罩等还在用；壁纸本身的雾面已去掉，见下方 body::after） */
+  /* 壁纸提亮层底色：浅色下把压暗层换成提亮层（--veil-* 系列） */
   --veil-rgb: 245, 247, 250;
   --veil-max: 0.9;
   --veil-vignette: 0.52;
@@ -2706,12 +2706,6 @@ html[data-theme="light"] {
    浅色覆盖块：卡片 / 列表这类「大面积」组件集中在这里，
    减少零散覆盖，也方便日后调色。
    ------------------------------------------------------------------ */
-/* 浅色模式删掉壁纸雾面：有壁纸时直接展示原图，不再盖提亮层与暗角。
-   （--veil-* 只保留给对话框遮罩等其它地方，深色模式的压暗层不受影响。） */
-html[data-theme="light"][data-wallpaper="on"] body::after {
-  background-image: none;
-}
-
 html[data-theme="light"] .site-header {
   border-bottom-color: #dfe5ee;
   background: #f7f9fcf0;

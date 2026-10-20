@@ -186,7 +186,7 @@ description: 用一句话介绍题目和核心思路。
 
 关键点和背景选择一致：**只写访客自己的 `localStorage`（键名 `minxi.theme`）**——不提交、不影响其他访客、不需要登录。清掉这个键（或点「跟随系统」）就回到站点默认值。
 
-实现上：`blog/client/theme.js` 由 `npm run assets` 打包成 `/js/theme.js`，在 `<head>` 中**先于样式表**同步加载，因此在第一帧就写好了 `html[data-theme]`，不会先闪一下深色；`<meta name="theme-color">` 也会跟着当前主题换成对应的底色。取自系统的偏好通过 `matchMedia('(prefers-color-scheme: light)')` 读取；页面加载完成后会再读一次公开的 `/appearance.json`，用来校正「站长改了默认值但访客的 HTML 仍是缓存版本」的情况。浅色样式是 `main.css` 结尾一个**带作用域**的覆盖块（`html[data-theme="light"] …`）加一组语义化令牌（`--bg` / `--panel` / `--line` / `--text` / `--accent`…），深色规则保持原样；深色下壁纸的压暗层走 `--veil-rgb` 变量，浅色下不给壁纸盖雾面、直接展示原图。
+实现上：`blog/client/theme.js` 由 `npm run assets` 打包成 `/js/theme.js`，在 `<head>` 中**先于样式表**同步加载，因此在第一帧就写好了 `html[data-theme]`，不会先闪一下深色；`<meta name="theme-color">` 也会跟着当前主题换成对应的底色。取自系统的偏好通过 `matchMedia('(prefers-color-scheme: light)')` 读取；页面加载完成后会再读一次公开的 `/appearance.json`，用来校正「站长改了默认值但访客的 HTML 仍是缓存版本」的情况。浅色样式是 `main.css` 结尾一个**带作用域**的覆盖块（`html[data-theme="light"] …`）加一组语义化令牌（`--bg` / `--panel` / `--line` / `--text` / `--accent`…），深色规则保持原样；壁纸的压暗层走 `--veil-rgb` 变量，浅色下换成提亮层，正文对比度仍然有保障。
 
 回归测试：`cd blog && npm run test:theme`（主题值清洗与回落、访客选择 / 跟随系统 / 站点默认值三级优先级、首次绘制不闪烁、后台三选一与 `theme` 字段写回、恶意 `theme` 值的构建产物检查）。此外还守着两件事：**深色里每一处硬编码颜色都必须有对应的浅色覆盖**，以及**浅色下不允许残留深色面板**——改动配色后如果漏了覆盖，测试会直接列出缺哪一条。
 
