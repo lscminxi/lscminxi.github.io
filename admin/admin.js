@@ -1196,15 +1196,20 @@
   let previewSignature = "";
   let previewNeedsReset = true;
   let previewOpenFolds = [];
+  let previewPlotViews = [];
+  let previewGraphViews = [];
   let previewScroll = { top: 0, left: 0 };
   const previewFrame = $("#post-preview");
   previewFrame.addEventListener("load", () => {
-    // Controlled by the parent: keep the iframe script-free.
+    // Controlled by the parent: keep the iframe script-free. The plot/graph
+    // interactions are attached by this parent page onto the iframe document
+    // (same-origin), so the sandboxed iframe itself still runs no scripts.
     const scroll = previewFrame.contentDocument?.scrollingElement;
     if (scroll) {
       scroll.scrollTop = previewScroll.top;
       scroll.scrollLeft = previewScroll.left;
     }
+    try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
   });
   function renderPostPreview() {
     clearTimeout(previewTimer);
@@ -1220,6 +1225,8 @@
       if (!previewNeedsReset && signature === previewSignature) return;
       if (previewNeedsReset) {
         previewOpenFolds = [];
+        previewPlotViews = [];
+        previewGraphViews = [];
         previewScroll = { top: 0, left: 0 };
       } else {
         const doc = previewFrame.contentDocument;
@@ -1227,14 +1234,23 @@
         if (doc?.querySelector('.article-content')) {
           previewOpenFolds = [...doc.querySelectorAll('details.fold-box[open][data-preview-fold-key]')]
             .map((fold) => fold.dataset.previewFoldKey);
+          // 保存每张函数图当前的平移/缩放范围与显示开关，重渲染后恢复（按出现顺序）。
+          previewPlotViews = [...doc.querySelectorAll('.md-plot')].map((figure) => ({
+            xMin: figure.dataset.viewXMin, xMax: figure.dataset.viewXMax,
+            yMin: figure.dataset.viewYMin, yMax: figure.dataset.viewYMax,
+            coords: figure.dataset.viewCoords, intersections: figure.dataset.viewIntersections,
+            equations: figure.dataset.viewEquations,
+          }));
+          previewGraphViews = [...doc.querySelectorAll('.md-graph svg')]
+            .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
           const scroll = doc.scrollingElement;
           previewScroll = { top: scroll?.scrollTop || 0, left: scroll?.scrollLeft || 0 };
         }
       }
-      previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds });
+      previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
       previewSignature = signature;
       previewNeedsReset = false;
-      $("#preview-status").textContent = "预览已更新 · Markdown / KaTeX / 可点击折叠框（代码高亮与目录以发布页为准）";
+      $("#preview-status").textContent = "预览已更新 · Markdown / KaTeX / 可点击折叠框 / 函数图可拖动缩放（代码高亮与目录以发布页为准）";
     } catch (error) {
       $("#preview-status").textContent = `预览失败：${error.message}`;
     }

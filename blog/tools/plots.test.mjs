@@ -256,3 +256,70 @@ test('interactive graph zooms and reports node coordinates', async () => {
     assert.match(figure.querySelector('.plot-readout').textContent, /点 A：\(0, 0\)/, '悬停点显示布局坐标');
   } finally { page.window.close(); }
 });
+
+
+test('editor preview gets the same plot interactions via parent enhancement (iframe stays script-free)', async () => {
+  const md = `${FENCE}plot\nf: x\nf: -x + 2\npoints: (1,1) ; connect=true\nx: -5, 5\ny: -5, 5\n${FENCE}`;
+  const srcdoc = dom.window.MinxiPreview.document({ body: md });
+  assert.ok(!srcdoc.includes('<script'), '预览文档本身不带脚本');
+  const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
+  try {
+    page.window.Element.prototype.getBoundingClientRect = function rect() {
+      return { left: 0, top: 0, right: 680, bottom: 420, width: 680, height: 420, x: 0, y: 0, toJSON() {} };
+    };
+    // 后台父页面把交互挂到 iframe 文档上（真实后台由 iframe load 事件触发）。
+    dom.window.MinxiPreview.enhance(page.window.document);
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    assert.equal(figure.classList.contains('is-interactive'), true, '预览中的图也被接管，工具栏随之显示');
+    const width = () => Number(stage.querySelector('svg').dataset.xMax) - Number(stage.querySelector('svg').dataset.xMin);
+    assert.equal(width(), 10);
+
+    figure.querySelector('[data-plot-action="zoom-in"]').click();
+    await waitFrame();
+    assert.ok(width() < 10, '预览里可以缩放');
+
+    const beforePan = Number(stage.querySelector('svg').dataset.xMin);
+    pointer(page, stage, 'pointerdown', 340, 210);
+    pointer(page, stage, 'pointermove', 408, 210);
+    pointer(page, stage, 'pointerup', 408, 210);
+    await waitFrame();
+    assert.ok(Number(stage.querySelector('svg').dataset.xMin) < beforePan, '预览里可以拖动平移');
+
+    figure.querySelector('[data-plot-toggle="intersections"]').click();
+    await waitFrame();
+    assert.equal(stage.querySelector('.plot-intersection'), null, '预览里可以开关交点');
+
+    // 模拟后台在重渲染前收集视图、重渲染后写回：平移/缩放状态不应丢失。
+    const views = [...page.window.document.querySelectorAll('.md-plot')].map((item) => ({
+      xMin: item.dataset.viewXMin, xMax: item.dataset.viewXMax,
+      yMin: item.dataset.viewYMin, yMax: item.dataset.viewYMax,
+      coords: item.dataset.viewCoords, intersections: item.dataset.viewIntersections,
+      equations: item.dataset.viewEquations,
+    }));
+    const page2 = new JSDOM(dom.window.MinxiPreview.document({ body: md, plotViews: views }), {
+      url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true,
+    });
+    try {
+      page2.window.Element.prototype.getBoundingClientRect = page.window.Element.prototype.getBoundingClientRect;
+      dom.window.MinxiPreview.enhance(page2.window.document);
+      const svg2 = page2.window.document.querySelector('.md-plot svg');
+      assert.equal(Number(svg2.dataset.xMin), Number(views[0].xMin), '重渲染后恢复平移/缩放范围');
+      assert.equal(page2.window.document.querySelector('.md-plot .plot-intersection'), null, '重渲染后保留交点开关状态');
+    } finally { page2.window.close(); }
+  } finally { page.window.close(); }
+});
+
+test('editor preview graph is interactive via parent enhancement', async () => {
+  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
+  const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
+  try {
+    dom.window.MinxiPreview.enhance(page.window.document);
+    const figure = page.window.document.querySelector('.md-graph');
+    const svg = figure.querySelector('svg');
+    const before = svg.getAttribute('viewBox');
+    figure.querySelector('[data-graph-action="zoom-in"]').click();
+    assert.notEqual(svg.getAttribute('viewBox'), before, '预览里的可视化图可以缩放');
+    assert.ok(svg.getAttribute('data-preview-viewbox'), '图的视图会被记录以便重渲染恢复');
+  } finally { page.window.close(); }
+});

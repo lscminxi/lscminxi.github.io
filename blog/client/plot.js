@@ -12,7 +12,7 @@ const raf = (callback) => (window.requestAnimationFrame ? window.requestAnimatio
 /* ---------------- 函数图像：拖动平移 / 滚轮与双指缩放 / 坐标读数 ---------------- */
 
 function initPlot(figure) {
-  if (figure.dataset.plotInteractive !== 'true') return;
+  if (figure.dataset.plotInteractive !== 'true' || figure.classList.contains('is-interactive')) return;
   const source = figure.dataset.plotSource || '';
   const stage = figure.querySelector('.plot-stage');
   if (!source || !stage) return;
@@ -22,12 +22,18 @@ function initPlot(figure) {
   if (!spec.functions.length && !spec.pointSets.length) return;
 
   const initial = resolvePlotRanges(spec);
+  // 后台编辑预览重渲染时会把上次的视图范围写回 data-view-*，这里恢复它，
+  // 这样一边改文字一边平移/缩放预览，视图不会每次跳回原样。
+  const savedRange = (min, max, fallback) => {
+    const lo = Number(min); const hi = Number(max);
+    return Number.isFinite(lo) && Number.isFinite(hi) && hi > lo ? [lo, hi] : [...fallback];
+  };
   const state = {
-    x: [...initial.xRange],
-    y: [...initial.yRange],
-    coords: spec.coords,
-    intersections: spec.intersections,
-    equations: spec.equations,
+    x: savedRange(figure.dataset.viewXMin, figure.dataset.viewXMax, initial.xRange),
+    y: savedRange(figure.dataset.viewYMin, figure.dataset.viewYMax, initial.yRange),
+    coords: figure.dataset.viewCoords === undefined ? spec.coords : figure.dataset.viewCoords === 'true',
+    intersections: figure.dataset.viewIntersections === undefined ? spec.intersections : figure.dataset.viewIntersections === 'true',
+    equations: figure.dataset.viewEquations === undefined ? spec.equations : figure.dataset.viewEquations === 'true',
   };
   const readout = figure.querySelector('.plot-readout');
   const equationsBox = figure.querySelector('.plot-equations');
@@ -41,8 +47,15 @@ function initPlot(figure) {
       button.setAttribute('aria-pressed', String(Boolean(state[button.dataset.plotToggle])));
     });
     if (equationsBox) equationsBox.hidden = !state.equations;
+    figure.dataset.viewCoords = String(state.coords);
+    figure.dataset.viewIntersections = String(state.intersections);
+    figure.dataset.viewEquations = String(state.equations);
   };
   const draw = () => {
+    figure.dataset.viewXMin = String(state.x[0]);
+    figure.dataset.viewXMax = String(state.x[1]);
+    figure.dataset.viewYMin = String(state.y[0]);
+    figure.dataset.viewYMax = String(state.y[1]);
     stage.innerHTML = renderPlotSvgInner(spec, {
       xRange: state.x,
       yRange: state.y,
@@ -263,7 +276,8 @@ function initGraph(figure) {
   if (!svg || figure.classList.contains('is-interactive')) return;
   figure.classList.add('is-interactive');
 
-  const stage = document.createElement('div');
+  const doc = figure.ownerDocument;
+  const stage = doc.createElement('div');
   stage.className = 'plot-stage graph-stage';
   figure.insertBefore(stage, svg);
   stage.append(svg);
@@ -271,20 +285,27 @@ function initGraph(figure) {
   stage.setAttribute('role', 'application');
   stage.setAttribute('aria-label', '可拖动平移、滚轮缩放的可视化图');
 
-  const toolbar = document.createElement('div');
+  const toolbar = doc.createElement('div');
   toolbar.className = 'plot-toolbar graph-toolbar';
   toolbar.setAttribute('aria-label', '可视化图工具');
   toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div>';
   figure.insertBefore(toolbar, stage);
-  const readout = document.createElement('p');
+  const readout = doc.createElement('p');
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
   readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看坐标。';
   stage.after(readout);
 
   const initial = (svg.getAttribute('viewBox') || '0 0 680 320').split(/\s+/).map(Number);
-  let current = [...initial];
-  const apply = () => svg.setAttribute('viewBox', current.map((value) => Number(value.toFixed(3))).join(' '));
+  // 预览重渲染时恢复上次的缩放/平移位置（重置仍回到初始 viewBox）。
+  const saved = (svg.getAttribute('data-preview-viewbox') || '').split(/\s+/).map(Number);
+  let current = saved.length === 4 && saved.every(Number.isFinite) && saved[2] > 0 ? saved : [...initial];
+  const apply = () => {
+    const text = current.map((value) => Number(value.toFixed(3))).join(' ');
+    svg.setAttribute('viewBox', text);
+    svg.setAttribute('data-preview-viewbox', text);
+  };
+  apply();
   const svgPoint = (event) => {
     const rect = svg.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
@@ -369,7 +390,12 @@ function initGraph(figure) {
   stage.addEventListener('dblclick', () => { current = [...initial]; apply(); });
 }
 
-document.querySelectorAll('.md-plot').forEach(initPlot);
-document.querySelectorAll('.md-graph').forEach(initGraph);
+function initPlots(root = document) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll('.md-plot').forEach(initPlot);
+  root.querySelectorAll('.md-graph').forEach(initGraph);
+}
 
-window.MinxiPlots = { initPlot, initGraph };
+initPlots(document);
+
+window.MinxiPlots = { initPlot, initGraph, initPlots };
