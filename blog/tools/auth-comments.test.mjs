@@ -35,10 +35,7 @@ const pageHtml = `<!DOCTYPE html><html lang="zh-CN"><head><title>t</title></head
   <form data-comment-form><textarea data-comment-input rows="3"></textarea><p data-comment-error hidden></p><button type="submit">发表评论</button></form>
   <div data-comment-list></div></div>
 </section>
-<dialog id="auth-dialog"><div id="auth-login-panel"><div id="auth-oauth-panel" hidden><button id="auth-oauth-button" type="button">使用 GitHub 登录</button></div><form id="auth-form">
-<input id="auth-username"><canvas id="auth-captcha" width="120" height="44"></canvas>
-<button id="auth-refresh" type="button">换一张</button><input id="auth-code">
-<p id="auth-error" hidden></p><button id="auth-submit" type="submit">验证并登录</button></form></div>
+<dialog id="auth-dialog"><div id="auth-login-panel"><div id="auth-oauth-panel" hidden><button id="auth-oauth-button" type="button">使用 GitHub 登录</button></div><p id="auth-unconfigured" hidden>GitHub 登录尚未配置完成，暂时无法登录，请稍后再试。</p><p id="auth-error" hidden></p></div>
 <div id="auth-account-panel" hidden><p id="auth-account-info"></p>
 <button id="auth-admin" type="button">进入后台</button><button id="auth-logout" type="button">退出登录</button>
 <button id="auth-account-close" type="button">关闭</button></div>
@@ -69,19 +66,13 @@ async function setup({ storedUser = null } = {}) {
   return { dom, w, $: (s) => w.document.querySelector(s) };
 }
 
-async function loginAs(w, $, login) {
-  w.MinxiAuth.openLogin();
-  $("#auth-username").value = login;
-  $("#auth-code").value = w.MinxiAuth.getCaptchaCode();
-  $("#auth-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
-  await waitFor(() => Boolean(w.MinxiAuth.getUser()));
-}
-
 test("templates expose a visible login button, dialogs and per-post comments", () => {
   assert.match(header, /data-auth-login/);
   assert.match(header, />登录</);
   assert.match(layout, /id="auth-dialog"/);
-  assert.match(layout, /id="auth-captcha"/);
+  assert(!/auth-captcha|图形验证码|id="auth-username"|id="auth-form"/.test(layout),
+    "captcha / username-only login must be removed");
+  assert.match(layout, /id="auth-unconfigured"/);
   assert.match(layout, /id="auth-required-dialog"/);
   assert.match(layout, /请先登录/);
   assert.match(layout, /id="auth-noaccess-dialog"/);
@@ -94,17 +85,15 @@ test("templates expose a visible login button, dialogs and per-post comments", (
   assert.match(postTpl, /data-comment-form/);
 });
 
-test("shared auth rules: owner, GitHub username and captcha", () => {
+test("shared auth rules: owner and GitHub username", () => {
   assert.equal(auth.OWNER_LOGIN, "lscminxi");
   assert.equal(auth.isOwnerLogin("LSCMinxi"), true);
   assert.equal(auth.isOwnerLogin("someone-else"), false);
   assert.equal(auth.normalizeLogin("@good-name1"), "good-name1");
   assert.equal(auth.normalizeLogin("-bad"), "");
   assert.equal(auth.normalizeLogin("bad name"), "");
-  const code = auth.makeCaptchaCode(() => 0);
-  assert.equal(code.length, auth.CAPTCHA_LENGTH);
-  assert.equal(auth.captchaMatches(code.toLowerCase(), code), true);
-  assert.equal(auth.captchaMatches("XXXX", code), false);
+  assert.equal(auth.makeCaptchaCode, undefined, "captcha helpers must be removed");
+  assert.equal(auth.captchaMatches, undefined, "captcha helpers must be removed");
   assert.equal(auth.normalizeCommentText("  hi  "), "hi");
   assert.equal(auth.normalizeCommentText("x".repeat(999)).length, auth.MAX_COMMENT_LENGTH);
 });
@@ -124,19 +113,28 @@ test("liking or commenting while logged out opens the login reminder and stores 
   }
 });
 
-test("GitHub username + captcha logs in, then comment and like work and persist locally", async () => {
+test("there is no captcha or username-only fallback login", async () => {
   const { dom, w, $ } = await setup();
   try {
-    // 验证码错了不能登录
+    assert.equal(w.MinxiAuth.getCaptchaCode, undefined);
+    assert.equal($("#auth-captcha"), null);
+    assert.equal($("#auth-username"), null);
+    assert.equal($("#auth-form"), null);
     w.MinxiAuth.openLogin();
-    $("#auth-username").value = "visitor-one";
-    $("#auth-code").value = "XXXX";
-    $("#auth-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
-    await waitFor(() => !$("#auth-error").hidden);
-    assert.match($("#auth-error").textContent, /验证码不正确/);
+    assert.equal($("#auth-unconfigured").hidden, false);
+    $("#auth-oauth-button").click();
+    assert.equal($("#auth-error").hidden, false);
+    assert.match($("#auth-error").textContent, /还没有配置好/);
     assert.equal(w.MinxiAuth.getUser(), null);
+    assert.equal(w.localStorage.getItem(auth.AUTH_STORAGE_KEY), null);
+  } finally {
+    dom.window.close();
+  }
+});
 
-    await loginAs(w, $, "visitor-one");
+test("a logged-in visitor can comment and like, persisted locally", async () => {
+  const { dom, w, $ } = await setup({ storedUser: { login: "visitor-one", avatarUrl: "https://github.com/visitor-one.png" } });
+  try {
     assert.equal(w.MinxiAuth.getUser().login, "visitor-one");
     assert.equal($("[data-auth-login]").hidden, true);
     assert.equal($("[data-auth-account]").hidden, false);
@@ -155,21 +153,6 @@ test("GitHub username + captcha logs in, then comment and like work and persist 
     assert.equal($("[data-like-count]").textContent, "0");
     const stored = JSON.parse(w.localStorage.getItem(auth.COMMENTS_STORAGE_KEY));
     assert.equal(stored["/2026/01/01/demo/"].comments.length, 1);
-  } finally {
-    dom.window.close();
-  }
-});
-
-test("a nonexistent GitHub user cannot log in", async () => {
-  const { dom, w, $ } = await setup();
-  try {
-    w.MinxiAuth.openLogin();
-    $("#auth-username").value = "no-such-user-xyz";
-    $("#auth-code").value = w.MinxiAuth.getCaptchaCode();
-    $("#auth-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
-    await waitFor(() => !$("#auth-error").hidden);
-    assert.match($("#auth-error").textContent, /不存在/);
-    assert.equal(w.MinxiAuth.getUser(), null);
   } finally {
     dom.window.close();
   }

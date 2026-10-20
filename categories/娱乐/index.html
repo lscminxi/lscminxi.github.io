@@ -111,21 +111,14 @@
     <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title" data-auth-provider="oauth" data-oauth-client-id="Ov23liRQRP65PNxJ7N6V" data-oauth-worker-url="https://minxi-github-auth.lsc-minxi.workers.dev" data-oauth-scope="read:user">
     <div class="auth-heading"><h2 id="auth-title">登录</h2><button class="icon-button" id="auth-close" type="button" aria-label="关闭登录">×</button></div>
     <div id="auth-login-panel">
+      <p class="auth-lead">使用 <strong>GitHub 官方授权</strong> 登录后，可以给文章评论和点赞。本站不会接触你的 GitHub 密码。</p>
       <div id="auth-oauth-panel" hidden>
         <button class="auth-submit auth-oauth-button" id="auth-oauth-button" type="button">使用 GitHub 登录</button>
-        <p class="auth-note">会跳转到 GitHub 官方授权页确认身份，授权后自动跳回；本站不会接触你的 GitHub 密码，令牌用完即弃、不保存。</p>
-        <p class="auth-divider">或使用快捷登录（无需授权）</p>
+        <p class="auth-note">会跳转到 GitHub 官方授权页确认身份（只申请读取公开资料），授权后自动跳回；令牌用完即弃、不保存。</p>
       </div>
-      <p class="auth-lead">用 <strong>GitHub 用户名 + 图形验证码</strong> 快捷登录，不需要密码，也不需要令牌。登录后可以给文章评论和点赞。</p>
-      <form id="auth-form" class="auth-form" autocomplete="off">
-        <label class="auth-field"><span>GitHub 用户名</span><input id="auth-username" type="text" placeholder="例如 lscminxi" spellcheck="false" required></label>
-        <label class="auth-field"><span>图形验证码</span>
-          <span class="auth-captcha-row"><canvas id="auth-captcha" width="120" height="44" aria-label="图形验证码，点击可刷新"></canvas><button class="auth-refresh" id="auth-refresh" type="button">换一张</button><input id="auth-code" type="text" placeholder="输入图中字符" maxlength="6" spellcheck="false" required aria-label="输入图形验证码"></span>
-        </label>
-        <p class="auth-error" id="auth-error" role="alert" hidden></p>
-        <button class="auth-submit" id="auth-submit" type="submit">验证并登录</button>
-      </form>
-      <p class="auth-note">本站是静态页面，登录只会去 GitHub 公开接口确认用户名存在，不会索要你的 GitHub 密码。进入后台仍需站长本人用令牌验证。</p>
+      <p class="auth-unconfigured" id="auth-unconfigured" hidden>GitHub 登录尚未配置完成，暂时无法登录，请稍后再试。</p>
+      <p class="auth-error" id="auth-error" role="alert" hidden></p>
+      <p class="auth-note">进入后台仍需站长本人用 GitHub 令牌验证，普通登录不授予后台权限。</p>
     </div>
     <div id="auth-account-panel" hidden>
       <p class="auth-lead" id="auth-account-info"></p>

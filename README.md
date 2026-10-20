@@ -253,36 +253,36 @@ $$
 
 站点右上角现在常驻一个 **「登录」** 按钮（登录后显示 GitHub 头像与用户名），所有人都能用，不再藏着：
 
-### 快捷登录（GitHub + 验证码）
+### 登录（GitHub OAuth，唯一方式）
 
-1. 点「登录」，填 **GitHub 用户名**；
-2. 输入弹框里的 **图形验证码**（点图片或「换一张」可刷新）；
-3. 点「验证并登录」：页面会用 GitHub 公开接口确认该用户名真实存在并取回头像，随后建立本地会话。
+1. 点「登录」→「使用 GitHub 登录」；
+2. 在 GitHub 官方授权页点 Authorize（只申请 `read:user`，读取用户名与头像）；
+3. 自动跳回博客并保持登录，随后可以评论和点赞。
 
-全过程**不索要 GitHub 密码、也不索要令牌**，会话只写进访客自己浏览器的 `localStorage`（键名 `minxi.auth.user`）。点头像可打开账号面板，可退出登录或尝试「进入后台」。
+本站不接触访客的 GitHub 密码，换到的令牌用完即弃、不保存；会话只写进访客自己浏览器的 `localStorage`（键名 `minxi.auth.user`）。点头像可打开账号面板，可退出登录或尝试「进入后台」。
 
-### 启用真正的 GitHub OAuth 登录（可选，需一个免费小后端）
+> 已删除早期的「GitHub 用户名 + 图形验证码、仅查账号是否存在」备用登录：它证明不了账号归属，现在登录只有 GitHub OAuth 一条路。若 OAuth 配置缺失，弹窗只会提示「GitHub 登录尚未配置完成，暂时无法登录」，不会退回任何弱校验方式。
 
-上面的快捷登录只校验用户名存在；想让访客走 GitHub 官方授权页登录（真 OAuth），需要一个几十行的小后端替静态站保管 `client_secret` 并换令牌（GitHub 的换令牌接口不允许浏览器跨域，密钥也不能写进公开页面）。仓库已备好现成的 Cloudflare Worker（`oauth-worker/`，免费、不存令牌），启用只要三步（详细图文版见 [`oauth-worker/README.md`](oauth-worker/README.md)）：
+### GitHub OAuth 是怎么接上的（免费小后端）
+
+静态站无法保管 OAuth 的 `client_secret`（也不能直连 GitHub 的换令牌接口），所以仓库备了一个几十行的 Cloudflare Worker（`oauth-worker/`，免费、不存令牌）替站点换令牌。配置三步（详细图文版见 [`oauth-worker/README.md`](oauth-worker/README.md)；本站已配置完成，此节备查）：
 
 1. GitHub 建 OAuth App（回调地址填 `https://lscminxi.github.io/auth/callback/`），拿到 Client ID 与 Client Secret；
 2. Cloudflare 部署 `oauth-worker/worker.js`，把 Client ID、Client Secret（用 Secret 类型）、`ALLOWED_ORIGINS=https://lscminxi.github.io` 填进环境变量，记下 `*.workers.dev` 地址并打开 `/health` 看到 `{"ok":true}`；
-3. 把 `blog/themes/minxi/_config.yml` 的 `auth.provider` 改为 `oauth`，填 `client_id` 与 `worker_url`，再 `npm run publish:prepare` 发布。
-
-启用后登录弹窗顶部出现「使用 GitHub 登录」：跳转 GitHub 授权（只申请 `read:user`）→ 回到 `/auth/callback/` → 经 Worker 换令牌 → 向 GitHub 确认身份 → 跳回原页面并保持登录；令牌用完即弃、不保存。未填全配置时自动回落到验证码快捷登录；本地/预览域名因回调地址不匹配，同样保留快捷登录。OAuth 登录仍不授予后台权限（后台照旧只认站长令牌）。
+3. `blog/themes/minxi/_config.yml` 的 `auth.provider` 为 `oauth` 且填好 `client_id` 与 `worker_url`，再 `npm run publish:prepare` 发布。配置没填全时登录暂不可用（见上），不会回落到弱校验登录；本地/预览域名因回调地址不匹配同样无法完成 OAuth，请到正式站验收。
 
 ### 谁能进后台
 
-- **只有站长 `lscminxi` 能进后台**，这一点没有变：`/admin/` 仍然只认 GitHub 令牌经 `/user` 验证后的账号在 `allowedLogins` 名单里、且令牌有仓库写权限；访客快捷登录不授予任何后台权限（也不能代替令牌）。
+- **只有站长 `lscminxi` 能进后台**，这一点没有变：`/admin/` 仍然只认 GitHub 令牌经 `/user` 验证后的账号在 `allowedLogins` 名单里、且令牌有仓库写权限；访客 OAuth 登录不授予任何后台权限（也不能代替令牌）。
 - 非站长访客在前台点「进入后台」，或已用访客身份登录后直接打开 `/admin/`，都会看到 **「你无权限进入」**（后台会写明当前访客账号与只有站长能进）。站长本人若先用别的访客名登录，可在该页点「我是站长，用令牌重新验证」切回令牌登录，不会被锁死。
 - 令牌登录时若账号不在名单里，错误信息同样以「你无权限进入后台：账号 @… 不是站长」开头。
 
-> 安全说明：纯静态 GitHub Pages 没有服务器，无法安全保管 OAuth `client_secret`，所以访客登录只证明「这个 GitHub 用户名存在」，属于轻量门禁（防随手刷评论、给评论署名），**不是强身份认证**——不要把它当作权限边界。真正的权限边界只有后台那一层（令牌 + 允许名单 + GitHub 仓库写权限），这也是它保持不变的原因。
+> 安全说明：访客身份由 GitHub OAuth 授权确认（经 oauth-worker 换令牌后向 GitHub 核实），但它只用于评论/点赞署名，不是权限边界——真正的权限边界只有后台那一层（令牌 + 允许名单 + GitHub 仓库写权限），这也是它保持不变的原因。
 
 ### 每篇文章的评论与点赞
 
 - 每篇文章底部都有 **点赞** 按钮和 **评论区**：登录后可点赞（再点一次取消，只有自己点过的才算数）、发表评论（纯文本、最多 500 字，始终按纯文本渲染，不会执行 HTML）、删除自己的评论；站长的评论带「站长」标记。
-- **未登录时点点赞、点评论框或提交评论，会弹出「请先登录」提醒**，点「去登录」直接打开上面的快捷登录；登录成功后可继续评论。
+- **未登录时点点赞、点评论框或提交评论，会弹出「请先登录」提醒**，点「去登录」直接打开上面的 GitHub 登录；登录成功后可继续评论。
 - 当前默认是 **本地模式**：评论与点赞保存在访客自己的浏览器（`localStorage` 键名 `minxi.comments.v1`，按文章地址分开），仅本机可见、不上传、不产生 GitHub 提交——这是静态站点零配置下能做到的范围，页面上也会如实标注。
 
 ### 想要全站共享评论时：启用 Giscus（可选）
@@ -295,7 +295,7 @@ $$
 4. 把 `blog/themes/minxi/_config.yml` 的 `comments.provider` 改成 `giscus`，并填好 `comments.giscus.repo_id` / `category_id`（`repo` 已预填本站仓库）；
 5. 重新构建发布（`npm run publish:prepare`）。没填全时主题会自动回落到本地模式，不会显示坏掉的评论区。
 
-回归测试：`cd blog && npm run test:auth`（用户名/验证码规则、未登录弹窗拦截、登录后评论/点赞与防注入渲染、非站长在前台与 `/admin/` 的无权限提示、站长令牌后门不受访客会话影响）。`npm run build && npm run check` 还会校验每页都有登录按钮与三个弹窗、文章页有评论区、后台有无权限页。
+回归测试：`cd blog && npm run test:auth`（OAuth 授权地址与防伪造 state、回调换令牌全流程、验证码/用户名弱登录已被移除、无配置时不给备用登录、未登录弹窗拦截、登录后评论/点赞与防注入渲染、非站长在前台与 `/admin/` 的无权限提示、站长令牌后门不受访客会话影响）。`npm run build && npm run check` 还会校验每页都有登录按钮与三个弹窗、文章页有评论区、后台有无权限页，并断言构建产物里不存在验证码登录的标记。
 
 ## 构建与检查
 
@@ -388,6 +388,6 @@ blog/
 
 ## 安全与隐私
 
-站点是纯静态页面，无统计追踪；访客可用「GitHub 用户名 + 图形验证码」快捷登录后评论/点赞（本地轻量门禁，不是强身份认证，详见「访客登录与评论 / 点赞」），后台仍只有站长能进。头像、壁纸、网页图标和访客可选背景列表同样只能由 `/admin/` 的 admin 修改（后台只接受允许名单中的 GitHub 账号，且令牌必须有仓库写权限）。访客可以自选背景和深浅主题，但这些选择只写进自己浏览器的 `localStorage`，不会上传、不会提交、不会影响其他访客——站点的公开文件始终保持不变。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 没有服务端账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`。账号名单能限制网页后台登录，但不能取代 GitHub 仓库协作者权限；详见「在线管理后台」一节。
+站点是纯静态页面，无统计追踪；访客可用 GitHub OAuth 登录后评论/点赞（详见「访客登录与评论 / 点赞」），后台仍只有站长能进。头像、壁纸、网页图标和访客可选背景列表同样只能由 `/admin/` 的 admin 修改（后台只接受允许名单中的 GitHub 账号，且令牌必须有仓库写权限）。访客可以自选背景和深浅主题，但这些选择只写进自己浏览器的 `localStorage`，不会上传、不会提交、不会影响其他访客——站点的公开文件始终保持不变。全文搜索下载公开的 `search.json`，不要在已发布文章中写私密信息。代码复制优先使用 HTTPS 下的 Clipboard API，不可用时会选中代码并提示手动复制。`/admin/` 没有服务端账号系统：它只在你自己的浏览器里持有 GitHub 令牌并直接调用 `api.github.com`。账号名单能限制网页后台登录，但不能取代 GitHub 仓库协作者权限；详见「在线管理后台」一节。
 
 2026-10-14 的 `npm audit` 检测到 Hexo 上游构建依赖的 9 条报告（7 high、2 moderate），对应 `braces` / `sprintf-js` 的拒绝服务问题及其依赖链。`npm audit fix` 无法在当前兼容版本下消除；工具建议的 `--force` 会把 Hexo 降级到旧主版本，因此未执行。依赖仅运行于本地或 CI 构建，未打包进公开页面，但不要使用不可信的模板、插件或配置；来自外部的 PR 应在隔离的 GitHub runner 中构建，且不能获得发布权限。后续升级 Hexo 后请重新运行审计。

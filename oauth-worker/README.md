@@ -43,7 +43,7 @@ auth:
 
 然后在 `blog/` 目录跑 `npm run publish:prepare`，把源码与根目录静态文件一起提交、合并到 `main`。
 
-> 本地预览（localhost / Arena 预览地址）里不要指望 OAuth 能跳通：GitHub 只认登记过的回调域名，本地点 OAuth 会被 GitHub 拒绝。本地会自动保留「用户名＋验证码」的备用登录，互不影响。
+> 本地预览（localhost / Arena 预览地址）里不要指望 OAuth 能跳通：GitHub 只认登记过的回调域名，本地点 OAuth 会被 GitHub 拒绝。站点没有其它备用登录方式，请到正式站验收 OAuth。
 
 ## 完成后的效果
 
@@ -66,4 +66,4 @@ npx wrangler deploy
 - **授权后跳回显示登录失败 / `origin_not_allowed`**：Worker 的 `ALLOWED_ORIGINS` 没包含当前站点来源（正式站必须是 `https://lscminxi.github.io`，不要多写路径或斜杠）。
 - **GitHub 报错 `The redirect_uri is not associated with this application`**：OAuth App 的 Authorization callback URL 与 `https://lscminxi.github.io/auth/callback/` 不完全一致（注意结尾斜杠、http/https）。
 - **换令牌失败 `bad_verification_code`**：code 已被用过或过期（10 分钟），重新点一次登录即可，别刷新回调页重复提交。
-- **博客上还是验证码登录、没有 GitHub 按钮**：`provider` 没改成 `oauth`，或 `client_id` / `worker_url` 没填全（缺一会自动回落到本地登录保底），或改完没跑 `npm run publish:prepare` 重新发布。
+- **博客上没有「使用 GitHub 登录」按钮、只提示暂不可用**：`provider` 没改成 `oauth`，或 `client_id` / `worker_url` 没填全（站点没有备用登录，配置缺失时登录就是不可用状态），或改完没跑 `npm run publish:prepare` 重新发布。

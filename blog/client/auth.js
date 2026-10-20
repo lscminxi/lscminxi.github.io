@@ -1,15 +1,16 @@
 /*
- * 访客快捷登录 + 评论 / 点赞
+ * 访客登录（GitHub OAuth）+ 评论 / 点赞
  * --------------------------------------------------------------
  * 由 tools/build-assets.mjs 打包成 /js/auth.js（所有页面 defer 加载）。
  *
- * 登录形式：GitHub 用户名 + 图形验证码。
- *   1. 先在本地校验图形验证码（防机器人乱点，验证码只存于本页闭包，不写进 DOM）；
- *   2. 再用 GitHub 公开 API 确认该用户名真实存在，并取回头像；
- *   3. 会话只写进 localStorage（minxi.auth.user），不索要密码、不索要令牌。
+ * 唯一的登录方式：GitHub OAuth。
+ *   点击「使用 GitHub 登录」→ 跳转 GitHub 官方授权页 → 回调 /auth/callback/ →
+ *   经 oauth-worker 用一次性 code 换令牌 → 向 GitHub 确认身份 → 建立本地会话
+ *   （localStorage：minxi.auth.user）。本站不索要密码，令牌用完即弃、不保存。
+ *   若 OAuth 尚未配置，登录弹窗只提示暂不可用，不提供任何绕过授权的备用登录。
  *
  * 权限边界（重要）：
- *   - 所有人都可以这样登录，然后评论、点赞；
+ *   - 所有人都可以登录，然后评论、点赞；
  *   - 只有站长 lscminxi 能进后台。访客点「进入后台」且不是站长时，直接显示「你无权限进入」；
  *   - /admin/ 本身仍然只认 GitHub 令牌验证（令牌账号必须在允许名单里且有仓库写权限），
  *     访客登录不会、也不能绕过那一层。
@@ -60,47 +61,6 @@ let currentUser = readUser();
 const getUser = () => currentUser;
 const isOwner = (user = currentUser) => Boolean(user) && auth.isOwnerLogin(user.login);
 
-/* ---------------- 图形验证码 ---------------- */
-
-let captchaCode = '';
-function drawCaptcha(canvas) {
-  captchaCode = auth.makeCaptchaCode();
-  if (!canvas) return captchaCode;
-  canvas.width = 120;
-  canvas.height = 44;
-  let ctx = null;
-  try {
-    ctx = canvas.getContext('2d');
-  } catch {
-    ctx = null;
-  }
-  if (!ctx) return captchaCode; // 无 canvas 环境（如测试）时仍保留校验逻辑
-  ctx.fillStyle = '#11161e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  for (let i = 0; i < 22; i += 1) {
-    ctx.fillStyle = `rgba(92,224,196,${0.08 + Math.random() * 0.15})`;
-    ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
-  }
-  ctx.strokeStyle = 'rgba(145,155,169,.45)';
-  for (let i = 0; i < 3; i += 1) {
-    ctx.beginPath();
-    ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
-    ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
-    ctx.stroke();
-  }
-  ctx.font = '700 24px Consolas, monospace';
-  ctx.textBaseline = 'middle';
-  [...captchaCode].forEach((char, index) => {
-    ctx.save();
-    ctx.translate(18 + index * 26, 22 + (Math.random() * 6 - 3));
-    ctx.rotate((Math.random() - 0.5) * 0.45);
-    ctx.fillStyle = index % 2 ? '#5ce0c4' : '#e6eaf0';
-    ctx.fillText(char, 0, 0);
-    ctx.restore();
-  });
-  return captchaCode;
-}
-
 /* ---------------- 弹窗：未登录提醒 / 无权限 ---------------- */
 
 let pendingFeature = '';
@@ -109,7 +69,7 @@ function requireLogin(feature = '此功能') {
   pendingFeature = feature;
   const dialog = dialogOf('#auth-required-dialog');
   const text = dialogOf('#auth-required-text');
-  if (text) text.textContent = `你还没有登录，登录后才能${feature}。使用 GitHub 用户名加验证码即可快捷登录，不需要密码。`;
+  if (text) text.textContent = `你还没有登录，登录后才能${feature}。点「使用 GitHub 登录」通过 GitHub 官方授权后即可使用。`;
   openDialog(dialog);
   return false;
 }
@@ -132,7 +92,7 @@ function enterAdmin() {
 
 /* ---------------- GitHub OAuth（真登录，需小后端换令牌） ----------------
  * 配置来自主题 _config.yml 的 auth.oauth，经 layout 写在 #auth-dialog 的 data-* 上。
- * 未配置时 oauthConfig() 返回 null，登录弹窗自动回落到「用户名 + 验证码」。
+ * 未配置时 oauthConfig() 返回 null，登录弹窗只提示 GitHub 登录暂不可用。
  * 流程：拼授权地址跳转 GitHub → 回调 /auth/callback/ 校验 state →
  *       POST worker /exchange 换令牌 → GET api.github.com/user 确认身份 → 写会话跳回原页。
  * 令牌只在回调处理期间存在于内存，拿到身份后即丢弃，不写任何存储。 */
@@ -275,6 +235,8 @@ function paintAuthUi() {
   });
   const oauthPanel = dialogOf('#auth-oauth-panel');
   if (oauthPanel) oauthPanel.hidden = !oauthConfig();
+  const unconfigured = dialogOf('#auth-unconfigured');
+  if (unconfigured) unconfigured.hidden = Boolean(oauthConfig());
   const loginPanel = dialogOf('#auth-login-panel');
   const accountPanel = dialogOf('#auth-account-panel');
   if (loginPanel) loginPanel.hidden = Boolean(currentUser);
@@ -289,32 +251,13 @@ function paintAuthUi() {
 function openLogin() {
   const dialog = dialogOf('#auth-dialog');
   paintAuthUi();
-  if (!currentUser) drawCaptcha(dialogOf('#auth-captcha'));
   openDialog(dialog);
-  if (!currentUser) dialogOf('#auth-username')?.focus();
-}
-
-async function verifyGithubUser(login) {
-  const response = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}`, {
-    headers: { Accept: 'application/vnd.github+json' },
-  });
-  if (response.status === 404) throw new Error(`GitHub 用户 @${login} 不存在，请检查用户名。`);
-  if (!response.ok) throw new Error('GitHub 验证暂时失败，请稍后再试。');
-  const data = await response.json();
-  const session = auth.normalizeSession({
-    login: data.login || login,
-    avatarUrl: data.avatar_url || '',
-    name: data.name || '',
-    loggedInAt: Date.now(),
-  });
-  if (!session) throw new Error('GitHub 返回的账号信息不完整，已取消登录。');
-  return session;
+  if (!currentUser) dialogOf('#auth-oauth-button')?.focus();
 }
 
 function wireAuthDialog() {
   const dialog = dialogOf('#auth-dialog');
   if (!dialog) return;
-  const form = dialogOf('#auth-form');
   const error = dialogOf('#auth-error');
   const setError = (message) => {
     if (error) {
@@ -322,44 +265,8 @@ function wireAuthDialog() {
       error.hidden = !message;
     }
   };
-  dialogOf('#auth-refresh')?.addEventListener('click', () => {
-    drawCaptcha(dialogOf('#auth-captcha'));
-    const code = dialogOf('#auth-code');
-    if (code) code.value = '';
-  });
-  dialogOf('#auth-captcha')?.addEventListener('click', () => drawCaptcha(dialogOf('#auth-captcha')));
   dialogOf('#auth-oauth-button')?.addEventListener('click', () => {
-    if (!startOAuth()) setError('GitHub 登录还没有配置好，请先用下面的快捷登录。');
-  });
-  form?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    setError('');
-    const login = auth.normalizeLogin(dialogOf('#auth-username')?.value || '');
-    if (!login) return setError('请输入有效的 GitHub 用户名（字母、数字或连字符）。');
-    if (!auth.captchaMatches(dialogOf('#auth-code')?.value || '', captchaCode)) {
-      drawCaptcha(dialogOf('#auth-captcha'));
-      return setError('验证码不正确，请看图重新输入。');
-    }
-    const button = dialogOf('#auth-submit');
-    if (button) button.disabled = true;
-    try {
-      currentUser = await verifyGithubUser(login);
-      writeUser(currentUser);
-      closeDialog(dialog);
-      paintAuthUi();
-      paintComments();
-      if (pendingFeature) {
-        const feature = pendingFeature;
-        pendingFeature = '';
-        if (/评论/.test(feature)) dialogOf('[data-comment-input]')?.focus();
-      }
-    } catch (loginError) {
-      drawCaptcha(dialogOf('#auth-captcha'));
-      setError(loginError.message || '登录失败，请稍后再试。');
-    } finally {
-      if (button) button.disabled = false;
-    }
-    return undefined;
+    if (!startOAuth()) setError('GitHub 登录还没有配置好，暂时无法登录。');
   });
   dialogOf('#auth-logout')?.addEventListener('click', () => {
     currentUser = null;
@@ -603,8 +510,6 @@ window.MinxiAuth = {
   },
   startOAuth,
   oauthConfig,
-  refreshCaptcha: () => drawCaptcha(dialogOf('#auth-captcha')),
-  getCaptchaCode: () => captchaCode, // 仅供回归测试读取当前验证码，不渲染到页面
   owner: OWNER,
 };
 window.MinxiComments = { paint: paintComments };

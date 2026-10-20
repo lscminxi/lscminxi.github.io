@@ -33,7 +33,7 @@ await build({
   bundle: true, minify: true, format: 'iife', platform: 'browser',
   target: ['es2020'], legalComments: 'eof',
 });
-// 访客快捷登录 + 评论/点赞：GitHub 用户名 + 图形验证码（client/auth.js）。
+// 访客 GitHub OAuth 登录 + 评论/点赞（client/auth.js）。
 await build({
   entryPoints: ['client/auth.js'], outfile: 'themes/minxi/source/js/auth.js',
   bundle: true, minify: true, format: 'iife', platform: 'browser',

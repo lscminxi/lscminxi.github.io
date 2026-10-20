@@ -16,10 +16,9 @@ comments:
     category_id: ""
 
 # 访客登录
-# provider: local = GitHub 用户名 + 图形验证码（零配置，轻量门禁）
-# provider: oauth = 真正的 GitHub OAuth 登录。需先按 README「GitHub OAuth 登录」部署
-#                   oauth-worker/ 里的小后端，再把下面 client_id 与 worker_url 填好；
-#                   没填全时会自动回落到 local，不会坏页。client_secret 绝不要填到这里。
+# 唯一的访客登录方式：GitHub OAuth。provider 须为 oauth，且 client_id 与 worker_url
+# 都填好（见 oauth-worker/README.md）；没填全时登录弹窗只提示暂不可用，
+# 不提供任何绕过 GitHub 授权的备用登录。client_secret 绝不要填到这里。
 auth:
   provider: oauth
   oauth:

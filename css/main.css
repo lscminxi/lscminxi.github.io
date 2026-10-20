@@ -2394,18 +2394,6 @@ html[data-wallpaper="on"] .site-header {
   font-size: 13px;
   line-height: 1.8;
 }
-.auth-form {
-  display: grid;
-  gap: 14px;
-  margin-top: 14px;
-}
-.auth-field {
-  display: grid;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.auth-field input,
 .comment-form textarea {
   background: var(--panel-raised);
   border: 1px solid var(--line);
@@ -2415,22 +2403,6 @@ html[data-wallpaper="on"] .site-header {
   font: inherit;
   width: 100%;
 }
-.auth-captcha-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-}
-.auth-captcha-row canvas {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.auth-captcha-row input {
-  flex: 1;
-  min-width: 130px;
-}
-.auth-refresh,
 .auth-secondary {
   background: var(--panel-raised);
   border: 1px solid var(--line);
@@ -2454,11 +2426,11 @@ html[data-wallpaper="on"] .site-header {
 }
 .auth-oauth-button {
   width: 100%;
+  margin-top: 14px;
 }
-.auth-divider {
-  color: var(--dim);
-  font-size: 11px;
-  text-align: center;
+.auth-unconfigured {
+  color: var(--purple);
+  font-size: 13px;
   margin-top: 14px;
 }
 .auth-error {
