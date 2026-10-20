@@ -123,6 +123,19 @@ test('live preview keeps the SVG (including arrow polygons) after sanitizing', (
   assert.equal(doc.querySelectorAll('.md-graph circle.graph-node').length, 2);
 });
 
+test('grid, axes, edges and node labels carry inline styles that survive sanitizing', () => {
+  // 回归：只靠 CSS 类上色时，样式表没加载/被缓存就会出现「曲线在、网格和边看不见」。
+  const doc = preview(DOC);
+  const grid = doc.querySelector('.plot-grid');
+  assert.ok(grid?.getAttribute('style')?.includes('stroke'), '网格线自带描边样式');
+  const axis = doc.querySelector('.plot-axis');
+  assert.ok(axis?.getAttribute('style')?.includes('stroke'), '坐标轴自带描边样式');
+  const edge = doc.querySelector('.md-graph line, .md-graph path');
+  assert.ok(edge?.getAttribute('style')?.includes('stroke') || edge?.getAttribute('stroke'), '连边自带描边');
+  const label = doc.querySelector('.graph-node-label');
+  assert.ok(label?.getAttribute('style')?.includes('fill'), '点编号自带文字颜色');
+});
+
 test('labels are escaped in both renderers (no markup injection)', () => {
   const md = `${FENCE}graph\nnode: A ; label=<script>alert(1)</script>\nnode: B\nedge: A - B\n${FENCE}`;
   const html = render(md);
