@@ -19,6 +19,13 @@ assert(index.includes("Minxi 的 blog"), "Site title missing");
 assert(index.includes("幼儿园小班水平"), "Profile missing");
 assert(index.includes("lsc_minxi"), "Author missing");
 const about = await readFile(join(root, "about", "index.html"), "utf8");
+// 「关于」页保留但不在主导航里：导航区块不许出现 /about/，首页其它位置（个人卡片/首屏）仍要能点进去。
+const navBlock = /<nav class="desktop-nav"[\s\S]*?<\/nav>/.exec(index)?.[0] || "";
+assert(navBlock, "Main navigation is missing");
+assert(!navBlock.includes("/about/"), "About page must not be linked from the main navigation");
+assert(!navBlock.includes(">关于<"), "About link must not appear in the main navigation");
+assert(index.includes('href="/about/"'), "About page must still be reachable from elsewhere on the home page");
+
 assert(about.includes("？！糖糖"), "About page bio missing");
 assert(!index.includes("example.com"), "Default Hexo URL remains");
 const search = JSON.parse(await readFile(join(root, "search.json"), "utf8"));
