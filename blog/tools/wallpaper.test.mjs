@@ -839,13 +839,13 @@ test("oversized photos are compressed in the browser before upload (1 MB API lim
   }
 });
 
-test("non-admin visitors cannot change the gallery: there is no token form, only GitHub OAuth for the owner", async () => {
+test("non-admin visitors cannot change the gallery: both login methods still require owner verification", async () => {
   const { dom, $, state } = await setupAdmin({ login: false });
   try {
     assert.equal($("#view-app").hidden, true, "没有登录时看不到管理界面");
     assert.equal(state.writes.length, 0);
-    assert.equal($("#token-input"), null, "粘贴令牌的入口必须已删除");
-    assert.equal($("#login-form"), null, "令牌表单必须已删除");
+    assert.ok($("#token-input"), "粘贴令牌是第二种验证方式，应存在");
+    assert.ok($("#token-form"), "令牌表单应存在");
     assert.match($("#login-button").textContent, /使用 GitHub 登录/);
     assert.equal(state.writes.length, 0);
   } finally {

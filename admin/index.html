@@ -9,14 +9,14 @@
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css?v=nav-2">
-  <link rel="stylesheet" href="./admin.css?v=theme-2">
+  <link rel="stylesheet" href="./admin.css?v=theme-3">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
        不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=plots-1" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=owner-auth-5" defer></script>
+  <script src="./admin.js?v=owner-auth-6" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -42,17 +42,25 @@
       <div class="eyebrow"><span></span> SIGN IN WITH GITHUB</div>
       <h1>登录管理后台</h1>
       <p class="lead">
-        后台<strong>只有站长 <code>@lscminxi</code> 能进入</strong>，不再需要粘贴 GitHub 令牌。
-        点击下面的按钮会跳转到 GitHub 官方授权页；授权回来后，本站会向 GitHub 确认你的账号
-        就是站长、并且这次授权拥有仓库写权限，才会打开后台。其他账号即使完成了前台登录，
-        也只会看到「你无权限进入」。
+        后台<strong>只有站长 <code>@lscminxi</code> 能进入</strong>，有两种验证方式，任选其一：
       </p>
       <p class="error" id="login-error" hidden></p>
+      <p class="login-method">方式一：GitHub 授权（推荐，不用自己保管令牌）</p>
       <button class="btn primary" id="login-button" type="button">使用 GitHub 登录进入后台</button>
+      <p class="login-method">方式二：粘贴 GitHub 令牌</p>
+      <form class="login-form" id="token-form">
+        <label class="field"><span>GitHub 令牌（Personal Access Token）</span>
+          <input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_… 或 github_pat_…">
+        </label>
+        <label class="checkline" for="token-remember"><input id="token-remember" type="checkbox"><span>记住此设备（把令牌保存在这台设备的浏览器里，下次自动验证）</span></label>
+        <button class="btn" id="token-login-button" type="submit">验证令牌并进入</button>
+      </form>
       <p class="muted">
-        说明：普通前台登录只申请读取公开资料；只有进入后台的这一次授权才会申请仓库写权限，
-        用于新建、编辑与删除文章。授权令牌只保存在当前标签页的会话里，关闭标签页或退出登录即失效，
-        不会写进长期存储，也不再提供手工粘贴令牌的入口。
+        两种方式的验证标准完全相同：本站都会向 GitHub 确认令牌/授权对应的账号就是站长，
+        并且对仓库有写权限，其他账号一律显示「你无权限进入」。令牌需要能读写本仓库：
+        经典令牌勾选 <code>repo</code>，或细粒度令牌给本仓库 Contents 读写权限。
+        不勾「记住此设备」时，令牌只保存在当前标签页的会话里，关闭标签页或退出登录即失效；
+        勾选后会写进这台设备的 localStorage，请勿在公共电脑上勾选。
       </p>
     </section>
 

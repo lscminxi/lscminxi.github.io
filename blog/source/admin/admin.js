@@ -3,13 +3,14 @@
  * 博客管理后台（纯前端）
  * --------------------------------------------------------------
  * 这个站点是静态的 GitHub Pages，没有自己的服务器，因此后台不保存任何账号密码：
- * 「登录」= 站长点击按钮走 GitHub OAuth 授权（经 oauth-worker 换取授权令牌），
+ * 「登录」有两种方式，验证标准相同：① 站长点击按钮走 GitHub OAuth 授权
+ * （经 oauth-worker 换取授权令牌）；② 站长粘贴自己的 GitHub Personal Access Token。
  * 之后所有读写都直接由浏览器调用 https://api.github.com 完成，
  * 以站长的身份把改动提交到仓库 main 分支；GitHub Actions 会自动重新生成静态页面并发布。
- * 后台不再提供粘贴 Personal Access Token 的入口。
  *
  * 安全说明：
- *  - 授权令牌只保存在当前标签页的 sessionStorage，退出登录或关闭标签页即清除，绝不写 localStorage。
+ *  - 授权/令牌默认只保存在当前标签页的 sessionStorage，退出登录或关闭标签页即清除；
+ *    只有粘贴令牌时勾选了「记住此设备」，才会把令牌写进这台设备的 localStorage。
  *  - 令牌只会发送到 api.github.com，本站没有任何后端，不会上传到别处。
  *  - 真正的写权限由 GitHub 判断；此外，必须通过 /user 确认授权对应的账号，且账号在允许名单中。
  *  - 身份接口失败、账号信息缺失或允许名单为空时一律拒绝登录（fail closed）。
@@ -30,8 +31,9 @@
     imageExtensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
   };
 
-  const TOKEN_KEY = "minxi.admin.oauth-token"; // GitHub OAuth 进入后台时暂存的授权（仅 sessionStorage）
-  const LEGACY_TOKEN_KEYS = ["minxi.admin.token", "minxi.admin.remember"];
+  const TOKEN_KEY = "minxi.admin.oauth-token"; // 当前标签页会话里的授权/令牌（仅 sessionStorage）
+  const REMEMBERED_TOKEN_KEY = "minxi.admin.token"; // 勾选「记住此设备」的粘贴令牌（localStorage，仅本设备）
+  const LEGACY_TOKEN_KEYS = ["minxi.admin.remember"]; // 已废弃的旧键，启动时清掉
 
   let token = "";
   let currentUser = "";
@@ -59,6 +61,10 @@
     viewEditor: $("#view-editor"),
     loginError: $("#login-error"),
     loginButton: $("#login-button"),
+    tokenForm: $("#token-form"),
+    tokenInput: $("#token-input"),
+    tokenRemember: $("#token-remember"),
+    tokenLoginButton: $("#token-login-button"),
     userChip: $("#user-chip"),
     logoutButton: $("#logout-button"),
     repoChip: $("#repo-chip"),
@@ -311,16 +317,24 @@
   function readStoredToken() {
     clearLegacyTokenStorage();
     try {
-      return sessionStorage.getItem(TOKEN_KEY) || "";
+      return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(REMEMBERED_TOKEN_KEY) || "";
     } catch {
       return "";
     }
   }
-  function storeToken(value) {
+  function storeToken(value, { remember = false } = {}) {
     clearLegacyTokenStorage();
     try {
-      if (value) sessionStorage.setItem(TOKEN_KEY, value);
-      else sessionStorage.removeItem(TOKEN_KEY);
+      if (!value) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(REMEMBERED_TOKEN_KEY);
+      } else if (remember) {
+        localStorage.setItem(REMEMBERED_TOKEN_KEY, value);
+        sessionStorage.removeItem(TOKEN_KEY);
+      } else {
+        sessionStorage.setItem(TOKEN_KEY, value);
+        localStorage.removeItem(REMEMBERED_TOKEN_KEY);
+      }
     } catch {
       /* 隐私模式下可能不可写，忽略 */
     }
@@ -599,7 +613,7 @@
     snapshots.about = null;
     el.userChip.hidden = true;
     el.logoutButton.hidden = true;
-    if (!silent) log("已退出登录，这次 GitHub 授权已从浏览器清除。");
+    if (!silent) log("已退出登录，浏览器里保存的授权/令牌已清除。");
   }
 
   /* 站长 GitHub OAuth：跳 GitHub 授权（带仓库写权限）→ /auth/callback/ 换授权 →
@@ -650,10 +664,42 @@
     void startAdminOAuth();
   });
 
+  /* 方式二：粘贴 GitHub 令牌。验证标准与 OAuth 完全相同（authenticate 查 /user
+     是否在允许名单、且对仓库有写权限），不通过不保存、不进入。 */
+  el.tokenForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const value = el.tokenInput.value.trim();
+    if (!value) {
+      showError("请先粘贴 GitHub 令牌，再点「验证令牌并进入」。");
+      el.tokenInput.focus();
+      return;
+    }
+    if (/\s/.test(value)) {
+      showError("令牌里不能有空格或换行，请确认粘贴完整。");
+      el.tokenInput.focus();
+      return;
+    }
+    showError("");
+    busy(el.tokenLoginButton, true, "正在验证令牌…");
+    try {
+      await authenticate(value);
+      storeToken(value, { remember: Boolean(el.tokenRemember?.checked) });
+      el.tokenInput.value = "";
+      await enterApp();
+      toast(`欢迎回来，@${currentUser}`);
+    } catch (error) {
+      token = "";
+      currentUser = "";
+      showError(error.message || "令牌验证失败，请重试。");
+    } finally {
+      busy(el.tokenLoginButton, false);
+    }
+  });
+
   el.logoutButton.addEventListener("click", async () => {
     const ok = await confirmDialog(
       "退出登录",
-      "将清除这次 GitHub 授权，未提交的编辑内容会丢失。确定退出吗？",
+      "将清除浏览器里保存的授权/令牌，未提交的编辑内容会丢失。确定退出吗？",
       "退出登录",
     );
     if (ok) {
@@ -2323,7 +2369,7 @@
       return true;
     } catch (error) {
       logout(true);
-      showError(`GitHub 授权不可用：${describeError(error)}`);
+      showError(`已保存的 GitHub 授权/令牌不可用：${describeError(error)}`);
       return false;
     } finally {
       busy(el.loginButton, false);
@@ -2334,7 +2380,7 @@
   window.MinxiAdmin = { unsavedWork, restoreOAuthSession };
 
   (async function init() {
-    log("后台已就绪。请使用 GitHub 登录（仅站长可进入）。");
+    log("后台已就绪。可用 GitHub 授权或粘贴令牌登录（仅站长可进入）。");
     refreshAdminAppearance();
     clearLegacyTokenStorage();
     const visitor = visitorLogin();

@@ -114,6 +114,12 @@ html[data-wallpaper="on"] .admin-topbar {
   max-width: 520px;
   margin-top: 18px;
 }
+.login-method {
+  font: 600 11px var(--mono);
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin: 20px 0 8px;
+}
 .field {
   display: block;
   margin-bottom: 14px;

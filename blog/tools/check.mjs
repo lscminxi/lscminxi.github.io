@@ -115,8 +115,8 @@ assert(adminHtml.includes('id="view-noaccess"'), "Admin no-access view is missin
 assert(adminHtml.includes("你无权限进入"), "Admin no-access message is missing");
 const adminJsOut = await readFile(join(root, "admin", "admin.js"), "utf8");
 assert(adminJsOut.includes("allowedLogins"), "Admin allowlist guard is missing");
-assert(!adminHtml.includes('id="token-input"'), "Admin must not offer a paste-a-token login");
-assert(!adminHtml.includes('id="login-form"'), "Admin token form must be removed");
+assert(adminHtml.includes('id="token-input"'), "Admin paste-a-token login (method 2) is missing");
+assert(adminHtml.includes('id="token-form"'), "Admin token form is missing");
 assert(adminHtml.includes("使用 GitHub 登录进入后台"), "Admin GitHub OAuth entry is missing");
 
 const css = await readFile(join(root, "css", "main.css"), "utf8");
