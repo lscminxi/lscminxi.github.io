@@ -262,10 +262,14 @@ test("light mode is a scoped override: dark stays the untouched default", () => 
   // 壁纸层两套底色：深色压暗 / 浅色提亮（浅色只剩对话框遮罩等在用）
   assert(/--veil-rgb:\s*11, 14, 20/.test(css));
   assert(/--veil-rgb:\s*245, 247, 250/.test(css));
-  // 浅色模式必须删掉壁纸雾面（直接展示原图），深色压暗层保留
+  // 深浅色都必须删掉壁纸雾面（直接展示原图）
   assert(
     /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
     "light theme must not veil the wallpaper",
+  );
+  assert(
+    /html\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
+    "dark theme must not veil the wallpaper",
   );
   // 代码行号对齐：行号列与代码同字号同行高、两列顶对齐
   const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";

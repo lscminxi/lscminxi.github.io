@@ -2066,18 +2066,10 @@ html[data-wallpaper="on"][data-wallpaper-blur="on"] body::before {
   filter: blur(var(--wallpaper-blur, 0px));
   transform: scale(1.06);
 }
-/* 压暗层 + 暗角：保证正文在任意壁纸上都足够清晰。 */
+/* 深浅色都不再给壁纸盖雾面：直接展示原图（压暗 + 暗角整层去掉）。
+   仅当系统明确要求减少透明 / 高对比时，下面的媒体查询会恢复接近不透光的底，保证可读性。 */
 html[data-wallpaper="on"] body::after {
-  background-image:
-    radial-gradient(
-      125% 95% at 50% 18%,
-      rgba(var(--veil-rgb), 0) 30%,
-      rgba(var(--veil-rgb), var(--veil-vignette)) 100%
-    ),
-    linear-gradient(
-      rgba(var(--veil-rgb), var(--wallpaper-veil, 0.62)),
-      rgba(var(--veil-rgb), var(--wallpaper-veil, 0.62))
-    );
+  background-image: none;
 }
 /* 顶栏原本是不透光的深色，有壁纸时更透明一点，让壁纸露出来。 */
 html[data-wallpaper="on"] .site-header {
@@ -2664,7 +2656,7 @@ html[data-wallpaper="on"] .site-header {
    其余是逐条覆盖（与上面的深色规则一一对应）。
    ================================================================== */
 
-/* 壁纸压暗层：两套主题各自的底色（深色压暗 / 浅色提亮）与暗角强度。 */
+/* 顶栏等处的半透明底色（深色 / 浅色各一份）；壁纸雾面已在深浅色下都去掉。 */
 html {
   --veil-rgb: 11, 14, 20;
   --veil-max: 0.94;
@@ -2706,8 +2698,8 @@ html[data-theme="light"] {
    浅色覆盖块：卡片 / 列表这类「大面积」组件集中在这里，
    减少零散覆盖，也方便日后调色。
    ------------------------------------------------------------------ */
-/* 浅色模式删掉壁纸雾面：有壁纸时直接展示原图，不再盖提亮层与暗角。
-   （--veil-* 只保留给对话框遮罩等其它地方，深色模式的压暗层不受影响。） */
+/* 浅色模式同样删掉壁纸雾面：有壁纸时直接展示原图（深色已在基础规则里去掉，此处保持一致）。
+   （--veil-* 只保留给顶栏、对话框遮罩等其它地方。） */
 html[data-theme="light"][data-wallpaper="on"] body::after {
   background-image: none;
 }
