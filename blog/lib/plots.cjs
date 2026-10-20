@@ -870,6 +870,58 @@ function makeExtension(kind) {
   };
 }
 
+/**
+ * 把整篇 Markdown 里的 ```plot / ```graph 围栏直接换成渲染好的图形 HTML。
+ * Hexo 正式发文管线（post.render）会先用 backtick_code_block 把所有围栏代码块
+ * 抽走做高亮，Marked 扩展根本轮不到处理，所以正式文章必须在 before_post_render
+ * 阶段先转换；后台预览只走 Marked，不需要这一步。已闭合才转，未闭合保留原文；
+ * 藏在普通代码块里的示例（如四反引号包裹）不会被误转。
+ */
+function convertPlotFences(markdown) {
+  const lines = String(markdown).split('\n');
+  const out = [];
+  let fenceChar = '';
+  let fenceLen = 0;
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (!fenceChar) {
+      const open = /^```(plot|graph)[ \t]*$/.exec(trimmed);
+      if (open) {
+        // 向后找结束围栏
+        const body = [];
+        let close = -1;
+        for (let j = index + 1; j < lines.length; j += 1) {
+          if (FENCE_CLOSE.test(lines[j].trim())) { close = j; break; }
+          body.push(lines[j]);
+          if (body.length > 300) break;
+        }
+        if (close !== -1) {
+          try {
+            const figure = open[1] === 'plot'
+              ? renderPlotSvg(parsePlotSpec(body.join('\n')), { source: body.join('\n') })
+              : renderGraphSvg(parseGraphSpec(body.join('\n')));
+            out.push(figure.trimEnd(), '');
+            index = close + 1;
+            continue;
+          } catch { /* 渲染失败则按普通代码块保留原文 */ }
+        }
+      }
+      const fenceStart = /^(`{3,}|~{3,})/.exec(trimmed);
+      if (fenceStart) { fenceChar = fenceStart[1][0]; fenceLen = fenceStart[1].length; }
+      out.push(line);
+      index += 1;
+      continue;
+    }
+    out.push(line);
+    const closeRe = fenceChar === '`' ? /^`{3,}[ \t]*$/ : /^~{3,}[ \t]*$/;
+    if (closeRe.test(trimmed) && trimmed.length >= fenceLen) fenceChar = '';
+    index += 1;
+  }
+  return out.join('\n');
+}
+
 module.exports = function plotExtensions() {
   return { extensions: [makeExtension('plot'), makeExtension('graph')] };
 };
@@ -883,6 +935,7 @@ module.exports.getPlotEquations = getPlotEquations;
 module.exports.getPlotSegments = getPlotSegments;
 module.exports.lineEquation = lineEquation;
 module.exports.PLOT_GEOMETRY = { width: PLOT_W, height: PLOT_H, pad: PLOT_PAD };
+module.exports.convertPlotFences = convertPlotFences;
 module.exports.parseGraphSpec = parseGraphSpec;
 module.exports.renderGraphSvg = renderGraphSvg;
 module.exports.parseColor = parseColor;

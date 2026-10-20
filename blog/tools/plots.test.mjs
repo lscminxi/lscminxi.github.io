@@ -329,3 +329,23 @@ test('editor preview graph is interactive via parent enhancement', async () => {
     assert.ok(svg.getAttribute('data-preview-viewbox'), '图的视图会被记录以便重渲染恢复');
   } finally { page.window.close(); }
 });
+
+
+/* ---------------- 正式发文管线（Hexo post.render） ---------------- */
+
+test('full Hexo post pipeline renders plot/graph fences as figures, not code blocks', async () => {
+  // 回归：post.render 会先把围栏代码块抽走高亮，只测 hexo.render 会漏掉这层。
+  const post = await hexo.post.render('plot-pipeline-test.md', { content: DOC });
+  const doc = new JSDOM(post.content).window.document;
+  assert.ok(doc.querySelector('.md-plot svg'), '正式发文管线里函数图像要生成 SVG');
+  assert.ok(doc.querySelector('.md-graph svg'), '正式发文管线里可视化图要生成 SVG');
+  assert.ok(doc.querySelector('.plot-intersection'), '交点也要在');
+  assert.ok(!doc.querySelector('.highlight.plaintext'), '不能被当成普通代码块高亮');
+});
+
+test('plot fences nested inside a plain code fence stay literal', async () => {
+  const md = '````md\n```plot\nf: x\n```\n````';
+  assert.equal(plots.convertPlotFences(md), md, '转换函数不动普通代码块里的示例');
+  const post = await hexo.post.render('plot-nested-test.md', { content: md });
+  assert.ok(!post.content.includes('md-plot'), '正式管线里示例仍是代码');
+});
