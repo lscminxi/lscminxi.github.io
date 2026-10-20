@@ -186,7 +186,7 @@ test("admin page itself shows 你无权限进入 to a logged-in non-owner visito
     assert.equal(w.document.querySelector("#view-app").hidden, true);
     assert.match(w.document.querySelector("#noaccess-text").textContent, /你无权限进入后台/);
     assert.match(w.document.querySelector("#noaccess-text").textContent, /@visitor-one/);
-    // 站长仍可切回令牌登录，不会被访客会话锁死
+    // 站长仍可从无权限页改走 GitHub 登录，不会被访客会话锁死
     w.document.querySelector("#noaccess-owner").click();
     assert.equal(w.document.querySelector("#view-login").hidden, false);
   } finally {
@@ -307,4 +307,53 @@ test("worker source keeps the secret server-side and only exchanges codes", () =
     "worker must not hardcode a client secret value");
   assert.match(callbackHtml, /id="oauth-status"/);
   assert.match(callbackHtml, /\/js\/auth\.js/);
+});
+
+test("an admin-step-up OAuth callback keeps the token only in sessionStorage for the admin page", async () => {
+  const dom = new JSDOM(
+    `<!DOCTYPE html><html lang="zh-CN"><head><title>正在登录</title></head><body><p id="oauth-status"></p></body></html>`,
+    { url: "https://lscminxi.github.io/auth/callback/?code=code-admin&state=state-admin", runScripts: "outside-only" },
+  );
+  const w = dom.window;
+  try {
+    w.sessionStorage.setItem(auth.OAUTH_STATE_KEY, "state-admin");
+    w.sessionStorage.setItem(auth.OAUTH_RETURN_KEY, "https://lscminxi.github.io/admin/");
+    w.sessionStorage.setItem(auth.OAUTH_ADMIN_KEY, "1");
+    w.fetch = async (input, options = {}) => {
+      const url = String(input);
+      if (url === "/auth-config.json") {
+        return { ok: true, json: async () => ({ provider: "oauth", oauth: { client_id: "Iv1.test", worker_url: "https://auth.example.workers.dev", scope: "read:user" } }) };
+      }
+      if (url === "https://auth.example.workers.dev/exchange") {
+        return { ok: true, json: async () => ({ access_token: "admin-token-not-real", token_type: "bearer" }) };
+      }
+      if (url === "https://api.github.com/user") {
+        return { ok: true, json: async () => ({ login: "lscminxi", avatar_url: "https://avatars.githubusercontent.com/x" }) };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+    w.eval(authBundle);
+    await waitFor(() => w.sessionStorage.getItem(auth.ADMIN_TOKEN_STORAGE_KEY) === "admin-token-not-real");
+    assert.equal(w.localStorage.getItem(auth.ADMIN_TOKEN_STORAGE_KEY), null, "后台授权绝不能写 localStorage");
+    assert.equal(w.sessionStorage.getItem(auth.OAUTH_ADMIN_KEY), null, "一次性标记用完即清");
+    assert.equal(JSON.parse(w.localStorage.getItem(auth.AUTH_STORAGE_KEY)).login, "lscminxi");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("the owner entering the admin area starts a step-up OAuth instead of asking for a pasted token", async () => {
+  const { dom, w, $ } = await setup({ storedUser: { login: "lscminxi", avatarUrl: "https://github.com/lscminxi.png" } });
+  try {
+    const dialog = $("#auth-dialog");
+    dialog.dataset.oauthClientId = "Iv1.test";
+    dialog.dataset.oauthWorkerUrl = "https://auth.example.workers.dev";
+    assert.equal(w.MinxiAuth.isOwner(), true);
+    w.MinxiAuth.enterAdmin();
+    assert.equal(w.sessionStorage.getItem(auth.OAUTH_ADMIN_KEY), "1");
+    assert.match(w.sessionStorage.getItem(auth.OAUTH_STATE_KEY), /^[0-9a-f]{32}$/);
+    assert.match(w.sessionStorage.getItem(auth.OAUTH_RETURN_KEY), /\/admin\/$/);
+  } finally {
+    dom.window.close();
+  }
 });

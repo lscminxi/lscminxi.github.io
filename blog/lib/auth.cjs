@@ -52,6 +52,8 @@ function normalizeSession(value) {
 
 const OAUTH_STATE_KEY = 'minxi.oauth.state';
 const OAUTH_RETURN_KEY = 'minxi.oauth.return';
+const OAUTH_ADMIN_KEY = 'minxi.oauth.admin';
+const ADMIN_TOKEN_STORAGE_KEY = 'minxi.admin.oauth-token';
 
 /** 生成 OAuth state（防 CSRF）。randomBytes 可注入便于测试；默认用 Math.random 兜底。 */
 function makeOAuthState(randomBytes) {
@@ -94,6 +96,8 @@ module.exports = {
   normalizeSession,
   OAUTH_STATE_KEY,
   OAUTH_RETURN_KEY,
+  OAUTH_ADMIN_KEY,
+  ADMIN_TOKEN_STORAGE_KEY,
   makeOAuthState,
   buildAuthorizeUrl,
   oauthRedirectUri,

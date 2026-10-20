@@ -42,35 +42,18 @@
       <div class="eyebrow"><span></span> SIGN IN WITH GITHUB</div>
       <h1>登录管理后台</h1>
       <p class="lead">
-        这个站点是纯静态的 GitHub Pages，没有自己的服务器。后台使用
-        <strong>GitHub 令牌</strong>登录，浏览器直接调用 GitHub API 读写仓库文件：
-        新建文章、在线编辑、上传图片、实时删除，全部以你的身份提交到
-        <code>main</code> 分支，随后由 GitHub Actions 自动生成并发布静态页面。
-        登录时会通过 GitHub 确认令牌对应的账号；目前只有 <code>@lscminxi</code>
-        且令牌拥有仓库写权限才能进入。其他账号、身份校验失败或账号信息缺失都会被拒绝。
+        后台<strong>只有站长 <code>@lscminxi</code> 能进入</strong>，不再需要粘贴 GitHub 令牌。
+        点击下面的按钮会跳转到 GitHub 官方授权页；授权回来后，本站会向 GitHub 确认你的账号
+        就是站长、并且这次授权拥有仓库写权限，才会打开后台。其他账号即使完成了前台登录，
+        也只会看到「你无权限进入」。
       </p>
-      <form id="login-form" class="login-form" autocomplete="off">
-        <label class="field">
-          <span>GitHub Personal Access Token</span>
-          <input id="token-input" type="password" name="token" placeholder="github_pat_… 或 ghp_…" required spellcheck="false">
-        </label>
-        <label class="checkline">
-          <input id="remember-input" type="checkbox">
-          <span>在这台设备上记住令牌（写入 localStorage；公用电脑请不要勾选）</span>
-        </label>
-        <p class="error" id="login-error" hidden></p>
-        <button class="btn primary" id="login-button" type="submit">登录</button>
-      </form>
-      <details class="help">
-        <summary>怎么获取令牌？</summary>
-        <ol>
-          <li>打开 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Fine-grained tokens → Generate new token</a>。</li>
-          <li><strong>Repository access</strong> 选 <em>Only select repositories</em>，选中 <code>lscminxi/lscminxi.github.io</code>。</li>
-          <li><strong>Permissions → Repository permissions → Contents</strong> 设为 <em>Read and write</em>（其余保持默认，不需要额外权限）。</li>
-          <li>生成后复制令牌，粘贴到上面的输入框登录。令牌只会发送到 <code>api.github.com</code>，不会经过任何第三方服务器。</li>
-        </ol>
-        <p class="muted">也可以使用带 <code>repo</code> 权限的 classic token，但细粒度令牌更安全。随时可以在 GitHub 上撤销。</p>
-      </details>
+      <p class="error" id="login-error" hidden></p>
+      <button class="btn primary" id="login-button" type="button">使用 GitHub 登录进入后台</button>
+      <p class="muted">
+        说明：普通前台登录只申请读取公开资料；只有进入后台的这一次授权才会申请仓库写权限，
+        用于新建、编辑与删除文章。授权令牌只保存在当前标签页的会话里，关闭标签页或退出登录即失效，
+        不会写进长期存储，也不再提供手工粘贴令牌的入口。
+      </p>
     </section>
 
     <!-- 无权限：访客（非站长）试图进入后台时显示 -->
@@ -80,9 +63,9 @@
       <p class="lead" id="noaccess-text">你无权限进入后台，只有站长 <code>@lscminxi</code> 才能进入。</p>
       <div class="panel-actions">
         <a class="btn primary" href="/">返回站点首页</a>
-        <button class="btn ghost" id="noaccess-owner" type="button">我是站长，用令牌重新验证</button>
+        <button class="btn ghost" id="noaccess-owner" type="button">我是站长，使用 GitHub 登录</button>
       </div>
-      <p class="muted">说明：前台的 GitHub OAuth 登录所有人都能用（评论、点赞），但它不授予后台权限。后台只认站长本人的 GitHub 令牌验证。</p>
+      <p class="muted">说明：前台的 GitHub OAuth 登录所有人都能用（评论、点赞），但它不授予后台权限。后台只认站长本人经 GitHub 授权确认的账号。</p>
     </section>
 
     <!-- 控制台 -->

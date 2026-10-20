@@ -60,10 +60,9 @@ async function setup() {
     }
     throw new Error(`Unexpected API ${suffix}`);
   };
+  w.sessionStorage.setItem('minxi.admin.oauth-token', 'test-token-not-real');
   w.eval(js);
   const $ = (s) => w.document.querySelector(s);
-  $('#token-input').value = 'test-token-not-real';
-  $('#login-form').dispatchEvent(new w.Event('submit', { cancelable: true }));
   await wait(() => $('#post-list .row'));
   await wait(() => !$('#refresh-button').disabled);
   return { dom, w, $, files, state };

@@ -557,11 +557,10 @@ test("the admin appearance panel edits the site-wide default theme", async () =>
     throw new Error(`Unexpected API ${suffix}`);
   };
   w.eval(await readFile("source/admin/appearance.js", "utf8"));
+  w.sessionStorage.setItem("minxi.admin.oauth-token", "test-token");
   w.eval(adminJs);
   const $ = (selector) => w.document.querySelector(selector);
   try {
-    $("#token-input").value = "test-token";
-    $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
     await wait(() => $("#post-list"));
     [...$("#tabs").querySelectorAll(".tab")].find((tab) => tab.dataset.tab === "appearance").click();
     await wait(() => $("#appearance-status").textContent.includes("已加载"));

@@ -86,6 +86,16 @@ function showNoAccess(login = currentUser?.login || '') {
 function enterAdmin() {
   if (!currentUser) return requireLogin('进入后台');
   if (!isOwner()) return showNoAccess();
+  let hasAdminToken = false;
+  try {
+    hasAdminToken = Boolean(sessionStorage.getItem(auth.ADMIN_TOKEN_STORAGE_KEY));
+  } catch { /* 忽略 */ }
+  if (hasAdminToken) {
+    window.location.href = '/admin/';
+    return true;
+  }
+  // 站长第一次进后台：再走一次 GitHub 授权（这次带仓库写权限），回来直接进后台，不再粘贴令牌。
+  if (startAdminOAuth()) return true;
   window.location.href = '/admin/';
   return true;
 }
@@ -115,13 +125,21 @@ function randomState() {
   }
 }
 
-function startOAuth() {
+function beginOAuth(admin) {
   const config = oauthConfig();
   if (!config) return false;
   const state = randomState();
+  const scopes = new Set(String(config.scope || 'read:user').split(/\s+/).filter(Boolean));
+  // 只有站长点「进入后台」时才追加仓库写权限；普通访客登录永远只有 read:user。
+  if (admin) scopes.add('public_repo');
   try {
     sessionStorage.setItem(auth.OAUTH_STATE_KEY, state);
-    sessionStorage.setItem(auth.OAUTH_RETURN_KEY, window.location.href);
+    sessionStorage.setItem(
+      auth.OAUTH_RETURN_KEY,
+      admin ? `${window.location.origin}/admin/` : window.location.href,
+    );
+    if (admin) sessionStorage.setItem(auth.OAUTH_ADMIN_KEY, '1');
+    else sessionStorage.removeItem(auth.OAUTH_ADMIN_KEY);
   } catch {
     /* 存储不可用时 state 校验必然失败，回调会给出明确报错 */
   }
@@ -129,11 +147,19 @@ function startOAuth() {
     clientId: config.clientId,
     redirectUri: auth.oauthRedirectUri(window.location.origin),
     state,
-    scope: config.scope,
+    scope: [...scopes].join(' '),
   });
   if (!url) return false;
   window.location.href = url;
   return true;
+}
+
+function startOAuth() {
+  return beginOAuth(false);
+}
+
+function startAdminOAuth() {
+  return beginOAuth(true);
 }
 
 const isOAuthCallback = () => /\/auth\/callback\/?$/.test(window.location.pathname);
@@ -149,6 +175,7 @@ async function handleOAuthCallback() {
     try {
       sessionStorage.removeItem(auth.OAUTH_STATE_KEY);
       sessionStorage.removeItem(auth.OAUTH_RETURN_KEY);
+      sessionStorage.removeItem(auth.OAUTH_ADMIN_KEY);
     } catch { /* 忽略 */ }
     window.setTimeout(() => { window.location.href = '/'; }, 1800);
   };
@@ -175,6 +202,13 @@ async function handleOAuthCallback() {
     if (!exchange.ok || !exchanged.access_token) {
       return fail(`换取登录令牌失败（${exchanged.error || exchange.status}），请重新登录。`);
     }
+    // 普通登录的令牌确认身份后立即丢弃；只有站长进入后台的这次授权，
+    // 才把令牌暂存在当前标签页会话里供后台调用 GitHub API 发布文章。
+    let wantsAdmin = false;
+    try {
+      wantsAdmin = sessionStorage.getItem(auth.OAUTH_ADMIN_KEY) === '1';
+      if (wantsAdmin) sessionStorage.setItem(auth.ADMIN_TOKEN_STORAGE_KEY, exchanged.access_token);
+    } catch { /* 忽略 */ }
     const profile = await fetch('https://api.github.com/user', {
       headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${exchanged.access_token}` },
     });
@@ -194,6 +228,7 @@ async function handleOAuthCallback() {
       back = sessionStorage.getItem(auth.OAUTH_RETURN_KEY) || '/';
       sessionStorage.removeItem(auth.OAUTH_STATE_KEY);
       sessionStorage.removeItem(auth.OAUTH_RETURN_KEY);
+      sessionStorage.removeItem(auth.OAUTH_ADMIN_KEY);
     } catch { /* 忽略 */ }
     say(`欢迎，@${session.login}！正在跳回原来的页面…`);
     window.setTimeout(() => { window.location.href = back; }, 450);
@@ -509,6 +544,7 @@ window.MinxiAuth = {
     paintComments();
   },
   startOAuth,
+  startAdminOAuth,
   oauthConfig,
   owner: OWNER,
 };
