@@ -25,6 +25,7 @@
   "index.html",
   "js/auth.js",
   "js/main.js",
+  "js/plot.js",
   "js/theme.js",
   "js/wallpaper.js",
   "search.json",

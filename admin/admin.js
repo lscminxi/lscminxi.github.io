@@ -1266,7 +1266,7 @@
   });
 
   $("#insert-plot").addEventListener("click", () => {
-    insertAtCursor(el.f.body, "\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red ; label=抛物线\npoints: (1, 0) ; color=blue ; label=顶点\nx: -3, 5\n```\n\n");
+    insertAtCursor(el.f.body, "\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red ; label=抛物线\nf: -x + 3 ; color=green ; label=直线\npoints: (1, 0), (3, 2) ; connect=true ; color=blue ; label=数据点\nx: -3, 5\ncoords: on\nintersections: on\nequations: on\n```\n\n");
   });
 
   $("#insert-graph").addEventListener("click", () => {

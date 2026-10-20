@@ -59,14 +59,14 @@ test('plot spec draws curves, connected points, colors and labels', () => {
   assert.ok((svg.match(/class="plot-grid"/g) || []).length >= 4, '网格线要画出来');
   assert.equal((svg.match(/class="plot-axis"/g) || []).length, 2, 'x 轴和 y 轴都要画出来');
   assert.equal((svg.match(/<circle/g) || []).length, 3, '三个散点');
-  assert.match(svg, /<path d="M[^"]*" fill="none" stroke="#1971c2"/, 'points connect 要连成线');
+  assert.match(svg, /<path class="plot-segment"[^>]*stroke="#1971c2"/, 'points connect 要连成线');
   assert.ok(svg.includes('抛物线'), '图例文字');
   assert.ok(svg.includes('<figcaption>抛物线与正弦</figcaption>'));
 });
 
 test('discontinuous functions break the path instead of drawing across the gap', () => {
   const svg = plots.renderPlotSvg(plots.parsePlotSpec('f: 1/x\nx: -2, 2\ny: -5, 5'));
-  const d = /<path class="plot-curve" d="([^"]*)"/.exec(svg)[1];
+  const d = /<path class="plot-curve"[^>]* d="([^"]*)"/.exec(svg)[1];
   assert.ok((d.match(/M/g) || []).length >= 2, '1/x 应在 x=0 两侧分成两段');
 });
 
@@ -155,4 +155,104 @@ test('editor offers one-click plot/graph templates', async () => {
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
   assert.ok(adminHtml.includes('id="insert-plot"') && adminHtml.includes('id="insert-graph"'));
   assert.ok(adminJs.includes('```plot') && adminJs.includes('```graph'));
+});
+
+
+/* ---------------- 坐标 / 交点 / 方程 / 网格对比度 ---------------- */
+
+test('plot shows point coordinates, intersections and function/segment equations', () => {
+  const spec = plots.parsePlotSpec('f: x\nf: -x + 2\npoints: (0,0), (2,2) ; connect=true\nx: -3, 5\ny: -3, 5');
+  const intersections = plots.findPlotIntersections(spec, [-3, 5], [-3, 5]);
+  assert.ok(intersections.some((point) => Math.abs(point.x - 1) < 1e-6 && Math.abs(point.y - 1) < 1e-6), '两条直线交于 (1, 1)');
+  assert.ok(intersections.some((point) => Math.abs(point.x) < 1e-6 && Math.abs(point.y) < 1e-6), '包含与坐标轴的交点');
+  const svg = plots.renderPlotSvg(spec);
+  assert.ok(svg.includes('class="plot-coord"') && svg.includes('(2, 2)'), '明确给出的点显示坐标');
+  assert.ok(svg.includes('class="plot-intersection"') && svg.includes('(1, 1)'), '交点有标记和坐标');
+  assert.ok(svg.includes('class="plot-equations"') && svg.includes('y = -x + 2'), '显示函数方程');
+  assert.equal(plots.lineEquation([0, 1], [2, 5]), 'y = 2x + 1');
+  assert.equal(plots.lineEquation([0, 2], [3, 2]), 'y = 2', '水平线方程');
+  assert.equal(plots.lineEquation([1, 0], [1, 3]), 'x = 1', '竖直线方程');
+});
+
+test('plot display switches can hide coordinates, intersections and equations', () => {
+  const svg = plots.renderPlotSvg(plots.parsePlotSpec('f: x\npoints: (1,1)\ncoords: off\nintersections: off\nequations: off'));
+  assert.ok(!svg.includes('class="plot-coord"'), '关闭坐标后不显示点坐标');
+  assert.ok(!svg.includes('class="plot-intersection"'), '关闭交点后不画交点');
+  assert.match(svg, /<div class="plot-equations" hidden>/, '关闭方程后隐藏方程区');
+});
+
+test('plot grid uses dedicated high-contrast theme variables in both modes', async () => {
+  const css = await readFile('themes/minxi/source/css/main.css', 'utf8');
+  assert.ok(css.includes('--plot-grid: #8293ab'), '深色模式网格色');
+  assert.ok(css.includes('--plot-grid: #7f96b1'), '浅色模式网格色');
+  assert.ok(css.includes('--plot-axis: #f2f6fb') && css.includes('--plot-axis: #17233a'), '深浅色坐标轴都要清楚');
+  assert.match(css, /\.plot-grid \{[^}]*opacity: 0\.62/, '网格不透明度要足够高');
+});
+
+/* ---------------- 前台交互：平移 / 缩放 / 开关（JSDOM） ---------------- */
+
+async function interactiveDom(html) {
+  const page = new JSDOM(`<!doctype html><html><body><main class="article-content">${html}</main></body></html>`, {
+    url: 'https://example.test/post/',
+    runScripts: 'outside-only',
+    pretendToBeVisual: true,
+  });
+  page.window.Element.prototype.getBoundingClientRect = function rect() {
+    return { left: 0, top: 0, right: 680, bottom: 420, width: 680, height: 420, x: 0, y: 0, toJSON() {} };
+  };
+  page.window.eval(await readFile('themes/minxi/source/js/plot.js', 'utf8'));
+  return page;
+}
+const waitFrame = () => new Promise((resolve) => { setTimeout(resolve, 60); });
+function pointer(page, target, type, x, y, id = 1) {
+  const event = new page.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+  Object.defineProperty(event, 'pointerId', { value: id });
+  target.dispatchEvent(event);
+}
+
+test('interactive plot zooms, pans, toggles coordinates and resets', async () => {
+  const page = await interactiveDom(render(`${FENCE}plot\nf: x\npoints: (1,1)\nx: -5, 5\ny: -5, 5\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    const rangeWidth = () => {
+      const svg = stage.querySelector('svg');
+      return Number(svg.dataset.xMax) - Number(svg.dataset.xMin);
+    };
+    assert.equal(figure.classList.contains('is-interactive'), true, '前台脚本接管图像');
+    assert.equal(rangeWidth(), 10);
+
+    figure.querySelector('[data-plot-action="zoom-in"]').click();
+    await waitFrame();
+    assert.ok(rangeWidth() < 10, '点击放大后显示范围变小');
+
+    const beforePan = Number(stage.querySelector('svg').dataset.xMin);
+    pointer(page, stage, 'pointerdown', 340, 210);
+    pointer(page, stage, 'pointermove', 408, 210);
+    pointer(page, stage, 'pointerup', 408, 210);
+    await waitFrame();
+    assert.ok(Number(stage.querySelector('svg').dataset.xMin) < beforePan, '向右拖动后视图向左平移');
+
+    figure.querySelector('[data-plot-toggle="coords"]').click();
+    await waitFrame();
+    assert.equal(stage.querySelector('.plot-coord'), null, '坐标开关关闭坐标文字');
+
+    figure.querySelector('[data-plot-action="reset"]').click();
+    await waitFrame();
+    assert.equal(rangeWidth(), 10, '重置恢复初始范围');
+  } finally { page.window.close(); }
+});
+
+test('interactive graph zooms and reports node coordinates', async () => {
+  const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-graph');
+    const svg = figure.querySelector('svg');
+    const before = svg.getAttribute('viewBox');
+    figure.querySelector('[data-graph-action="zoom-in"]').click();
+    assert.notEqual(svg.getAttribute('viewBox'), before, '图的缩放按钮改变 viewBox');
+    const group = svg.querySelector('.graph-node-group');
+    pointer(page, group, 'pointermove', 100, 100);
+    assert.match(figure.querySelector('.plot-readout').textContent, /点 A：\(0, 0\)/, '悬停点显示布局坐标');
+  } finally { page.window.close(); }
 });

@@ -219,13 +219,20 @@ const PLOT_W = 680; const PLOT_H = 420;
 const PLOT_PAD = { left: 50, right: 16, top: 16, bottom: 38 };
 
 function parsePlotSpec(source) {
-  const spec = { functions: [], pointSets: [], xRange: [-10, 10], yRange: null, grid: true, title: '' };
+  const spec = {
+    functions: [], pointSets: [], xRange: [-10, 10], yRange: null,
+    grid: true, coords: true, intersections: true, equations: true, interactive: true, title: '',
+  };
   for (const rawLine of String(source).split('\n')) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith('//')) continue;
     let match;
     if ((match = /^title\s*[:：]\s*(.+)$/i.exec(line))) { spec.title = labelText(match[1]); continue; }
     if ((match = /^grid\s*[:：]\s*(.+)$/i.exec(line))) { spec.grid = truthy(match[1], true); continue; }
+    if ((match = /^(?:coords?|coordinates|坐标)\s*[:：]\s*(.+)$/i.exec(line))) { spec.coords = truthy(match[1], true); continue; }
+    if ((match = /^(?:intersections?|交点)\s*[:：]\s*(.+)$/i.exec(line))) { spec.intersections = truthy(match[1], true); continue; }
+    if ((match = /^(?:equations?|方程)\s*[:：]\s*(.+)$/i.exec(line))) { spec.equations = truthy(match[1], true); continue; }
+    if ((match = /^(?:interactive|交互)\s*[:：]\s*(.+)$/i.exec(line))) { spec.interactive = truthy(match[1], true); continue; }
     if ((match = /^[xX]\s*[:：]\s*(.+)$/.exec(line))) { spec.xRange = finitePair(match[1]) || spec.xRange; continue; }
     if ((match = /^[yY]\s*[:：]\s*(.+)$/.exec(line))) { spec.yRange = finitePair(match[1]) || spec.yRange; continue; }
     if ((match = /^(?:points?|pts|点)\s*[:：]\s*(.+)$/i.exec(line))) {
@@ -290,62 +297,294 @@ function niceStep(range, target = 5) {
   return 10 * mag;
 }
 
-function renderPlotSvg(spec) {
-  const [xMin, xMax] = spec.xRange;
-  const plotW = PLOT_W - PLOT_PAD.left - PLOT_PAD.right;
-  const plotH = PLOT_H - PLOT_PAD.top - PLOT_PAD.bottom;
-  const SAMPLES = 240;
+function formatNumber(value, digits = 4) {
+  if (!Number.isFinite(value)) return '';
+  const rounded = Number(value.toFixed(digits));
+  return Object.is(rounded, -0) ? '0' : String(rounded);
+}
 
-  // 先采样定 y 范围（没写 y: 时自动）
-  const sampled = spec.functions.map((item) => {
-    const values = [];
-    for (let i = 0; i <= SAMPLES; i += 1) {
-      const x = xMin + (xMax - xMin) * (i / SAMPLES);
+const coordinateText = (x, y) => `(${formatNumber(x)}, ${formatNumber(y)})`;
+
+function lineEquation([x1, y1], [x2, y2]) {
+  if (![x1, y1, x2, y2].every(Number.isFinite) || (x1 === x2 && y1 === y2)) return '';
+  if (Math.abs(x2 - x1) < 1e-12) return `x = ${formatNumber(x1)}`;
+  const slope = (y2 - y1) / (x2 - x1);
+  const intercept = y1 - slope * x1;
+  if (Math.abs(slope) < 1e-12) return `y = ${formatNumber(y1)}`;
+  const slopeText = Math.abs(slope - 1) < 1e-12 ? 'x' : Math.abs(slope + 1) < 1e-12 ? '-x' : `${formatNumber(slope)}x`;
+  if (Math.abs(intercept) < 1e-12) return `y = ${slopeText}`;
+  return `y = ${slopeText} ${intercept > 0 ? '+' : '-'} ${formatNumber(Math.abs(intercept))}`;
+}
+
+function getPlotSegments(spec) {
+  const segments = [];
+  spec.pointSets.forEach((set, setIndex) => {
+    if (!set.connect) return;
+    for (let index = 0; index < set.points.length - 1; index += 1) {
+      const from = set.points[index];
+      const to = set.points[index + 1];
+      if (from[0] === to[0] && from[1] === to[1]) continue;
+      segments.push({ setIndex, segmentIndex: index, from, to, color: set.color, label: set.label || '' });
+    }
+  });
+  return segments;
+}
+
+function getPlotEquations(spec) {
+  const equations = [];
+  spec.functions.forEach((item, index) => {
+    equations.push({ type: 'function', index, color: item.color, label: item.label || '', text: `y = ${item.expr}` });
+  });
+  for (const segment of getPlotSegments(spec)) {
+    const text = lineEquation(segment.from, segment.to);
+    if (text) equations.push({ type: 'segment', ...segment, text });
+  }
+  return equations;
+}
+
+function resolvePlotRanges(spec) {
+  const xRange = [...spec.xRange];
+  if (spec.yRange) return { xRange, yRange: [...spec.yRange] };
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  const SAMPLES = 240;
+  for (const item of spec.functions) {
+    for (let index = 0; index <= SAMPLES; index += 1) {
+      const x = xRange[0] + (xRange[1] - xRange[0]) * (index / SAMPLES);
       let y = NaN;
       try { y = item.fn(x); } catch { y = NaN; }
-      values.push([x, y]);
+      if (Number.isFinite(y)) { yMin = Math.min(yMin, y); yMax = Math.max(yMax, y); }
+    }
+  }
+  for (const set of spec.pointSets) {
+    for (const [, y] of set.points) { yMin = Math.min(yMin, y); yMax = Math.max(yMax, y); }
+  }
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) { yMin = -10; yMax = 10; }
+  if (yMax - yMin < 1e-9) { yMin -= 1; yMax += 1; }
+  const pad = (yMax - yMin) * 0.12;
+  return { xRange, yRange: [yMin - pad, yMax + pad] };
+}
+
+const safeY = (fn, x) => {
+  try {
+    const y = fn(x);
+    return Number.isFinite(y) ? y : NaN;
+  } catch { return NaN; }
+};
+
+function dedupePlotPoints(points, xRange, yRange) {
+  const xTolerance = Math.max((xRange[1] - xRange[0]) * 0.004, 1e-8);
+  const yTolerance = Math.max((yRange[1] - yRange[0]) * 0.004, 1e-8);
+  const out = [];
+  for (const point of [...points].sort((a, b) => a.x - b.x || a.y - b.y)) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    if (point.x < xRange[0] - xTolerance || point.x > xRange[1] + xTolerance) continue;
+    if (point.y < yRange[0] - yTolerance || point.y > yRange[1] + yTolerance) continue;
+    if (out.some((item) => Math.abs(item.x - point.x) <= xTolerance && Math.abs(item.y - point.y) <= yTolerance)) continue;
+    out.push(point);
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
+function scanDifference(diff, yAt, xMin, xMax, yRange, kind, label, points) {
+  const steps = 420;
+  const tolerance = Math.max((yRange[1] - yRange[0]) * 0.0015, 1e-7);
+  let prevX = xMin;
+  let prevDiff = diff(prevX);
+  let inZeroRun = false;
+  const accept = (x, currentDiff = diff(x)) => {
+    let candidate = x;
+    // 采样点只是接近零点时，用前后两点做一次线性插值，避免坐标差出一个采样步长。
+    if (Number.isFinite(prevDiff) && Math.abs(currentDiff - prevDiff) > 1e-12) {
+      const estimate = prevX - (prevDiff * (x - prevX)) / (currentDiff - prevDiff);
+      if (estimate >= Math.min(prevX, x) - (xMax - xMin) / steps && estimate <= Math.max(prevX, x) + (xMax - xMin) / steps) candidate = estimate;
+    }
+    const y = yAt(candidate);
+    if (!Number.isFinite(y) || Math.abs(diff(candidate)) > Math.max(tolerance * 20, 1e-5)) return;
+    points.push({ x: candidate, y, kind, label });
+  };
+  for (let index = 1; index <= steps; index += 1) {
+    const x = xMin + (xMax - xMin) * (index / steps);
+    const currentDiff = diff(x);
+    if (!Number.isFinite(currentDiff)) { prevX = x; prevDiff = NaN; inZeroRun = false; continue; }
+    if (Math.abs(currentDiff) <= tolerance) {
+      if (!inZeroRun) accept(x, currentDiff);
+      inZeroRun = true;
+    } else {
+      if (Number.isFinite(prevDiff) && Math.abs(prevDiff) > tolerance && currentDiff * prevDiff < 0) {
+        let low = prevX;
+        let high = x;
+        let lowDiff = prevDiff;
+        for (let iteration = 0; iteration < 56; iteration += 1) {
+          const middle = (low + high) / 2;
+          const middleDiff = diff(middle);
+          if (!Number.isFinite(middleDiff)) break;
+          if (lowDiff * middleDiff <= 0) high = middle;
+          else { low = middle; lowDiff = middleDiff; }
+        }
+        accept((low + high) / 2);
+      }
+      inZeroRun = false;
+    }
+    prevX = x;
+    prevDiff = currentDiff;
+  }
+}
+
+function segmentYAt(segment, x) {
+  const [x1, y1] = segment.from;
+  const [x2, y2] = segment.to;
+  if (Math.abs(x2 - x1) < 1e-12) return NaN;
+  return y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
+}
+
+function findPlotIntersections(spec, xRange, yRange) {
+  const [xMin, xMax] = xRange;
+  const points = [];
+  const segments = getPlotSegments(spec);
+
+  // 曲线与坐标轴的交点（零点 / y 轴截距）
+  for (const item of spec.functions) {
+    scanDifference((x) => safeY(item.fn, x), () => 0, xMin, xMax, yRange, 'axis', '与 x 轴交点', points);
+    if (xMin <= 0 && xMax >= 0) {
+      const y = safeY(item.fn, 0);
+      if (Number.isFinite(y)) points.push({ x: 0, y, kind: 'axis', label: '与 y 轴交点' });
+    }
+  }
+
+  // 曲线之间
+  for (let left = 0; left < spec.functions.length; left += 1) {
+    for (let right = left + 1; right < spec.functions.length; right += 1) {
+      const a = spec.functions[left].fn;
+      const b = spec.functions[right].fn;
+      scanDifference((x) => safeY(a, x) - safeY(b, x), (x) => safeY(a, x), xMin, xMax, yRange, 'intersection', '曲线交点', points);
+    }
+  }
+
+  // 曲线与连点线段、线段与坐标轴
+  for (const segment of segments) {
+    const [sx1, sy1] = segment.from;
+    const [sx2, sy2] = segment.to;
+    const segMinX = Math.min(sx1, sx2);
+    const segMaxX = Math.max(sx1, sx2);
+    if (Math.min(sy1, sy2) <= 0 && Math.max(sy1, sy2) >= 0 && Math.abs(sy2 - sy1) > 1e-12) {
+      const x = sx1 + ((0 - sy1) * (sx2 - sx1)) / (sy2 - sy1);
+      points.push({ x, y: 0, kind: 'axis', label: '线段与 x 轴交点' });
+    }
+    if (segMinX <= 0 && segMaxX >= 0 && Math.abs(sx2 - sx1) > 1e-12) {
+      points.push({ x: 0, y: segmentYAt(segment, 0), kind: 'axis', label: '线段与 y 轴交点' });
+    }
+    for (const item of spec.functions) {
+      if (Math.abs(sx2 - sx1) < 1e-12) {
+        const y = safeY(item.fn, sx1);
+        if (Number.isFinite(y) && y >= Math.min(sy1, sy2) && y <= Math.max(sy1, sy2)) {
+          points.push({ x: sx1, y, kind: 'intersection', label: '曲线与线段交点' });
+        }
+        continue;
+      }
+      scanDifference(
+        (x) => safeY(item.fn, x) - segmentYAt(segment, x),
+        (x) => safeY(item.fn, x),
+        Math.max(xMin, segMinX), Math.min(xMax, segMaxX), yRange, 'intersection', '曲线与线段交点', points,
+      );
+    }
+  }
+
+  // 线段之间（标准两线段求交）
+  for (let left = 0; left < segments.length; left += 1) {
+    for (let right = left + 1; right < segments.length; right += 1) {
+      const a = segments[left];
+      const b = segments[right];
+      const x1 = a.from[0]; const y1 = a.from[1]; const x2 = a.to[0]; const y2 = a.to[1];
+      const x3 = b.from[0]; const y3 = b.from[1]; const x4 = b.to[0]; const y4 = b.to[1];
+      const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+      if (Math.abs(denominator) < 1e-12) continue;
+      const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
+      const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denominator;
+      if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+      points.push({ x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1), kind: 'intersection', label: '线段交点' });
+    }
+  }
+
+  return dedupePlotPoints(points, xRange, yRange);
+}
+
+function clipSegmentToRange(segment, xRange, yRange) {
+  let [x1, y1] = segment.from;
+  const [x2, y2] = segment.to;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let tMin = 0;
+  let tMax = 1;
+  const edges = [
+    [-dx, x1 - xRange[0]], [dx, xRange[1] - x1],
+    [-dy, y1 - yRange[0]], [dy, yRange[1] - y1],
+  ];
+  for (const [p, q] of edges) {
+    if (Math.abs(p) < 1e-12) { if (q < 0) return null; continue; }
+    const ratio = q / p;
+    if (p < 0) tMin = Math.max(tMin, ratio);
+    else tMax = Math.min(tMax, ratio);
+    if (tMin > tMax) return null;
+  }
+  return [
+    [x1 + dx * tMin, y1 + dy * tMin],
+    [x1 + dx * tMax, y1 + dy * tMax],
+  ];
+}
+
+function renderPlotSvgInner(spec, options = {}) {
+  const initialRanges = resolvePlotRanges(spec);
+  const [xMin, xMax] = options.xRange || initialRanges.xRange;
+  const [yMin, yMax] = options.yRange || initialRanges.yRange;
+  const showCoords = options.showCoords ?? spec.coords;
+  const showIntersections = options.showIntersections ?? spec.intersections;
+  const plotW = PLOT_W - PLOT_PAD.left - PLOT_PAD.right;
+  const plotH = PLOT_H - PLOT_PAD.top - PLOT_PAD.bottom;
+  const SAMPLES = 260;
+
+  const sampled = spec.functions.map((item) => {
+    const values = [];
+    for (let index = 0; index <= SAMPLES; index += 1) {
+      const x = xMin + (xMax - xMin) * (index / SAMPLES);
+      values.push([x, safeY(item.fn, x)]);
     }
     return values;
   });
-  let [yMin, yMax] = spec.yRange || [Infinity, -Infinity];
-  if (!spec.yRange) {
-    for (const values of sampled) for (const [, y] of values) {
-      if (Number.isFinite(y)) { yMin = Math.min(yMin, y); yMax = Math.max(yMax, y); }
-    }
-    for (const set of spec.pointSets) for (const [, y] of set.points) {
-      yMin = Math.min(yMin, y); yMax = Math.max(yMax, y);
-    }
-    if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) { yMin = -10; yMax = 10; }
-    if (yMax - yMin < 1e-9) { yMin -= 1; yMax += 1; }
-    const pad = (yMax - yMin) * 0.12;
-    yMin -= pad; yMax += pad;
-  }
 
   const px = (x) => PLOT_PAD.left + ((x - xMin) / (xMax - xMin)) * plotW;
   const py = (y) => PLOT_PAD.top + ((yMax - y) / (yMax - yMin)) * plotH;
-  const out = [`<svg class="md-plot-svg" viewBox="0 0 ${PLOT_W} ${PLOT_H}" role="img" aria-label="${escape(spec.title || '函数图像')}" preserveAspectRatio="xMidYMid meet">`];
+  const out = [`<svg class="md-plot-svg" viewBox="0 0 ${PLOT_W} ${PLOT_H}" role="img" aria-label="${escape(spec.title || '函数图像')}" preserveAspectRatio="xMidYMid meet" data-x-min="${xMin}" data-x-max="${xMax}" data-y-min="${yMin}" data-y-max="${yMax}">`];
 
-  // 网格与刻度
+  // 网格与刻度：使用主题专用变量，保证深色和浅色都有足够对比度。
   const xStep = niceStep(xMax - xMin); const yStep = niceStep(yMax - yMin);
-  for (let x = Math.ceil(xMin / xStep) * xStep; x <= xMax; x += xStep) {
+  for (let x = Math.ceil(xMin / xStep) * xStep; x <= xMax + xStep * 1e-9; x += xStep) {
     const sx = px(x);
-    if (spec.grid) out.push(`<line class="plot-grid" style="stroke:var(--muted,#919ba9);opacity:.3" x1="${fmt(sx)}" y1="${PLOT_PAD.top}" x2="${fmt(sx)}" y2="${PLOT_PAD.top + plotH}"/>`);
-    if (Math.abs(x) > xStep / 100) out.push(`<text class="plot-tick" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(sx)}" y="${PLOT_PAD.top + plotH + 16}" text-anchor="middle">${fmt(Math.round(x * 1e6) / 1e6)}</text>`);
+    if (spec.grid) out.push(`<line class="plot-grid" style="stroke:var(--plot-grid,#66758c);opacity:.62" x1="${fmt(sx)}" y1="${PLOT_PAD.top}" x2="${fmt(sx)}" y2="${PLOT_PAD.top + plotH}"/>`);
+    if (Math.abs(x) > xStep / 100) out.push(`<text class="plot-tick" style="fill:var(--plot-text,#c3cedd)" font-size="10" x="${fmt(sx)}" y="${PLOT_PAD.top + plotH + 16}" text-anchor="middle">${formatNumber(x, 6)}</text>`);
   }
-  for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep) {
+  for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax + yStep * 1e-9; y += yStep) {
     const sy = py(y);
-    if (spec.grid) out.push(`<line class="plot-grid" style="stroke:var(--muted,#919ba9);opacity:.3" x1="${PLOT_PAD.left}" y1="${fmt(sy)}" x2="${PLOT_PAD.left + plotW}" y2="${fmt(sy)}"/>`);
-    if (Math.abs(y) > yStep / 100) out.push(`<text class="plot-tick" style="fill:var(--muted,#919ba9)" font-size="10" x="${PLOT_PAD.left - 6}" y="${fmt(sy + 3)}" text-anchor="end">${fmt(Math.round(y * 1e6) / 1e6)}</text>`);
+    if (spec.grid) out.push(`<line class="plot-grid" style="stroke:var(--plot-grid,#66758c);opacity:.62" x1="${PLOT_PAD.left}" y1="${fmt(sy)}" x2="${PLOT_PAD.left + plotW}" y2="${fmt(sy)}"/>`);
+    if (Math.abs(y) > yStep / 100) out.push(`<text class="plot-tick" style="fill:var(--plot-text,#c3cedd)" font-size="10" x="${PLOT_PAD.left - 6}" y="${fmt(sy + 3)}" text-anchor="end">${formatNumber(y, 6)}</text>`);
   }
-  // 坐标轴
-  if (yMin <= 0 && yMax >= 0) out.push(`<line class="plot-axis" style="stroke:var(--text,#e6eaf0);opacity:.65" stroke-width="1.6" x1="${PLOT_PAD.left}" y1="${fmt(py(0))}" x2="${PLOT_PAD.left + plotW}" y2="${fmt(py(0))}"/>`);
-  if (xMin <= 0 && xMax >= 0) out.push(`<line class="plot-axis" style="stroke:var(--text,#e6eaf0);opacity:.65" stroke-width="1.6" x1="${fmt(px(0))}" y1="${PLOT_PAD.top}" x2="${fmt(px(0))}" y2="${PLOT_PAD.top + plotH}"/>`);
-  out.push(`<text class="plot-tick" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(PLOT_PAD.left + plotW)}" y="${fmt(PLOT_PAD.top + plotH + 16)}" text-anchor="end">x</text>`);
-  out.push(`<text class="plot-tick" x="${fmt(PLOT_PAD.left - 6)}" y="${fmt(PLOT_PAD.top - 4)}" text-anchor="end">y</text>`);
+  if (yMin <= 0 && yMax >= 0) out.push(`<line class="plot-axis" style="stroke:var(--plot-axis,#eef3f9);opacity:.92" stroke-width="1.7" x1="${PLOT_PAD.left}" y1="${fmt(py(0))}" x2="${PLOT_PAD.left + plotW}" y2="${fmt(py(0))}"/>`);
+  if (xMin <= 0 && xMax >= 0) out.push(`<line class="plot-axis" style="stroke:var(--plot-axis,#eef3f9);opacity:.92" stroke-width="1.7" x1="${fmt(px(0))}" y1="${PLOT_PAD.top}" x2="${fmt(px(0))}" y2="${PLOT_PAD.top + plotH}"/>`);
+  out.push(`<text class="plot-tick" style="fill:var(--plot-text,#c3cedd)" font-size="10" x="${fmt(PLOT_PAD.left + plotW)}" y="${fmt(PLOT_PAD.top + plotH + 16)}" text-anchor="end">x</text>`);
+  out.push(`<text class="plot-tick" style="fill:var(--plot-text,#c3cedd)" font-size="10" x="${fmt(PLOT_PAD.left - 6)}" y="${fmt(PLOT_PAD.top - 4)}" text-anchor="end">y</text>`);
+  out.push(`<rect class="plot-frame" style="fill:none;stroke:var(--plot-grid,#66758c);opacity:.95" stroke-width="1.2" x="${PLOT_PAD.left}" y="${PLOT_PAD.top}" width="${plotW}" height="${plotH}"/>`);
 
-  out.push(`<rect class="plot-frame" style="fill:none;stroke:var(--muted,#919ba9);opacity:.7" stroke-width="1.2" x="${PLOT_PAD.left}" y="${PLOT_PAD.top}" width="${plotW}" height="${plotH}"/>`);
+  // 连点线段（按线段分开，方便显示每段方程与交互命中）
+  for (const segment of getPlotSegments(spec)) {
+    const clipped = clipSegmentToRange(segment, [xMin, xMax], [yMin, yMax]);
+    if (!clipped) continue;
+    const [[cx1, cy1], [cx2, cy2]] = clipped;
+    const equation = lineEquation(segment.from, segment.to);
+    out.push(`<path class="plot-segment" data-kind="segment" data-x1="${segment.from[0]}" data-y1="${segment.from[1]}" data-x2="${segment.to[0]}" data-y2="${segment.to[1]}" data-equation="${escape(equation)}" d="M${fmt(px(cx1))} ${fmt(py(cy1))}L${fmt(px(cx2))} ${fmt(py(cy2))}" fill="none" stroke="${segment.color}" stroke-width="2"><title>${escape(equation || '线段')}</title></path>`);
+  }
 
-  // 函数曲线：不连续处断开（跳变超过画布高度就另起一段）
+  // 函数曲线：不连续处断开
   spec.functions.forEach((item, index) => {
     const values = sampled[index];
     let path = '';
@@ -358,35 +597,70 @@ function renderPlotSvg(spec) {
       prev = [sx, sy];
     }
     if (path) {
-      out.push(`<path class="plot-curve" d="${path}" fill="none" stroke="${item.color}" stroke-width="${item.width}"${item.dash ? ' stroke-dasharray="7 5"' : ''}/>`);
+      out.push(`<path class="plot-curve" data-kind="function" data-function-index="${index}" data-equation="${escape(`y = ${item.expr}`)}" d="${path}" fill="none" stroke="${item.color}" stroke-width="${item.width}"${item.dash ? ' stroke-dasharray="7 5"' : ''}><title>${escape(`y = ${item.expr}`)}</title></path>`);
     }
     if (item.label) {
-      // 标签放在曲线在 x=75% 处附近（取最近采样点）
       const probe = values[Math.floor(SAMPLES * 0.75)];
       const anchor = Number.isFinite(probe?.[1]) && probe[1] >= yMin && probe[1] <= yMax ? probe : values.find(([, y]) => Number.isFinite(y) && y >= yMin && y <= yMax);
       if (anchor) out.push(`<text class="plot-label" font-size="12" font-weight="600" x="${fmt(px(anchor[0]) + 6)}" y="${fmt(py(anchor[1]) - 6)}" fill="${item.color}">${escape(item.label)}</text>`);
     }
   });
 
-  // 散点 / 连点成线
+  // 明确给出的点与坐标
+  const totalPoints = spec.pointSets.reduce((sum, set) => sum + set.points.length, 0);
   for (const set of spec.pointSets) {
-    const inside = set.points.filter(([x, y]) => x >= xMin && x <= xMax && y >= yMin && y <= yMax);
-    if (set.connect && inside.length > 1) {
-      const d = inside.map(([x, y], i) => `${i ? 'L' : 'M'}${fmt(px(x))} ${fmt(py(y))}`).join('');
-      out.push(`<path d="${d}" fill="none" stroke="${set.color}" stroke-width="2"/>`);
+    for (const [x, y] of set.points) {
+      if (x < xMin || x > xMax || y < yMin || y > yMax) continue;
+      const sx = px(x); const sy = py(y);
+      const labelX = sx > PLOT_PAD.left + plotW - 92 ? sx - 8 : sx + 8;
+      const anchor = sx > PLOT_PAD.left + plotW - 92 ? 'end' : 'start';
+      const labelY = sy < PLOT_PAD.top + 24 ? sy + 16 : sy - 8;
+      const coord = showCoords && totalPoints <= 30
+        ? `<text class="plot-coord" style="fill:${set.color};paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="10" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="${anchor}">${coordinateText(x, y)}</text>`
+        : '';
+      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(`点 ${coordinateText(x, y)}`)}</title><circle cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
     }
-    if (set.size > 0) {
-      for (const [x, y] of inside) out.push(`<circle cx="${fmt(px(x))}" cy="${fmt(py(y))}" r="${set.size}" fill="${set.color}"/>`);
+    if (set.label) {
+      const first = set.points.find(([x, y]) => x >= xMin && x <= xMax && y >= yMin && y <= yMax);
+      if (first) out.push(`<text class="plot-label" font-size="12" font-weight="600" x="${fmt(px(first[0]) + 8)}" y="${fmt(py(first[1]) - 12)}" fill="${set.color}">${escape(set.label)}</text>`);
     }
-    if (set.label && inside.length) {
-      const [x, y] = inside[0];
-      out.push(`<text class="plot-label" font-size="12" font-weight="600" x="${fmt(px(x) + 8)}" y="${fmt(py(y) - 8)}" fill="${set.color}">${escape(set.label)}</text>`);
+  }
+
+  // 交点：曲线之间、曲线与线段、线段之间、以及与坐标轴的交点
+  if (showIntersections) {
+    const intersections = findPlotIntersections(spec, [xMin, xMax], [yMin, yMax]);
+    for (const point of intersections) {
+      const sx = px(point.x); const sy = py(point.y);
+      const labelX = sx > PLOT_PAD.left + plotW - 92 ? sx - 9 : sx + 9;
+      const anchor = sx > PLOT_PAD.left + plotW - 92 ? 'end' : 'start';
+      const labelY = sy < PLOT_PAD.top + 24 ? sy + 17 : sy - 9;
+      const coordLabel = intersections.length <= 20
+        ? `<text class="plot-intersection-label" style="fill:var(--plot-text,#c3cedd);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="10" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="${anchor}">${coordinateText(point.x, point.y)}</text>`
+        : '';
+      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(`${point.label} ${coordinateText(point.x, point.y)}`)}</title><path d="M${fmt(sx)} ${fmt(sy - 6)}L${fmt(sx + 6)} ${fmt(sy)}L${fmt(sx)} ${fmt(sy + 6)}L${fmt(sx - 6)} ${fmt(sy)}Z" style="fill:var(--plot-marker,#ffd43b);stroke:var(--plot-axis,#eef3f9)" stroke-width="1.4"/>${coordLabel}</g>`);
     }
   }
 
   out.push('</svg>');
+  return out.join('');
+}
+
+function renderPlotEquations(spec) {
+  const equations = getPlotEquations(spec);
+  if (!equations.length) return '';
+  const items = equations.map((item) => {
+    const name = item.label ? `${escape(item.label)}：` : '';
+    const range = item.type === 'segment' ? ` <span class="plot-equation-range">${coordinateText(item.from[0], item.from[1])} → ${coordinateText(item.to[0], item.to[1])}</span>` : '';
+    return `<li><span class="plot-equation-swatch" style="background:${item.color}"></span><span>${name}${escape(item.text)}${range}</span></li>`;
+  }).join('');
+  return `<div class="plot-equations"${spec.equations ? '' : ' hidden'}><h3>方程</h3><ul>${items}</ul></div>`;
+}
+
+function renderPlotSvg(spec, options = {}) {
+  const svg = renderPlotSvgInner(spec, options);
   const caption = spec.title ? `<figcaption>${escape(spec.title)}</figcaption>` : '';
-  return `<figure class="md-plot">${out.join('')}${caption}</figure>\n`;
+  const pressed = (value) => value ? 'true' : 'false';
+  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button><button type="button" data-plot-toggle="equations" aria-pressed="${pressed(spec.equations)}">方程</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；把指针移到点、交点或曲线上可查看坐标与方程。</p>${renderPlotEquations(spec)}${caption}</figure>\n`;
 }
 
 /* ---------------- 可视化图 ```graph ---------------- */
@@ -539,16 +813,15 @@ function renderGraphSvg(spec) {
     if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="middle">${escape(edge.label)}</text>`);
   }
 
-  // 点（画在边上面）
+  // 点（画在边上面）；包成一组并带布局坐标，方便交互时显示
   for (const node of nodes) {
     const x = sx(node.x); const y = sy(node.y);
     const fillAttr = node.color ? ` fill="${node.color}"` : ' style="fill:var(--panel-raised,#151a23);stroke:var(--accent,#5ce0c4)" stroke-width="2"';
-    out.push(`<circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/>`);
     const text = node.label || node.id;
-    out.push(`<text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>`);
-    if (node.label && node.label !== node.id && node.id !== text) {
-      out.push(`<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`);
-    }
+    const sub = node.label && node.label !== node.id && node.id !== text
+      ? `<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`
+      : '';
+    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-x="${formatNumber(node.x)}" data-y="${formatNumber(node.y)}"><title>${escape(`${text} (${formatNumber(node.x)}, ${formatNumber(node.y)})`)}</title><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
   }
 
   out.push('</svg>');
@@ -589,7 +862,7 @@ function makeExtension(kind) {
     },
     renderer(token) {
       try {
-        return kind === 'plot' ? renderPlotSvg(parsePlotSpec(token.text)) : renderGraphSvg(parseGraphSpec(token.text));
+        return kind === 'plot' ? renderPlotSvg(parsePlotSpec(token.text), { source: token.text }) : renderGraphSvg(parseGraphSpec(token.text));
       } catch {
         return '<figure class="md-plot md-plot-error"><p>图形生成失败，请检查语法。</p></figure>\n';
       }
@@ -603,6 +876,13 @@ module.exports = function plotExtensions() {
 module.exports.compileExpression = compileExpression;
 module.exports.parsePlotSpec = parsePlotSpec;
 module.exports.renderPlotSvg = renderPlotSvg;
+module.exports.renderPlotSvgInner = renderPlotSvgInner;
+module.exports.resolvePlotRanges = resolvePlotRanges;
+module.exports.findPlotIntersections = findPlotIntersections;
+module.exports.getPlotEquations = getPlotEquations;
+module.exports.getPlotSegments = getPlotSegments;
+module.exports.lineEquation = lineEquation;
+module.exports.PLOT_GEOMETRY = { width: PLOT_W, height: PLOT_H, pad: PLOT_PAD };
 module.exports.parseGraphSpec = parseGraphSpec;
 module.exports.renderGraphSvg = renderGraphSvg;
 module.exports.parseColor = parseColor;

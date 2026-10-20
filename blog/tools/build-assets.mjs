@@ -39,4 +39,10 @@ await build({
   bundle: true, minify: true, format: 'iife', platform: 'browser',
   target: ['es2020'], legalComments: 'eof',
 });
-console.log('✓ Local KaTeX fonts/CSS, safe Markdown preview, appearance, wallpaper and theme bundles prepared.');
+// 函数图像交互：拖动平移、缩放、坐标/交点读数（client/plot.js）。
+await build({
+  entryPoints: ['client/plot.js'], outfile: 'themes/minxi/source/js/plot.js',
+  bundle: true, minify: true, format: 'iife', platform: 'browser',
+  target: ['es2020'], legalComments: 'eof',
+});
+console.log('✓ Local KaTeX fonts/CSS, safe Markdown preview, appearance, wallpaper, theme and plot bundles prepared.');

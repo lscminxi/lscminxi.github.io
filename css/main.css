@@ -9,6 +9,11 @@
   --dim: #8190a3;
   --accent: #5ce0c4;
   --purple: #b5a0ed;
+  /* 函数图像专用：网格/坐标轴单独用色，避免和背景融在一起 */
+  --plot-grid: #8293ab;
+  --plot-axis: #f2f6fb;
+  --plot-text: #d3dcea;
+  --plot-marker: #ffd43b;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --sans:
     Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
@@ -2058,10 +2063,10 @@ body.search-open {
   color: var(--muted);
   text-align: center;
 }
-.article-content .plot-grid { stroke: var(--muted); stroke-width: 1; opacity: 0.3; }
-.article-content .plot-axis { stroke: var(--text); stroke-width: 1.6; opacity: 0.65; }
-.article-content .plot-frame { fill: none; stroke: var(--muted); stroke-width: 1.2; opacity: 0.7; }
-.article-content .plot-tick { fill: var(--muted); font-size: 10px; }
+.article-content .plot-grid { stroke: var(--plot-grid); stroke-width: 1; opacity: 0.62; }
+.article-content .plot-axis { stroke: var(--plot-axis); stroke-width: 1.7; opacity: 0.92; }
+.article-content .plot-frame { fill: none; stroke: var(--plot-grid); stroke-width: 1.2; opacity: 0.95; }
+.article-content .plot-tick { fill: var(--plot-text); font-size: 10px; }
 .article-content .plot-label { font-size: 12px; font-weight: 600; }
 .article-content .plot-curve { stroke-linejoin: round; stroke-linecap: round; }
 .article-content .graph-edge { stroke: var(--text); opacity: 0.55; }
@@ -2077,6 +2082,40 @@ body.search-open {
   stroke: var(--panel);
   stroke-width: 3px;
 }
+
+/* 交互控件：无脚本（后台预览）时隐藏工具栏，静态坐标与方程仍直接可见 */
+.article-content .plot-toolbar { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.article-content .md-plot:not(.is-interactive) .plot-toolbar,
+.article-content .md-plot:not(.is-interactive) .plot-readout,
+.article-content .md-graph:not(.is-interactive) .plot-toolbar,
+.article-content .md-graph:not(.is-interactive) .plot-readout { display: none; }
+.article-content .plot-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.article-content .plot-tools button {
+  border: 1px solid var(--line); background: var(--panel-raised); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.5;
+}
+.article-content .plot-tools button:hover { border-color: var(--accent); }
+.article-content .plot-tools button[aria-pressed="true"] {
+  border-color: var(--accent); color: var(--text);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.article-content .plot-stage { touch-action: none; cursor: grab; border-radius: 6px; }
+.article-content .plot-stage.is-dragging { cursor: grabbing; }
+.article-content .plot-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.article-content .plot-readout { min-height: 1.7em; margin: 8px 2px 2px; color: var(--muted); font-size: 12.5px; }
+.article-content .plot-equations { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.article-content .plot-equations h3 { font-size: 13px; margin: 0 0 6px; }
+.article-content .plot-equations ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.article-content .plot-equations li { display: flex; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.article-content .plot-equation-swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; transform: translateY(1px); }
+.article-content .plot-equation-range { color: var(--muted); font-size: 11px; }
+.article-content .plot-coord,
+.article-content .plot-intersection-label { paint-order: stroke; stroke: var(--panel); stroke-width: 3px; }
+.article-content .plot-point,
+.article-content .plot-intersection,
+.article-content .plot-curve,
+.article-content .plot-segment { cursor: pointer; }
+.article-content .graph-node-group { cursor: pointer; }
 
 /* ------------------------------------------------------------------
    壁纸（由后台「外观」写入 source/_data/appearance.json）
@@ -2729,6 +2768,11 @@ html[data-theme="light"] {
   --dim: #657181;
   --accent: #0f7a6a;
   --purple: #7a5ad4;
+  /* 浅色下网格同样要比面板边框更深，坐标轴用近正文色 */
+  --plot-grid: #7f96b1;
+  --plot-axis: #17233a;
+  --plot-text: #34445c;
+  --plot-marker: #c78100;
   /* 壁纸提亮层底色：浅色下把压暗层换成提亮层（--veil-* 系列） */
   --veil-rgb: 245, 247, 250;
   --veil-max: 0.9;
