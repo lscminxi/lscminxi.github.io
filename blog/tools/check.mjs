@@ -118,6 +118,16 @@ assert(adminHtml.includes("使用 GitHub 登录进入后台"), "Admin GitHub OAu
 const css = await readFile(join(root, "css", "main.css"), "utf8");
 assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
+// 浅色模式不要壁纸雾面：body::after 的提亮层必须关掉（深色压暗层保留）。
+assert(
+  /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
+  "Light theme must not put a fog veil over the wallpaper",
+);
+// 行号与代码对齐：gutter 必须与代码同字号同行高，且两列顶部对齐。
+const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";
+assert(/font-size:\s*inherit/.test(gutterPre), "Gutter font-size must match the code (inherit)");
+assert(!/font-size:\s*11px/.test(gutterPre), "Gutter must not use a smaller font-size than the code");
+assert(/\.highlight td\s*\{[^}]*vertical-align:\s*top/.test(css), "Highlight cells must align at the top");
 assert(css.includes('html[data-theme="light"] .article-content'), "Light overrides for articles are missing");
 
 // 顶栏：展开状态由 main.js 判断后加类，靠 :hover 会卡住（详见 tools/nav.test.mjs）
