@@ -19,6 +19,13 @@ assert(index.includes("Minxi 的 blog"), "Site title missing");
 assert(index.includes("幼儿园小班水平"), "Profile missing");
 assert(index.includes("lsc_minxi"), "Author missing");
 const about = await readFile(join(root, "about", "index.html"), "utf8");
+// 「关于」页保留但不在主导航里：导航区块不许出现 /about/，首页其它位置（个人卡片/首屏）仍要能点进去。
+const navBlock = /<nav class="desktop-nav"[\s\S]*?<\/nav>/.exec(index)?.[0] || "";
+assert(navBlock, "Main navigation is missing");
+assert(!navBlock.includes("/about/"), "About page must not be linked from the main navigation");
+assert(!navBlock.includes(">关于<"), "About link must not appear in the main navigation");
+assert(index.includes('href="/about/"'), "About page must still be reachable from elsewhere on the home page");
+
 assert(about.includes("？！糖糖"), "About page bio missing");
 assert(!index.includes("example.com"), "Default Hexo URL remains");
 const search = JSON.parse(await readFile(join(root, "search.json"), "utf8"));
@@ -72,9 +79,55 @@ const themeDefault = /data-theme-default="([^"]*)"/.exec(index);
 assert.equal(themeDefault?.[1], look.theme, "Theme default must match appearance.json");
 assert(index.includes("/js/theme.js"), "Theme script is missing");
 assert(index.includes("data-theme-toggle"), "Theme toggle button is missing");
+// 访客登录与评论：每个页面都要有可见的登录按钮、登录/未登录提醒/无权限弹窗与脚本；
+// 文章页还要有评论区（评论 + 点赞）。后台只允许站长，访客进入时显示「你无权限进入」。
+assert(index.includes("/js/auth.js"), "Auth script is missing");
+assert(index.includes("data-auth-login"), "Visible login button is missing");
+assert(index.includes('id="auth-dialog"'), "Login dialog is missing");
+assert(!index.includes("auth-captcha"), "Captcha login must not be shipped");
+assert(!index.includes("图形验证码"), "Captcha login UI must not be shipped");
+assert(!index.includes('id="auth-form"'), "Username-only login form must not be shipped");
+assert(index.includes('id="auth-required-dialog"'), "Login-required dialog is missing");
+assert(index.includes('id="auth-noaccess-dialog"'), "No-access dialog is missing");
+const aPost = search[0];
+if (aPost) {
+  const postHtml = await readFile(join(root, "." + decodeURIComponent(aPost.url), "index.html"), "utf8");
+  assert(postHtml.includes("data-comments"), "Post comment section is missing");
+  assert(postHtml.includes("data-like-button"), "Post like button is missing");
+  assert(postHtml.includes("data-comment-form"), "Post comment form is missing");
+}
+// GitHub OAuth：公开配置与回调页必须随构建发布（client_secret 永不出现在构建产物里）。
+const authConfig = JSON.parse(await readFile(join(root, "auth-config.json"), "utf8"));
+assert(["local", "oauth"].includes(authConfig.provider), `Invalid auth provider: ${authConfig.provider}`);
+assert(!JSON.stringify(authConfig).includes("client_secret"), "client_secret must never be published");
+const callbackHtml = await readFile(join(root, "auth", "callback", "index.html"), "utf8");
+assert(callbackHtml.includes('id="oauth-status"'), "OAuth callback page is missing its status element");
+assert(callbackHtml.includes("/js/auth.js"), "OAuth callback page must load auth.js");
+assert(index.includes('id="auth-oauth-button"'), "GitHub OAuth login button is missing");
+assert(!index.includes("client_secret"), "client_secret must never appear in pages");
+
+const adminHtml = await readFile(join(root, "admin", "index.html"), "utf8");
+assert(adminHtml.includes('id="view-noaccess"'), "Admin no-access view is missing");
+assert(adminHtml.includes("你无权限进入"), "Admin no-access message is missing");
+const adminJsOut = await readFile(join(root, "admin", "admin.js"), "utf8");
+assert(adminJsOut.includes("allowedLogins"), "Admin allowlist guard is missing");
+assert(!adminHtml.includes('id="token-input"'), "Admin must not offer a paste-a-token login");
+assert(!adminHtml.includes('id="login-form"'), "Admin token form must be removed");
+assert(adminHtml.includes("使用 GitHub 登录进入后台"), "Admin GitHub OAuth entry is missing");
+
 const css = await readFile(join(root, "css", "main.css"), "utf8");
 assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
+// 浅色模式不要壁纸雾面：body::after 的提亮层必须关掉（深色压暗层保留）。
+assert(
+  /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
+  "Light theme must not put a fog veil over the wallpaper",
+);
+// 行号与代码对齐：gutter 必须与代码同字号同行高，且两列顶部对齐。
+const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";
+assert(/font-size:\s*inherit/.test(gutterPre), "Gutter font-size must match the code (inherit)");
+assert(!/font-size:\s*11px/.test(gutterPre), "Gutter must not use a smaller font-size than the code");
+assert(/\.highlight td\s*\{[^}]*vertical-align:\s*top/.test(css), "Highlight cells must align at the top");
 assert(css.includes('html[data-theme="light"] .article-content'), "Light overrides for articles are missing");
 
 // 顶栏：展开状态由 main.js 判断后加类，靠 :hover 会卡住（详见 tools/nav.test.mjs）

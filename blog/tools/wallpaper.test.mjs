@@ -454,12 +454,11 @@ async function setupAdmin({ fileText = JSON.stringify(fileData), login = true } 
     throw new Error(`Unexpected API ${suffix}`);
   };
   w.eval(await readFile("source/admin/appearance.js", "utf8"));
+  if (login) w.sessionStorage.setItem("minxi.admin.oauth-token", "test-token-not-real");
   w.eval(adminJs);
   const $ = (selector) => w.document.querySelector(selector);
   const api = { dom, w, $, files, state };
   if (!login) return api;
-  $("#token-input").value = "test-token-not-real";
-  $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await wait(() => $("#post-list"));
   await wait(() => !$("#refresh-button").disabled);
   [...$("#tabs").querySelectorAll(".tab")].find((tab) => tab.dataset.tab === "appearance").click();
@@ -712,15 +711,14 @@ test("oversized photos are compressed in the browser before upload (1 MB API lim
   }
 });
 
-test("non-admin visitors cannot change the gallery: saving needs a token with write access", async () => {
+test("non-admin visitors cannot change the gallery: there is no token form, only GitHub OAuth for the owner", async () => {
   const { dom, $, state } = await setupAdmin({ login: false });
   try {
     assert.equal($("#view-app").hidden, true, "没有登录时看不到管理界面");
     assert.equal(state.writes.length, 0);
-    $("#token-input").value = "";
-    $("#login-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
-    await tick();
-    assert($("#login-error").textContent.includes("请粘贴"), "必须提供令牌");
+    assert.equal($("#token-input"), null, "粘贴令牌的入口必须已删除");
+    assert.equal($("#login-form"), null, "令牌表单必须已删除");
+    assert.match($("#login-button").textContent, /使用 GitHub 登录/);
     assert.equal(state.writes.length, 0);
   } finally {
     await teardown(dom);

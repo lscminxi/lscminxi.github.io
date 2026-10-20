@@ -88,11 +88,10 @@ async function setup({ fileText = JSON.stringify(defaultData), publicAppearance 
     throw new Error(`Unexpected API ${suffix}`);
   };
   w.eval(appearanceJs);
+  if (login) w.sessionStorage.setItem("minxi.admin.oauth-token", "test-token-not-real");
   w.eval(adminJs);
   const $ = (selector) => w.document.querySelector(selector);
   if (!login) return { dom, w, $, files, state };
-  $("#token-input").value = "test-token-not-real";
-  $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await wait(() => $("#post-list .row"));
   await wait(() => !$("#refresh-button").disabled);
   return { dom, w, $, files, state };
@@ -182,8 +181,8 @@ test("admin uses the published wallpaper on the login page and after login", asy
     assert.equal($("#admin-favicon").getAttribute("href"), defaultData.favicon);
     assert.equal(state.requests[0].suffix, "/appearance.json", "Public appearance is fetched without a GitHub token");
 
-    $("#token-input").value = "test-token-not-real";
-    $("#login-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+    w.sessionStorage.setItem("minxi.admin.oauth-token", "test-token-not-real");
+    await w.MinxiAdmin.restoreOAuthSession();
     await wait(() => !$("#view-app").hidden);
     await openAppearanceTab($);
     assert.equal($("#a-wallpaper").value, draft.wallpaper);

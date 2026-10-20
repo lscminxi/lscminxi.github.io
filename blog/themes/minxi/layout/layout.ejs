@@ -30,6 +30,7 @@
     }
   </style>
   <% } %><script src="<%- url_for('/js/main.js') %>?v=nav-2" defer></script>
+  <script src="<%- url_for('/js/auth.js') %>?v=auth-1" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>
@@ -64,6 +65,44 @@
     <div class="wallpaper-actions">
       <button class="wallpaper-plain" id="wallpaper-reset" type="button">恢复站点默认</button>
       <button class="wallpaper-primary" id="wallpaper-done" type="button">完成</button>
+    </div>
+  </dialog>
+  <%# 访客登录：唯一方式是 GitHub OAuth（经 oauth-worker 换令牌确认身份）；
+      登录后才能评论/点赞；后台仍然只有站长能进，访客登录不授予任何后台权限。 -%>
+  <% const authCfg = (theme.auth || {}); const oauthCfg = authCfg.oauth || {}; const oauthReady = authCfg.provider === 'oauth' && oauthCfg.client_id && oauthCfg.worker_url; %><dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title" data-auth-provider="<%= oauthReady ? 'oauth' : 'unconfigured' %>" data-oauth-client-id="<%= oauthCfg.client_id || '' %>" data-oauth-worker-url="<%= oauthCfg.worker_url || '' %>" data-oauth-scope="<%= oauthCfg.scope || 'read:user' %>">
+    <div class="auth-heading"><h2 id="auth-title">登录</h2><button class="icon-button" id="auth-close" type="button" aria-label="关闭登录">×</button></div>
+    <div id="auth-login-panel">
+      <p class="auth-lead">使用 <strong>GitHub 官方授权</strong> 登录后，可以给文章评论和点赞。本站不会接触你的 GitHub 密码。</p>
+      <div id="auth-oauth-panel" hidden>
+        <button class="auth-submit auth-oauth-button" id="auth-oauth-button" type="button">使用 GitHub 登录</button>
+        <p class="auth-note">会跳转到 GitHub 官方授权页确认身份（只申请读取公开资料），授权后自动跳回；令牌用完即弃、不保存。</p>
+      </div>
+      <p class="auth-unconfigured" id="auth-unconfigured" hidden>GitHub 登录尚未配置完成，暂时无法登录，请稍后再试。</p>
+      <p class="auth-error" id="auth-error" role="alert" hidden></p>
+      <p class="auth-note">后台只有站长本人经 GitHub 授权才能进入，普通登录不授予后台权限。</p>
+    </div>
+    <div id="auth-account-panel" hidden>
+      <p class="auth-lead" id="auth-account-info"></p>
+      <div class="auth-account-actions">
+        <button class="auth-submit" id="auth-admin" type="button">进入后台</button>
+        <button class="auth-secondary" id="auth-logout" type="button">退出登录</button>
+        <button class="auth-secondary" id="auth-account-close" type="button">关闭</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="auth-required-dialog" class="auth-dialog" aria-labelledby="auth-required-title">
+    <div class="auth-heading"><h2 id="auth-required-title">请先登录</h2></div>
+    <p class="auth-lead" id="auth-required-text">你还没有登录，登录后才能使用此功能。</p>
+    <div class="auth-account-actions">
+      <button class="auth-submit" id="auth-required-go" type="button">去登录</button>
+      <button class="auth-secondary" id="auth-required-cancel" type="button">取消</button>
+    </div>
+  </dialog>
+  <dialog id="auth-noaccess-dialog" class="auth-dialog" aria-labelledby="auth-noaccess-title">
+    <div class="auth-heading"><h2 id="auth-noaccess-title">你无权限进入</h2></div>
+    <p class="auth-lead" id="auth-noaccess-text">你无权限进入后台，只有站长才能进入。</p>
+    <div class="auth-account-actions">
+      <button class="auth-submit" id="auth-noaccess-close" type="button">知道了</button>
     </div>
   </dialog>
 </body>

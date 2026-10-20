@@ -3,14 +3,15 @@
  * 博客管理后台（纯前端）
  * --------------------------------------------------------------
  * 这个站点是静态的 GitHub Pages，没有自己的服务器，因此后台不保存任何账号密码：
- * 「登录」= 你在浏览器里提供自己的 GitHub Personal Access Token，
+ * 「登录」= 站长点击按钮走 GitHub OAuth 授权（经 oauth-worker 换取授权令牌），
  * 之后所有读写都直接由浏览器调用 https://api.github.com 完成，
- * 以你的身份把改动提交到仓库 main 分支；GitHub Actions 会自动重新生成静态页面并发布。
+ * 以站长的身份把改动提交到仓库 main 分支；GitHub Actions 会自动重新生成静态页面并发布。
+ * 后台不再提供粘贴 Personal Access Token 的入口。
  *
  * 安全说明：
- *  - 令牌只保存在当前浏览器（sessionStorage，或勾选「记住」后的 localStorage），退出登录即清除。
+ *  - 授权令牌只保存在当前标签页的 sessionStorage，退出登录或关闭标签页即清除，绝不写 localStorage。
  *  - 令牌只会发送到 api.github.com，本站没有任何后端，不会上传到别处。
- *  - 真正的写权限由 GitHub 判断；此外，必须通过 /user 确认令牌对应的账号，且账号在允许名单中。
+ *  - 真正的写权限由 GitHub 判断；此外，必须通过 /user 确认授权对应的账号，且账号在允许名单中。
  *  - 身份接口失败、账号信息缺失或允许名单为空时一律拒绝登录（fail closed）。
  */
 (() => {
@@ -29,8 +30,8 @@
     imageExtensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
   };
 
-  const TOKEN_KEY = "minxi.admin.token";
-  const REMEMBER_KEY = "minxi.admin.remember";
+  const TOKEN_KEY = "minxi.admin.oauth-token"; // GitHub OAuth 进入后台时暂存的授权（仅 sessionStorage）
+  const LEGACY_TOKEN_KEYS = ["minxi.admin.token", "minxi.admin.remember"];
 
   let token = "";
   let currentUser = "";
@@ -51,11 +52,11 @@
   const $$ = (selector) => [...document.querySelectorAll(selector)];
   const el = {
     viewLogin: $("#view-login"),
+    viewNoAccess: $("#view-noaccess"),
+    noAccessText: $("#noaccess-text"),
+    noAccessOwner: $("#noaccess-owner"),
     viewApp: $("#view-app"),
     viewEditor: $("#view-editor"),
-    loginForm: $("#login-form"),
-    tokenInput: $("#token-input"),
-    rememberInput: $("#remember-input"),
     loginError: $("#login-error"),
     loginButton: $("#login-button"),
     userChip: $("#user-chip"),
@@ -294,26 +295,32 @@
     }
   };
 
-  /* ---------------- 令牌存储 ---------------- */
+  /* ---------------- 授权存储（仅当前标签页会话） ---------------- */
+
+  function clearLegacyTokenStorage() {
+    try {
+      for (const key of LEGACY_TOKEN_KEYS) {
+        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
 
   function readStoredToken() {
+    clearLegacyTokenStorage();
     try {
-      return (
-        sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || ""
-      );
+      return sessionStorage.getItem(TOKEN_KEY) || "";
     } catch {
       return "";
     }
   }
-  function storeToken(value, remember) {
+  function storeToken(value) {
+    clearLegacyTokenStorage();
     try {
-      sessionStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(REMEMBER_KEY);
-      if (!value) return;
-      (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, value);
-      if (remember) localStorage.setItem(REMEMBER_KEY, "1");
-      el.rememberInput.checked = Boolean(remember);
+      if (value) sessionStorage.setItem(TOKEN_KEY, value);
+      else sessionStorage.removeItem(TOKEN_KEY);
     } catch {
       /* 隐私模式下可能不可写，忽略 */
     }
@@ -325,11 +332,11 @@
     const status = error.status;
     const apiMessage = error.data?.message;
     if (status === 401)
-      return "令牌无效或已过期，请重新登录（401）。" + (apiMessage ? ` ${apiMessage}` : "");
+      return "GitHub 授权无效或已过期，请重新登录（401）。" + (apiMessage ? ` ${apiMessage}` : "");
     if (status === 403)
       return `权限不足或触发速率限制（403）。${apiMessage || ""}`.trim();
     if (status === 404)
-      return `找不到文件或仓库（404）。请确认令牌能访问 ${CONFIG.owner}/${CONFIG.repo}。${apiMessage || ""}`.trim();
+      return `找不到文件或仓库（404）。请确认这次 GitHub 授权能访问 ${CONFIG.owner}/${CONFIG.repo}。${apiMessage || ""}`.trim();
     if (status === 409)
       return "文件已被其他提交更新（409），请点「刷新文件列表」后重试。";
     if (status === 422)
@@ -522,7 +529,7 @@
   async function authenticate(value) {
     token = value;
 
-    // /user 是唯一可信的令牌身份来源。网络/API 出错时不能退回到仓库所有者，
+    // /user 是唯一可信的授权身份来源。网络/API 出错时不能退回到仓库所有者，
     // 否则任意有仓库写权限的账号都可能绕过 allowedLogins 检查。
     let identity;
     try {
@@ -546,14 +553,14 @@
     }
     if (!allowedLogins.some((name) => name.toLowerCase() === login.toLowerCase())) {
       throw new Error(
-        `账号 @${login} 无权使用管理后台。仅允许 @${allowedLogins.join(", @")} 登录。`,
+        `你无权限进入后台：账号 @${login} 不是站长。仅允许 @${allowedLogins.join(", @")} 登录。`,
       );
     }
 
     const repo = await api(repoPath(""));
     if (!repo.permissions?.push) {
       throw new Error(
-        "这个令牌对该仓库没有写权限。请在 GitHub 上把令牌仓库权限设为 Contents: Read and write。",
+        "这次 GitHub 授权对该仓库没有写权限。请重新进入后台并在 GitHub 授权页确认授权。",
       );
     }
     currentUser = login;
@@ -583,7 +590,7 @@
     editing = null;
     aboutState = { sha: "", text: "" };
     clearInterval(buildWatch);
-    storeToken("", false);
+    storeToken("");
     el.viewLogin.hidden = false;
     el.viewApp.hidden = true;
     el.viewEditor.hidden = true;
@@ -592,41 +599,97 @@
     snapshots.about = null;
     el.userChip.hidden = true;
     el.logoutButton.hidden = true;
-    el.tokenInput.value = "";
-    if (!silent) log("已退出登录，令牌已从浏览器清除。");
+    if (!silent) log("已退出登录，这次 GitHub 授权已从浏览器清除。");
   }
 
-  el.loginForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const value = el.tokenInput.value.trim();
+  /* 站长 GitHub OAuth：跳 GitHub 授权（带仓库写权限）→ /auth/callback/ 换授权 →
+     回到 /admin/ 后 init 用会话中的授权自动确认站长身份并进入，不再粘贴令牌。 */
+  async function startAdminOAuth() {
     showError("");
-    if (!value) return showError("请粘贴 GitHub 令牌。");
-    busy(el.loginButton, true, "正在验证…");
+    let config = null;
     try {
-      await authenticate(value);
-      storeToken(value, el.rememberInput.checked);
-      el.tokenInput.value = "";
-      await enterApp();
-      toast(`欢迎回来，@${currentUser}`);
-    } catch (error) {
-      token = "";
-      showError(describeError(error));
-      log(`登录失败：${describeError(error)}`, "err");
-    } finally {
-      busy(el.loginButton, false);
+      const response = await fetch("/auth-config.json", { cache: "no-cache" });
+      if (response.ok) config = await response.json();
+    } catch {
+      config = null;
     }
+    const clientId = config?.oauth?.client_id || "";
+    const workerUrl = config?.oauth?.worker_url || "";
+    if (!clientId || !workerUrl) {
+      showError("GitHub 登录尚未配置完成，暂时无法进入后台。");
+      return;
+    }
+    const bytes = new Uint8Array(16);
+    try {
+      crypto.getRandomValues(bytes);
+    } catch {
+      for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    const state = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    try {
+      sessionStorage.setItem("minxi.oauth.state", state);
+      sessionStorage.setItem("minxi.oauth.return", `${location.origin}/admin/`);
+      sessionStorage.setItem("minxi.oauth.admin", "1");
+    } catch {
+      showError("浏览器会话存储不可用，无法完成 GitHub 登录。");
+      return;
+    }
+    const scopes = new Set(String(config.oauth.scope || "read:user").split(/\s+/).filter(Boolean));
+    scopes.add("public_repo");
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: `${location.origin}/auth/callback/`,
+      scope: [...scopes].join(" "),
+      state,
+      allow_signup: "true",
+    });
+    location.href = `https://github.com/login/oauth/authorize?${params.toString()}`;
+  }
+
+  el.loginButton?.addEventListener("click", () => {
+    void startAdminOAuth();
   });
 
   el.logoutButton.addEventListener("click", async () => {
     const ok = await confirmDialog(
       "退出登录",
-      "将从浏览器清除已保存的令牌，未提交的编辑内容会丢失。确定退出吗？",
+      "将清除这次 GitHub 授权，未提交的编辑内容会丢失。确定退出吗？",
       "退出登录",
     );
     if (ok) {
       logout();
       toast("已退出登录");
     }
+  });
+
+  /* 前台 GitHub OAuth 登录的本地会话：所有人可登录，但只有站长能进后台。
+     在这里读到非站长访客时，直接展示「你无权限进入」（站长可点按钮用 GitHub 重新登录）。 */
+  function visitorLogin() {
+    try {
+      const data = JSON.parse(localStorage.getItem("minxi.auth.user") || "null");
+      const login = typeof data?.login === "string" ? data.login.trim().replace(/^@+/, "") : "";
+      return /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(login) ? login : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function showNoAccess(login) {
+    if (el.noAccessText) {
+      el.noAccessText.textContent = login
+        ? `你当前以前台访客 @${login} 的身份登录。你无权限进入后台，只有站长 @${CONFIG.allowedLogins.join(", @")} 才能进入。`
+        : `你无权限进入后台，只有站长 @${CONFIG.allowedLogins.join(", @")} 才能进入。`;
+    }
+    el.viewLogin.hidden = true;
+    if (el.viewNoAccess) el.viewNoAccess.hidden = false;
+    el.viewApp.hidden = true;
+    el.viewEditor.hidden = true;
+  }
+
+  el.noAccessOwner?.addEventListener("click", () => {
+    if (el.viewNoAccess) el.viewNoAccess.hidden = true;
+    el.viewLogin.hidden = false;
+    void startAdminOAuth();
   });
 
   /* ---------------- 文件列表 ---------------- */
@@ -2216,7 +2279,7 @@
 
   /* ---------------- 启动 ---------------- */
 
-  // 登录页与后台各标签页共用前台已发布的壁纸；只读取公开的配置，不使用 GitHub 令牌。
+  // 登录页与后台各标签页共用前台已发布的壁纸；只读取公开的配置，不使用 GitHub 授权。
   // main.css 的壁纸层由 html[data-wallpaper="on"] 和这三个 CSS 变量控制。
   async function refreshAdminAppearance() {
     try {
@@ -2240,25 +2303,39 @@
     }
   }
 
-  // 只读的状态出口：排查问题和回归测试都用它，不影响任何行为。
-  window.MinxiAdmin = { unsavedWork };
-
-  (async function init() {
-    log("后台已就绪。请输入 GitHub 令牌登录。");
-    refreshAdminAppearance();
+  // 用会话里暂存的 GitHub OAuth 授权自动确认站长身份（授权从 /auth/callback/ 回来时写入）。
+  async function restoreOAuthSession() {
     const stored = readStoredToken();
-    el.rememberInput.checked = Boolean(localStorage.getItem(REMEMBER_KEY));
-    if (!stored) return;
-    busy(el.loginButton, true, "正在恢复登录…");
+    if (!stored) return false;
+    busy(el.loginButton, true, "正在确认站长身份…");
     try {
       await authenticate(stored);
       await enterApp();
-      toast(`已恢复登录：@${currentUser}`);
+      toast(`欢迎回来，@${currentUser}`);
+      return true;
     } catch (error) {
       logout(true);
-      showError(`已保存的令牌不可用：${describeError(error)}`);
+      showError(`GitHub 授权不可用：${describeError(error)}`);
+      return false;
     } finally {
       busy(el.loginButton, false);
     }
+  }
+
+  // 状态出口：排查问题和回归测试用，不影响任何行为。
+  window.MinxiAdmin = { unsavedWork, restoreOAuthSession };
+
+  (async function init() {
+    log("后台已就绪。请使用 GitHub 登录（仅站长可进入）。");
+    refreshAdminAppearance();
+    clearLegacyTokenStorage();
+    const visitor = visitorLogin();
+    const isOwnerVisitor = visitor && CONFIG.allowedLogins.some((name) => name.toLowerCase() === visitor.toLowerCase());
+    if (visitor && !isOwnerVisitor) {
+      // 非站长访客试图进后台：直接显示无权限，不尝试任何授权恢复。
+      showNoAccess(visitor);
+      return;
+    }
+    await restoreOAuthSession();
   })();
 })();

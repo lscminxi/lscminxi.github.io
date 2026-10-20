@@ -1229,6 +1229,8 @@ html.header-open .header-hint {
 .highlight td {
   border: 0;
   padding: 0;
+  /* 行号列与代码列必须从同一基线开始排，否则首行就会错位 */
+  vertical-align: top;
 }
 .highlight .gutter {
   width: 38px;
@@ -1244,12 +1246,19 @@ html.header-open .header-hint {
   margin: 0;
   overflow: visible;
   white-space: pre;
+  /* 行号列与代码列共用同一字号/行高（见下方 .gutter pre）：
+     行高是无单位倍数时按各自字号计算，字号不同就会逐行累积错位 */
+  font-family: var(--mono);
+  font-size: 12px;
   line-height: 1.9;
 }
 .highlight .gutter pre {
   padding-left: 12px;
   padding-right: 9px;
-  font-size: 11px;
+  /* 必须与代码同字号：以前是 11px，行高随之更矮，行号越往下与代码偏得越多 */
+  font-size: inherit;
+  line-height: 1.9;
+  text-align: right;
 }
 .highlight .code {
   color: #c5cfdb;
@@ -2340,6 +2349,233 @@ html[data-wallpaper="on"] .site-header {
 }
 
 /* ==================================================================
+   访客登录 + 评论 / 点赞（client/auth.js）
+   颜色一律走语义令牌（--panel / --line / --text / --accent …），深浅主题自动适配。
+   ================================================================== */
+.auth-trigger,
+.auth-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.auth-trigger {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.auth-trigger:hover,
+.auth-user:hover {
+  border-color: var(--accent);
+}
+.auth-user img {
+  border-radius: 50%;
+}
+.auth-user[hidden],
+.auth-trigger[hidden] {
+  display: none;
+}
+.auth-dialog {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 24px;
+  width: min(440px, calc(100vw - 32px));
+}
+.auth-dialog::backdrop {
+  background: rgba(var(--veil-rgb), 0.72);
+}
+.auth-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.auth-lead {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.comment-form textarea {
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 9px 11px;
+  font: inherit;
+  width: 100%;
+}
+.auth-secondary {
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 8px 11px;
+  font-size: 12px;
+}
+.auth-submit {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--bg);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.auth-oauth-button {
+  width: 100%;
+  margin-top: 14px;
+}
+.auth-unconfigured {
+  color: var(--purple);
+  font-size: 13px;
+  margin-top: 14px;
+}
+.auth-error {
+  color: var(--purple);
+  font-size: 12px;
+}
+.auth-note {
+  color: var(--dim);
+  font-size: 11px;
+  margin-top: 13px;
+  line-height: 1.7;
+}
+.auth-account-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.comments {
+  margin-top: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 20px;
+}
+.comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.comments-head h2 {
+  font-size: 17px;
+}
+.comments-count {
+  color: var(--accent);
+  font-size: 13px;
+}
+.like-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  padding: 6px 14px;
+  font-size: 12px;
+}
+.like-button.is-liked {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.comments-hint,
+.comments-mode-note,
+.comments-empty {
+  color: var(--dim);
+  font-size: 11px;
+}
+.comment-form {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+.comment-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.comment-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.comment-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.comment-item {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-raised);
+  padding: 12px 14px;
+}
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+.comment-head img {
+  border-radius: 50%;
+}
+.comment-head time {
+  color: var(--dim);
+  font-size: 11px;
+}
+.comment-owner {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+.comment-delete {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: var(--dim);
+  font-size: 11px;
+}
+.comment-body {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .auth-trigger,
+  .auth-user {
+    padding: 6px 8px;
+  }
+  .auth-user [data-auth-name] {
+    max-width: 74px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .comments {
+    padding: 15px;
+  }
+}
+
+/* ==================================================================
    浅色模式（light theme）
    由访客的 localStorage（minxi.theme）与站点默认值决定，见 client/theme.js。
    下面第一部分是令牌，第二部分是手工整理的覆盖块，
@@ -2366,7 +2602,7 @@ html[data-theme="light"] {
   --dim: #657181;
   --accent: #0f7a6a;
   --purple: #7a5ad4;
-  /* 壁纸层：浅色改成提亮 + 更轻的暗角 */
+  /* 壁纸层底色（只剩对话框遮罩等还在用；壁纸本身的雾面已去掉，见下方 body::after） */
   --veil-rgb: 245, 247, 250;
   --veil-max: 0.9;
   --veil-vignette: 0.52;
@@ -2388,6 +2624,12 @@ html[data-theme="light"] {
    浅色覆盖块：卡片 / 列表这类「大面积」组件集中在这里，
    减少零散覆盖，也方便日后调色。
    ------------------------------------------------------------------ */
+/* 浅色模式删掉壁纸雾面：有壁纸时直接展示原图，不再盖提亮层与暗角。
+   （--veil-* 只保留给对话框遮罩等其它地方，深色模式的压暗层不受影响。） */
+html[data-theme="light"][data-wallpaper="on"] body::after {
+  background-image: none;
+}
+
 html[data-theme="light"] .site-header {
   border-bottom-color: #dfe5ee;
   background: #f7f9fcf0;
@@ -2844,6 +3086,10 @@ html[data-theme="light"] .article-content .fold-box--success {
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   html[data-theme="light"][data-wallpaper="on"] .site-header {
     background: #f7f9fcf5;
+  }
+  /* 例外：用户明确要求减少透明/高对比时，恢复接近不透光的底，保证正文可读 */
+  html[data-theme="light"][data-wallpaper="on"] body::after {
+    background-image: linear-gradient(rgba(var(--veil-rgb), var(--veil-max)), rgba(var(--veil-rgb), var(--veil-max)));
   }
 }
 

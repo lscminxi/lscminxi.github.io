@@ -1,0 +1,8 @@
+{
+  "provider": "oauth",
+  "oauth": {
+    "client_id": "Ov23liRQRP65PNxJ7N6V",
+    "worker_url": "https://minxi-github-auth.lsc-minxi.workers.dev",
+    "scope": "read:user"
+  }
+}

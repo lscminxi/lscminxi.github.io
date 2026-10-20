@@ -1,0 +1,13 @@
+# Cloudflare Worker 配置：部署 oauth-worker/worker.js 用。
+# 用法见 README.md。client_secret 不要写进这个文件，只在 Cloudflare 后台以 Secret 配置。
+name = "minxi-github-auth"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[vars]
+# 下面两项部署时改成你自己的值（Client ID 不是机密，可以写这里）：
+GITHUB_CLIENT_ID = "Ov23liRQRP65PNxJ7N6V"
+ALLOWED_ORIGINS = "https://lscminxi.github.io"
+# GITHUB_CLIENT_SECRET 请勿写在这里！在 Cloudflare 后台 Settings → Variables 里
+# 用「Secret」类型添加，或者命令行：wrangler secret put GITHUB_CLIENT_SECRET
