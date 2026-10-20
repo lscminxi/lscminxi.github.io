@@ -173,7 +173,7 @@ description: 用一句话介绍题目和核心思路。
 - 构建时会生成一份只读副本 `/appearance.json`（已清洗、无时间戳，避免无意义的提交差异），后台用它让管理页的图标与站点保持一致，访客端背景选择器也用它读取可选背景列表。
 - 内置的默认图标仍是主题自带的 `/images/favicon.svg`，删掉配置或地址非法时自动回落到它。
 - 头像是外链时可能被 CDN 防盗链拦住（图片打不开时卡片会自动显示字母标记 `m_`）。稳妥做法：在后台「图片」里上传图片（超 1 MB 的照片会自动压缩），再用「外观」里的「图片库」按钮填 `/images/文件名`。
-- 壁纸只在配置了图片时才生效：`layout.ejs` 输出 `html[data-wallpaper="on"]` 与 `--wallpaper-image` / `--wallpaper-veil` / `--wallpaper-blur` 变量，样式在 `main.css` 结尾；页面顶栏会变得更透明。深浅色都不给壁纸盖雾面（无压暗层与暗角），直接展示原图；只有系统要求减少透明/高对比时才恢复接近不透光的底。
+- 壁纸只在配置了图片时才生效：`layout.ejs` 输出 `html[data-wallpaper="on"]` 与 `--wallpaper-image` / `--wallpaper-veil` / `--wallpaper-blur` 变量，样式在 `main.css` 结尾；页面顶栏会变得更透明，压暗层和暗角保证正文对比度。
 - 外观相关回归测试：`cd blog && npm run test:appearance`（共享校验规则、后台面板、保存时的 SHA/分支/内容、拒绝恶意地址、以及「恶意 JSON → 构建产物无注入」）。`npm run build && npm run check` 还会校验构建产物与 `appearance.json` 一致。
 
 ### 浅色模式
@@ -186,7 +186,7 @@ description: 用一句话介绍题目和核心思路。
 
 关键点和背景选择一致：**只写访客自己的 `localStorage`（键名 `minxi.theme`）**——不提交、不影响其他访客、不需要登录。清掉这个键（或点「跟随系统」）就回到站点默认值。
 
-实现上：`blog/client/theme.js` 由 `npm run assets` 打包成 `/js/theme.js`，在 `<head>` 中**先于样式表**同步加载，因此在第一帧就写好了 `html[data-theme]`，不会先闪一下深色；`<meta name="theme-color">` 也会跟着当前主题换成对应的底色。取自系统的偏好通过 `matchMedia('(prefers-color-scheme: light)')` 读取；页面加载完成后会再读一次公开的 `/appearance.json`，用来校正「站长改了默认值但访客的 HTML 仍是缓存版本」的情况。浅色样式是 `main.css` 结尾一个**带作用域**的覆盖块（`html[data-theme="light"] …`）加一组语义化令牌（`--bg` / `--panel` / `--line` / `--text` / `--accent`…），深色规则保持原样；壁纸在深浅色下都不盖雾面、直接展示原图，`--veil-rgb` 只给顶栏等半透明底色用。
+实现上：`blog/client/theme.js` 由 `npm run assets` 打包成 `/js/theme.js`，在 `<head>` 中**先于样式表**同步加载，因此在第一帧就写好了 `html[data-theme]`，不会先闪一下深色；`<meta name="theme-color">` 也会跟着当前主题换成对应的底色。取自系统的偏好通过 `matchMedia('(prefers-color-scheme: light)')` 读取；页面加载完成后会再读一次公开的 `/appearance.json`，用来校正「站长改了默认值但访客的 HTML 仍是缓存版本」的情况。浅色样式是 `main.css` 结尾一个**带作用域**的覆盖块（`html[data-theme="light"] …`）加一组语义化令牌（`--bg` / `--panel` / `--line` / `--text` / `--accent`…），深色规则保持原样；深色下壁纸的压暗层走 `--veil-rgb` 变量，浅色下不给壁纸盖雾面、直接展示原图。
 
 回归测试：`cd blog && npm run test:theme`（主题值清洗与回落、访客选择 / 跟随系统 / 站点默认值三级优先级、首次绘制不闪烁、后台三选一与 `theme` 字段写回、恶意 `theme` 值的构建产物检查）。此外还守着两件事：**深色里每一处硬编码颜色都必须有对应的浅色覆盖**，以及**浅色下不允许残留深色面板**——改动配色后如果漏了覆盖，测试会直接列出缺哪一条。
 

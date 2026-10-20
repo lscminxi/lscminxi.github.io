@@ -122,14 +122,10 @@ assert(adminHtml.includes("使用 GitHub 登录进入后台"), "Admin GitHub OAu
 const css = await readFile(join(root, "css", "main.css"), "utf8");
 assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
-// 深浅色都不要壁纸雾面：body::after 不能再盖压暗 / 提亮层或暗角。
+// 浅色模式不要壁纸雾面：body::after 的提亮层必须关掉（深色压暗层保留）。
 assert(
   /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
   "Light theme must not put a fog veil over the wallpaper",
-);
-assert(
-  /html\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
-  "Dark theme must not put a fog veil over the wallpaper",
 );
 // 行号与代码对齐：gutter 必须与代码同字号同行高，且两列顶部对齐。
 const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";
