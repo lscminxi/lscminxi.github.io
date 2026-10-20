@@ -2102,7 +2102,13 @@ body.search-open {
 .article-content .plot-stage { touch-action: none; cursor: grab; border-radius: 6px; }
 .article-content .plot-stage.is-dragging { cursor: grabbing; }
 .article-content .plot-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.article-content .plot-readout { min-height: 1.7em; margin: 8px 2px 2px; color: var(--muted); font-size: 12.5px; }
+.article-content .plot-readout {
+  display: flex; align-items: center; min-height: 38px; margin: 9px 1px 2px;
+  padding: 7px 11px; border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 9px; background: color-mix(in srgb, var(--panel-raised) 78%, transparent);
+  color: var(--text); font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+  overflow-wrap: anywhere;
+}
 .article-content .plot-equations { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
 .article-content .plot-equations h3 { font-size: 13px; margin: 0 0 6px; }
 .article-content .plot-equations ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
@@ -2116,6 +2122,50 @@ body.search-open {
 .article-content .plot-curve,
 .article-content .plot-segment { cursor: pointer; }
 .article-content .graph-node-group { cursor: pointer; }
+/* 跟随鼠标的坐标显示框 */
+.article-content .plot-stage { position: relative; }
+.article-content .plot-tooltip {
+  position: absolute; z-index: 6; min-width: 96px; max-width: 250px;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px;
+  background: color-mix(in srgb, var(--panel-raised) 94%, transparent);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.26); backdrop-filter: blur(8px);
+  color: var(--text); font-family: var(--mono); font-size: 11.5px; line-height: 1.45;
+  pointer-events: none; opacity: 0; visibility: hidden;
+  transform: translate(-50%, calc(-100% - 14px)) scale(0.97);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+}
+.article-content .plot-tooltip.is-below { transform: translate(-50%, 16px) scale(0.97); }
+.article-content .plot-tooltip.is-visible { opacity: 1; visibility: visible; transform: translate(-50%, calc(-100% - 14px)) scale(1); }
+.article-content .plot-tooltip.is-below.is-visible { transform: translate(-50%, 16px) scale(1); }
+.article-content .plot-tooltip strong,
+.article-content .plot-tooltip span { display: block; overflow-wrap: anywhere; }
+.article-content .plot-tooltip strong { font-size: 12px; }
+.article-content .plot-tooltip span { color: var(--muted); margin-top: 1px; }
+/* 坐标标签框 */
+.article-content .plot-coord-box { fill: var(--panel-raised); stroke: var(--line); opacity: 0.96; }
+.article-content .plot-coord-tag text { paint-order: stroke; stroke: var(--panel); stroke-width: 2px; }
+/* 鼠标落在线上：对应直线微微加粗 */
+.article-content .plot-curve,
+.article-content .plot-segment,
+.article-content .graph-edge-line { transition: stroke-width 0.16s ease, opacity 0.16s ease; }
+.article-content .plot-curve:hover,
+.article-content .plot-curve.is-hovered,
+.article-content .plot-segment:hover,
+.article-content .plot-segment.is-hovered { stroke-width: 4.4; }
+.article-content .graph-edge-hit { pointer-events: stroke; }
+.article-content .graph-edge-group:hover .graph-edge-line,
+.article-content .graph-edge-group.is-hovered .graph-edge-line,
+.article-content .graph-edge-group.is-selected .graph-edge-line { stroke-width: 4.4; opacity: 1; }
+.article-content .graph-edge-group:hover .graph-arrow,
+.article-content .graph-edge-group.is-hovered .graph-arrow,
+.article-content .graph-edge-group.is-selected .graph-arrow { opacity: 1; }
+/* 参考图编辑器：顶点悬停/选中时出现深色外圈 */
+.article-content .graph-node-ring {
+  opacity: 0; transform-box: fill-box; transform-origin: center;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.article-content .graph-node-group:hover .graph-node-ring,
+.article-content .graph-node-group.is-selected .graph-node-ring { opacity: 0.92; transform: scale(1.04); }
 /* 圆点选中微放大：只缩放圆点本身，坐标文字与位置不跟着动 */
 .article-content .plot-dot,
 .article-content .graph-node {
@@ -3268,6 +3318,10 @@ html[data-theme="light"] .article-content .fold-box--success {
 /* 染色点上的文字在浅色下同样用白色（点本身的颜色不变） */
 html[data-theme="light"] .article-content .graph-node-label.on-color {
   fill: #ffffff;
+}
+/* 坐标显示框在浅色下用更柔和的阴影 */
+html[data-theme="light"] .article-content .plot-tooltip {
+  box-shadow: 0 10px 28px rgb(31 41 55 / 0.16);
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   html[data-theme="light"][data-wallpaper="on"] .site-header {

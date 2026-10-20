@@ -37,6 +37,34 @@ function initPlot(figure) {
   };
   const readout = figure.querySelector('.plot-readout');
   const equationsBox = figure.querySelector('.plot-equations');
+  // 跟随鼠标的坐标显示框（悬浮小卡片），与底部读数框显示同一份信息。
+  const tooltip = figure.ownerDocument.createElement('div');
+  tooltip.className = 'plot-tooltip';
+  tooltip.setAttribute('aria-hidden', 'true');
+  tooltip.innerHTML = '<strong></strong><span></span>';
+  const tooltipTitle = tooltip.querySelector('strong');
+  const tooltipDetail = tooltip.querySelector('span');
+  const hideTooltip = () => tooltip.classList.remove('is-visible');
+  const positionTooltip = (event) => {
+    const rect = stage.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    tooltip.style.left = `${clamp(x, 64, Math.max(64, rect.width - 64))}px`;
+    tooltip.style.top = `${y}px`;
+    tooltip.classList.toggle('is-below', y < 78);
+  };
+  const showDisplay = (event, title, detail = '') => {
+    if (readout) readout.textContent = detail ? `${title}：${detail}` : title;
+    tooltipTitle.textContent = title;
+    tooltipDetail.textContent = detail;
+    tooltipDetail.hidden = !detail;
+    tooltip.classList.add('is-visible');
+    positionTooltip(event);
+  };
+  const clearLineHover = () => {
+    stage.querySelectorAll('.plot-curve.is-hovered, .plot-segment.is-hovered').forEach((el) => el.classList.remove('is-hovered'));
+  };
   figure.classList.add('is-interactive');
   stage.tabIndex = 0;
   stage.setAttribute('role', 'application');
@@ -70,6 +98,7 @@ function initPlot(figure) {
         el.classList.toggle('is-selected', pointKey(el) === selectedPointKey);
       });
     }
+    stage.append(tooltip);
     syncToggles();
   };
   let drawQueued = false;
@@ -174,6 +203,7 @@ function initPlot(figure) {
       };
       dragStart = null;
     }
+    hideTooltip();
     stage.classList.add('is-dragging');
   });
 
@@ -215,13 +245,21 @@ function initPlot(figure) {
     const target = event.target?.closest?.('[data-kind]');
     if (target && stage.contains(target)) {
       const kind = target.dataset.kind;
-      if (kind === 'point') readout.textContent = `${target.dataset.label || '点'}：(${number(target.dataset.x)}, ${number(target.dataset.y)})`;
-      else if (kind === 'intersection') readout.textContent = `${target.dataset.label || '交点'}：(${number(target.dataset.x)}, ${number(target.dataset.y)})`;
-      else if (kind === 'function') readout.textContent = `${target.dataset.equation || '函数'}，当前 x = ${number(data.x)}，y = ${number(spec.functions[Number(target.dataset.functionIndex)]?.fn(data.x))}`;
-      else if (kind === 'segment') readout.textContent = `线段方程：${target.dataset.equation || ''}（端点 (${number(target.dataset.x1)}, ${number(target.dataset.y1)}) → (${number(target.dataset.x2)}, ${number(target.dataset.y2)})）`;
+      if (kind === 'point') { clearLineHover(); showDisplay(event, target.dataset.label || '点', `(${number(target.dataset.x)}, ${number(target.dataset.y)})`); }
+      else if (kind === 'intersection') { clearLineHover(); showDisplay(event, target.dataset.label || '交点', `(${number(target.dataset.x)}, ${number(target.dataset.y)})`); }
+      else if (kind === 'function') {
+        clearLineHover();
+        target.classList.add('is-hovered');
+        const item = spec.functions[Number(target.dataset.functionIndex)];
+        showDisplay(event, item?.label || target.dataset.equation || '函数', `(${number(data.x)}, ${number(item?.fn(data.x))}) · ${target.dataset.equation || ''}`);
+      } else if (kind === 'segment') {
+        clearLineHover();
+        target.classList.add('is-hovered');
+        showDisplay(event, '线段', `${target.dataset.equation || ''} · (${number(target.dataset.x1)}, ${number(target.dataset.y1)}) → (${number(target.dataset.x2)}, ${number(target.dataset.y2)})`);
+      }
       return;
     }
-    if (!data.inside) return;
+    if (!data.inside) { hideTooltip(); clearLineHover(); return; }
     let nearest = null;
     const frame = frameBox();
     spec.functions.forEach((item, index) => {
@@ -233,12 +271,16 @@ function initPlot(figure) {
       const distance = Math.abs(screenY - point.y);
       if (!nearest || distance < nearest.distance) nearest = { distance, index, y };
     });
+    clearLineHover();
     if (nearest && nearest.distance <= 16) {
-      readout.textContent = `${spec.functions[nearest.index].label || `曲线 ${nearest.index + 1}`}：(${number(data.x)}, ${number(nearest.y)}) · y = ${spec.functions[nearest.index].expr}`;
+      const curve = stage.querySelectorAll('.plot-curve')[nearest.index];
+      curve?.classList.add('is-hovered');
+      showDisplay(event, spec.functions[nearest.index].label || `曲线 ${nearest.index + 1}`, `(${number(data.x)}, ${number(nearest.y)}) · y = ${spec.functions[nearest.index].expr}`);
     } else {
-      readout.textContent = `当前坐标：(${number(data.x)}, ${number(data.y)})`;
+      showDisplay(event, '当前坐标', `(${number(data.x)}, ${number(data.y)})`);
     }
   });
+  stage.addEventListener('pointerleave', () => { hideTooltip(); clearLineHover(); });
 
   // 点击（未拖动）选中一个点/交点：微微放大并固定显示它的坐标；
   // 点别处取消选中。拖动后的 click 会被 moved 标志吞掉，不会误选。
@@ -249,9 +291,7 @@ function initPlot(figure) {
     if (target && stage.contains(target)) {
       target.classList.add('is-selected');
       selectedPointKey = pointKey(target);
-      if (readout) {
-        readout.textContent = `${target.dataset.label || '点'}：(${number(target.dataset.x)}, ${number(target.dataset.y)})`;
-      }
+      showDisplay(event, target.dataset.label || '点', `(${number(target.dataset.x)}, ${number(target.dataset.y)})`);
     } else {
       selectedPointKey = null;
     }
@@ -322,6 +362,29 @@ function initGraph(figure) {
   readout.setAttribute('aria-live', 'polite');
   readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   stage.after(readout);
+  const tooltip = doc.createElement('div');
+  tooltip.className = 'plot-tooltip';
+  tooltip.setAttribute('aria-hidden', 'true');
+  tooltip.innerHTML = '<strong></strong><span></span>';
+  stage.append(tooltip);
+  const tooltipTitle = tooltip.querySelector('strong');
+  const tooltipDetail = tooltip.querySelector('span');
+  const hideTooltip = () => tooltip.classList.remove('is-visible');
+  const showDisplay = (event, title, detail = '') => {
+    readout.textContent = detail ? `${title}：${detail}` : title;
+    tooltipTitle.textContent = title;
+    tooltipDetail.textContent = detail;
+    tooltipDetail.hidden = !detail;
+    const rect = stage.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      tooltip.style.left = `${clamp(x, 64, Math.max(64, rect.width - 64))}px`;
+      tooltip.style.top = `${y}px`;
+      tooltip.classList.toggle('is-below', y < 78);
+    }
+    tooltip.classList.add('is-visible');
+  };
 
   const initial = (svg.getAttribute('viewBox') || '0 0 680 320').split(/\s+/).map(Number);
   // 预览重渲染时恢复上次的缩放/平移位置（重置仍回到初始 viewBox）。
@@ -397,17 +460,35 @@ function initGraph(figure) {
       }
       return;
     }
+    const edge = event.target?.closest?.('.graph-edge-group');
+    stage.querySelectorAll('.graph-edge-group.is-hovered').forEach((el) => {
+      if (el !== edge) el.classList.remove('is-hovered');
+    });
+    if (edge && stage.contains(edge)) {
+      edge.classList.add('is-hovered');
+      const arrow = edge.dataset.directed === 'true' ? ' → ' : ' — ';
+      showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edge.dataset.label || (edge.dataset.directed === 'true' ? '有向边' : '无向边'));
+      return;
+    }
     const group = event.target?.closest?.('.graph-node-group');
     if (group && stage.contains(group)) {
-      readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`;
+      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
+    } else {
+      hideTooltip();
     }
   });
+  stage.addEventListener('pointerleave', hideTooltip);
   stage.addEventListener('click', (event) => {
+    const edge = event.target?.closest?.('.graph-edge-group');
     const group = event.target?.closest?.('.graph-node-group');
-    stage.querySelectorAll('.graph-node-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
-    if (group && stage.contains(group)) {
+    stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
+    if (edge && stage.contains(edge)) {
+      edge.classList.add('is-selected');
+      const arrow = edge.dataset.directed === 'true' ? ' → ' : ' — ';
+      showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edge.dataset.label || (edge.dataset.directed === 'true' ? '有向边' : '无向边'));
+    } else if (group && stage.contains(group)) {
       group.classList.add('is-selected');
-      readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`;
+      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
     }
   });
   const finish = (event) => {

@@ -92,6 +92,8 @@ test('graph draws nodes, directed arrows, colors and labels', () => {
   assert.ok(svg.includes('起点') && svg.includes('一步'), '点/边标注');
   assert.equal((svg.match(/<polygon/g) || []).length, 2, '两条有向边各有一个箭头，无向边没有');
   assert.equal((svg.match(/<circle class="graph-node"/g) || []).length, 3, '边里未声明的 C 自动建点');
+  assert.ok(svg.includes('class="graph-edge-group"') && svg.includes('class="graph-edge-hit"'), '边有分组和宽命中区，方便悬停加粗');
+  assert.ok(svg.includes('class="graph-node-ring"'), '顶点带选中外圈（参考图编辑器）');
 });
 
 test('undirected graphs draw no arrows; self loops render', () => {
@@ -169,6 +171,7 @@ test('plot shows point coordinates, intersections and function/segment equations
   assert.ok(intersections.some((point) => Math.abs(point.x) < 1e-6 && Math.abs(point.y) < 1e-6), '包含与坐标轴的交点');
   const svg = plots.renderPlotSvg(spec);
   assert.ok(svg.includes('class="plot-coord"') && svg.includes('(2, 2)'), '明确给出的点显示坐标');
+  assert.ok(svg.includes('class="plot-coord-box"'), '坐标文字带圆角显示框');
   assert.ok(svg.includes('class="plot-intersection"') && svg.includes('(1, 1)'), '交点有标记和坐标');
   assert.ok(svg.includes('class="plot-equations"') && svg.includes('y = -x + 2'), '显示函数方程');
   assert.equal(plots.lineEquation([0, 1], [2, 5]), 'y = 2x + 1');
@@ -245,6 +248,12 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     await waitFrame();
     assert.equal(rangeWidth(), 10, '重置恢复初始范围');
 
+    // 悬停到直线上：对应曲线加粗并弹出坐标显示框。
+    const curve = stage.querySelector('.plot-curve');
+    pointer(page, curve, 'pointermove', 340, 210);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), true, '悬停直线时对应直线高亮');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '悬停时坐标显示框可见');
+
     // 第一次 click 是拖动结束的那次（应被吞掉），第二次才真正选中。
     const dot = stage.querySelector('.plot-point');
     pointer(page, dot, 'click', 100, 100);
@@ -271,6 +280,14 @@ test('interactive graph zooms and reports node coordinates', async () => {
     assert.ok(!group.querySelector('title').textContent.includes('(0, 0)'), '顶点提示不显示坐标');
     pointer(page, group, 'pointermove', 100, 100);
     assert.equal(figure.querySelector('.plot-readout').textContent, '点 A', '悬停顶点只显示点名');
+    const edgeGroup = svg.querySelector('.graph-edge-group');
+    const edgeHit = svg.querySelector('.graph-edge-hit');
+    pointer(page, edgeHit, 'pointermove', 200, 100);
+    assert.equal(edgeGroup.classList.contains('is-hovered'), true, '悬停边时对应边高亮');
+    assert.match(figure.querySelector('.plot-readout').textContent, /边 A — B/, '悬停边显示边信息');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '坐标显示框跟随显示');
+    pointer(page, edgeHit, 'click', 200, 100);
+    assert.equal(svg.querySelector('.graph-edge-group').classList.contains('is-selected'), true, '点击选中边');
   } finally { page.window.close(); }
 });
 
@@ -383,4 +400,15 @@ test('points gently enlarge when selected (CSS)', async () => {
   assert.ok(css.includes('.plot-intersection.is-selected .plot-dot'), '交点选中态样式');
   assert.ok(css.includes('transform: scale(1.45)'), '选中微放大');
   assert.ok(css.includes('.graph-node-group.is-selected .graph-node'), '图顶点选中态样式');
+});
+
+
+test('coordinate display box and line hover styles are shipped (CSS)', async () => {
+  const css = await readFile('themes/minxi/source/css/main.css', 'utf8');
+  assert.ok(css.includes('.plot-tooltip'), '坐标显示框样式');
+  assert.ok(css.includes('.plot-tooltip.is-visible'), '坐标显示框可见态');
+  assert.match(css, /\.plot-readout \{[^}]*border-left: 3px solid var\(--accent\)/, '底部读数也是显示框');
+  assert.ok(css.includes('.plot-curve.is-hovered'), '函数曲线悬停加粗');
+  assert.ok(css.includes('.graph-edge-group:hover .graph-edge-line'), '图边悬停加粗');
+  assert.ok(css.includes('.graph-node-ring'), '图顶点外圈样式');
 });

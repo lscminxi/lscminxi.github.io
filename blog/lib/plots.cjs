@@ -586,6 +586,17 @@ function renderPlotSvgInner(spec, options = {}) {
 
   const px = (x) => PLOT_PAD.left + ((x - xMin) / (xMax - xMin)) * plotW;
   const py = (y) => PLOT_PAD.top + ((yMax - y) / (yMax - yMin)) * plotH;
+  // 坐标显示框：圆角小标签（背景框 + 文字），贴着点放，放不下时自动换边/换上下。
+  const coordTag = (sx, sy, text, textClass, fill) => {
+    const width = Math.ceil(text.length * 6.4 + 14);
+    const height = 18;
+    let boxX = sx + 9;
+    if (boxX + width > PLOT_PAD.left + plotW) boxX = sx - width - 9;
+    let boxY = sy - height - 8;
+    if (boxY < PLOT_PAD.top + 2) boxY = sy + 8;
+    if (boxY + height > PLOT_PAD.top + plotH) boxY = PLOT_PAD.top + plotH - height - 2;
+    return `<g class="plot-coord-tag"><rect class="plot-coord-box" style="fill:var(--panel-raised,#151a23);stroke:var(--line,#252b36);opacity:.96" x="${fmt(boxX)}" y="${fmt(boxY)}" width="${width}" height="${height}" rx="5"/><text class="${textClass}" style="fill:${fill};font-weight:600" font-size="10" x="${fmt(boxX + width / 2)}" y="${fmt(boxY + 12.5)}" text-anchor="middle">${text}</text></g>`;
+  };
   const out = [`<svg class="md-plot-svg" viewBox="0 0 ${PLOT_W} ${PLOT_H}" role="img" aria-label="${escape(spec.title || '函数图像')}" preserveAspectRatio="xMidYMid meet" data-x-min="${xMin}" data-x-max="${xMax}" data-y-min="${yMin}" data-y-max="${yMax}">`];
 
   // 网格与刻度：使用主题专用变量，保证深色和浅色都有足够对比度。
@@ -643,11 +654,8 @@ function renderPlotSvgInner(spec, options = {}) {
     for (const [x, y] of set.points) {
       if (x < xMin || x > xMax || y < yMin || y > yMax) continue;
       const sx = px(x); const sy = py(y);
-      const labelX = sx > PLOT_PAD.left + plotW - 92 ? sx - 8 : sx + 8;
-      const anchor = sx > PLOT_PAD.left + plotW - 92 ? 'end' : 'start';
-      const labelY = sy < PLOT_PAD.top + 24 ? sy + 16 : sy - 8;
       const coord = showCoords && totalPoints <= 30
-        ? `<text class="plot-coord" style="fill:${set.color};paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="10" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="${anchor}">${coordinateText(x, y)}</text>`
+        ? coordTag(sx, sy, coordinateText(x, y), 'plot-coord', set.color)
         : '';
       out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(`点 ${coordinateText(x, y)}`)}</title><circle class="plot-dot plot-point-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
     }
@@ -665,11 +673,8 @@ function renderPlotSvgInner(spec, options = {}) {
       .filter((point) => point.x >= xMin && point.x <= xMax && point.y >= yMin && point.y <= yMax);
     for (const point of intersections) {
       const sx = px(point.x); const sy = py(point.y);
-      const labelX = sx > PLOT_PAD.left + plotW - 92 ? sx - 9 : sx + 9;
-      const anchor = sx > PLOT_PAD.left + plotW - 92 ? 'end' : 'start';
-      const labelY = sy < PLOT_PAD.top + 24 ? sy + 17 : sy - 9;
       const coordLabel = intersections.length <= 20
-        ? `<text class="plot-intersection-label" style="fill:var(--plot-text,#c3cedd);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="10" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="${anchor}">${coordinateText(point.x, point.y)}</text>`
+        ? coordTag(sx, sy, coordinateText(point.x, point.y), 'plot-intersection-label', 'var(--plot-text,#c3cedd)')
         : '';
       out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(`${point.label} ${coordinateText(point.x, point.y)}`)}</title><circle class="plot-dot plot-intersection-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="5" style="fill:var(--plot-marker,#ffd43b);stroke:var(--panel,#11151d)" stroke-width="1.6"/>${coordLabel}</g>`);
     }
@@ -801,22 +806,26 @@ function renderGraphSvg(spec) {
   const arrow = (x, y, angle, color) => {
     const size = 9;
     const a1 = angle + Math.PI * 0.82; const a2 = angle - Math.PI * 0.82;
-    const fill = color ? ` fill="${color}"` : ' class="graph-arrow" style="fill:var(--text,#e6eaf0);opacity:.6"';
+    const fill = color ? ` class="graph-arrow" fill="${color}"` : ' class="graph-arrow" style="fill:var(--text,#e6eaf0);opacity:.6"';
     return `<polygon points="${fmt(x)},${fmt(y)} ${fmt(x + size * Math.cos(a1))},${fmt(y + size * Math.sin(a1))} ${fmt(x + size * Math.cos(a2))},${fmt(y + size * Math.sin(a2))}"${fill}/>`;
   };
   for (const edge of spec.edges) {
     const a = byId.get(edge.from); const b = byId.get(edge.to);
     if (!a || !b) continue;
+    out.push(`<g class="graph-edge-group" data-from="${escape(edge.from)}" data-to="${escape(edge.to)}" data-label="${escape(edge.label || '')}" data-directed="${edge.directed ? 'true' : 'false'}">`);
+    const closeEdge = () => out.push('</g>');
     const color = edge.color || '';
-    const strokeAttr = edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.55"';
+    const strokeAttr = edge.color ? ` class="graph-edge-line" stroke="${edge.color}"` : ' class="graph-edge-line graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.72"';
     const dash = edge.dash ? ' stroke-dasharray="6 5"' : '';
     const x1 = sx(a.x); const y1 = sy(a.y); const x2 = sx(b.x); const y2 = sy(b.y);
     if (edge.from === edge.to) {
       // 自环：点上方画一个小圆
       const r = a.size + 8;
-      out.push(`<circle cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none"${edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.55"'} stroke-width="2.5"${dash}/>`);
+      out.push(`<circle class="graph-edge-hit" cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none" stroke="transparent" stroke-width="13"/>`);
+      out.push(`<circle class="graph-edge-line" cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none"${edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge-line graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.72"'} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(x1 + (r - 4) * 0.72, y1 - a.size - r + 6 - (r - 4) * 0.72, Math.PI / 4, color));
       if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(x1)}" y="${fmt(y1 - a.size - 2 * r - 2)}" text-anchor="middle">${escape(edge.label)}</text>`);
+      closeEdge();
       continue;
     }
     const key = edge.directed ? `${edge.from}>${edge.to}` : [edge.from, edge.to].sort().join('|');
@@ -832,6 +841,7 @@ function renderGraphSvg(spec) {
     let endX = x2 - ux * b.size; let endY = y2 - uy * b.size;
     let labelX = mx; let labelY = my;
     if (offset === 0) {
+      out.push(`<line class="graph-edge-hit" x1="${fmt(startX)}" y1="${fmt(startY)}" x2="${fmt(endX)}" y2="${fmt(endY)}" stroke="transparent" stroke-width="13"/>`);
       out.push(`<line x1="${fmt(startX)}" y1="${fmt(startY)}" x2="${fmt(endX)}" y2="${fmt(endY)}"${strokeAttr} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(endX, endY, Math.atan2(uy, ux), color));
       labelX = (startX + endX) / 2; labelY = (startY + endY) / 2 - 5;
@@ -840,22 +850,24 @@ function renderGraphSvg(spec) {
       const cxp = (x1 + x2) / 2 - uy * offset * 2; const cyp = (y1 + y2) / 2 + ux * offset * 2;
       const tx = endX - cxp; const ty = endY - cyp; const tl = Math.hypot(tx, ty) || 1;
       endX = x2 - (tx / tl) * b.size; endY = y2 - (ty / tl) * b.size;
+      out.push(`<path class="graph-edge-hit" d="M${fmt(startX)} ${fmt(startY)} Q${fmt(cxp)} ${fmt(cyp)} ${fmt(endX)} ${fmt(endY)}" fill="none" stroke="transparent" stroke-width="13"/>`);
       out.push(`<path d="M${fmt(startX)} ${fmt(startY)} Q${fmt(cxp)} ${fmt(cyp)} ${fmt(endX)} ${fmt(endY)}" fill="none"${strokeAttr} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(endX, endY, Math.atan2(ty, tx), color));
       labelX = 0.25 * startX + 0.5 * cxp + 0.25 * endX; labelY = 0.25 * startY + 0.5 * cyp + 0.25 * endY - 5;
     }
     if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="middle">${escape(edge.label)}</text>`);
+    closeEdge();
   }
 
   // 点（画在边上面）；包成一组并带点名，方便交互时提示（不显示坐标）
   for (const node of nodes) {
     const x = sx(node.x); const y = sy(node.y);
-    const fillAttr = node.color ? ` fill="${node.color}"` : ' style="fill:var(--panel-raised,#151a23);stroke:var(--accent,#5ce0c4)" stroke-width="2"';
+    const fillAttr = node.color ? ` fill="${node.color}" style="stroke:var(--text,#e6eaf0)" stroke-width="2"` : ' style="fill:var(--panel-raised,#151a23);stroke:var(--text,#e6eaf0)" stroke-width="2"';
     const text = node.label || node.id;
     const sub = node.label && node.label !== node.id && node.id !== text
       ? `<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`
       : '';
-    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}"><title>${escape(text)}</title><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
+    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}"><title>${escape(text)}</title><circle class="graph-node-ring" cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size + 5}" fill="none" style="stroke:var(--text,#e6eaf0)" stroke-width="1.6"/><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
   }
 
   out.push('</svg>');
