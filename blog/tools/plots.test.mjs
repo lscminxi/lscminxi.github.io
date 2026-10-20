@@ -58,7 +58,7 @@ test('plot spec draws curves, connected points, colors and labels', () => {
   assert.ok(svg.includes('class="plot-frame"'), '绘图区要有可见边框');
   assert.ok((svg.match(/class="plot-grid"/g) || []).length >= 4, '网格线要画出来');
   assert.equal((svg.match(/class="plot-axis"/g) || []).length, 2, 'x 轴和 y 轴都要画出来');
-  assert.equal((svg.match(/<circle/g) || []).length, 3, '三个散点');
+  assert.equal((svg.match(/plot-point-dot/g) || []).length, 3, '三个散点');
   assert.ok(svg.includes('r="5"'), '函数描点默认半径加大到 5');
   assert.match(svg, /<path class="plot-segment"[^>]*stroke="#1971c2"/, 'points connect 要连成线');
   assert.ok(svg.includes('抛物线'), '图例文字');
@@ -244,6 +244,15 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     figure.querySelector('[data-plot-action="reset"]').click();
     await waitFrame();
     assert.equal(rangeWidth(), 10, '重置恢复初始范围');
+
+    // 第一次 click 是拖动结束的那次（应被吞掉），第二次才真正选中。
+    const dot = stage.querySelector('.plot-point');
+    pointer(page, dot, 'click', 100, 100);
+    pointer(page, dot, 'click', 100, 100);
+    assert.equal(stage.querySelector('.plot-point').classList.contains('is-selected'), true, '点击选中一个点');
+    figure.querySelector('[data-plot-action="zoom-in"]').click();
+    await waitFrame();
+    assert.ok(stage.querySelector('.plot-point.is-selected'), '缩放重绘后仍按同一坐标保持选中');
   } finally { page.window.close(); }
 });
 
@@ -256,6 +265,8 @@ test('interactive graph zooms and reports node coordinates', async () => {
     figure.querySelector('[data-graph-action="zoom-in"]').click();
     assert.notEqual(svg.getAttribute('viewBox'), before, '图的缩放按钮改变 viewBox');
     const group = svg.querySelector('.graph-node-group');
+    pointer(page, group, 'click', 100, 100);
+    assert.equal(svg.querySelector('.graph-node-group').classList.contains('is-selected'), true, '点击选中顶点微放大');
     assert.equal(group.hasAttribute('data-x'), false, '顶点不再携带坐标');
     assert.ok(!group.querySelector('title').textContent.includes('(0, 0)'), '顶点提示不显示坐标');
     pointer(page, group, 'pointermove', 100, 100);
@@ -348,4 +359,28 @@ test('plot fences nested inside a plain code fence stay literal', async () => {
   assert.equal(plots.convertPlotFences(md), md, '转换函数不动普通代码块里的示例');
   const post = await hexo.post.render('plot-nested-test.md', { content: md });
   assert.ok(!post.content.includes('md-plot'), '正式管线里示例仍是代码');
+});
+
+
+test('intersections are round dots whose coordinates stay fixed across views', () => {
+  const spec = plots.parsePlotSpec('f: x^2 - 2x + 1\nf: -x + 3\npoints: (1, 0), (3, 2) ; connect=true\nx: -3, 5\ny: -2, 10');
+  const pts = plots.findPlotIntersections(spec, [-3, 5], [-2, 10]);
+  assert.ok(pts.some((pt) => Math.abs(pt.x - 2) < 1e-9 && Math.abs(pt.y - 1) < 1e-9), '交点精确落在 (2, 1)');
+  assert.ok(pts.some((pt) => Math.abs(pt.x + 1) < 1e-9 && Math.abs(pt.y - 4) < 1e-9), '交点精确落在 (-1, 4)');
+  assert.ok(!pts.some((pt) => Math.abs(pt.x - 1.9667) < 0.01), '不再出现随采样漂移的近似交点');
+  const grab = (svg) => [...svg.matchAll(/class="plot-intersection" data-kind="intersection" data-x="([^"]+)" data-y="([^"]+)"/g)].map((m) => `${m[1]},${m[2]}`);
+  const wide = plots.renderPlotSvgInner(spec, { xRange: [-3, 5], yRange: [-2, 10] });
+  const zoomed = plots.renderPlotSvgInner(spec, { xRange: [0, 3], yRange: [0, 4] });
+  assert.ok(wide.includes('class="plot-dot plot-intersection-dot"'), '交点是圆点而不是菱形');
+  const wideCoords = grab(wide);
+  assert.ok(grab(zoomed).length > 0);
+  for (const coord of grab(zoomed)) assert.ok(wideCoords.includes(coord), `缩放后坐标 ${coord} 与原图一致`);
+});
+
+test('points gently enlarge when selected (CSS)', async () => {
+  const css = await readFile('themes/minxi/source/css/main.css', 'utf8');
+  assert.ok(css.includes('.plot-point.is-selected .plot-dot'), '描点选中态样式');
+  assert.ok(css.includes('.plot-intersection.is-selected .plot-dot'), '交点选中态样式');
+  assert.ok(css.includes('transform: scale(1.45)'), '选中微放大');
+  assert.ok(css.includes('.graph-node-group.is-selected .graph-node'), '图顶点选中态样式');
 });

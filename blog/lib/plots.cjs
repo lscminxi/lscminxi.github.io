@@ -373,10 +373,17 @@ const safeY = (fn, x) => {
 };
 
 function dedupePlotPoints(points, xRange, yRange) {
-  const xTolerance = Math.max((xRange[1] - xRange[0]) * 0.004, 1e-8);
-  const yTolerance = Math.max((yRange[1] - yRange[0]) * 0.004, 1e-8);
+  // 容差只用于合并同一交点的重复求解结果，必须足够小，
+  // 否则缩放/平移后采样网格变化会让坐标标签跟着漂移。
+  const xTolerance = Math.max((xRange[1] - xRange[0]) * 0.0005, 1e-9);
+  const yTolerance = Math.max((yRange[1] - yRange[0]) * 0.0005, 1e-9);
   const out = [];
-  for (const point of [...points].sort((a, b) => a.x - b.x || a.y - b.y)) {
+  const rounded = points.map((point) => ({
+    ...point,
+    x: Number(point.x.toFixed(10)),
+    y: Number(point.y.toFixed(10)),
+  }));
+  for (const point of rounded.sort((a, b) => a.x - b.x || a.y - b.y)) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
     if (point.x < xRange[0] - xTolerance || point.x > xRange[1] + xTolerance) continue;
     if (point.y < yRange[0] - yTolerance || point.y > yRange[1] + yTolerance) continue;
@@ -388,45 +395,69 @@ function dedupePlotPoints(points, xRange, yRange) {
 }
 
 function scanDifference(diff, yAt, xMin, xMax, yRange, kind, label, points) {
-  const steps = 420;
-  const tolerance = Math.max((yRange[1] - yRange[0]) * 0.0015, 1e-7);
+  const steps = 720;
+  const yHeight = yRange[1] - yRange[0];
+  const zeroTolerance = Math.max(yHeight * 0.0005, 1e-9);
+  const rootTolerance = Math.max(yHeight * 1e-9, 1e-11);
+  const acceptTolerance = Math.max(yHeight * 0.00005, 1e-7);
+  const step = (xMax - xMin) / steps;
   let prevX = xMin;
   let prevDiff = diff(prevX);
   let inZeroRun = false;
-  const accept = (x, currentDiff = diff(x)) => {
-    let candidate = x;
-    // 采样点只是接近零点时，用前后两点做一次线性插值，避免坐标差出一个采样步长。
-    if (Number.isFinite(prevDiff) && Math.abs(currentDiff - prevDiff) > 1e-12) {
-      const estimate = prevX - (prevDiff * (x - prevX)) / (currentDiff - prevDiff);
-      if (estimate >= Math.min(prevX, x) - (xMax - xMin) / steps && estimate <= Math.max(prevX, x) + (xMax - xMin) / steps) candidate = estimate;
+
+  // 把采样命中的近似根精化到与采样网格无关的精度：
+  // 有变号就二分，没有变号就用割线法迭代，避免坐标随视图范围变化。
+  const refineRoot = (x0, d0, x1, d1) => {
+    if (![x0, d0, x1, d1].every(Number.isFinite)) return null;
+    if (d0 === 0) return x0;
+    if (d1 === 0) return x1;
+    if (d0 * d1 < 0) {
+      let low = x0; let high = x1; let lowDiff = d0;
+      for (let iteration = 0; iteration < 80; iteration += 1) {
+        const middle = (low + high) / 2;
+        const middleDiff = diff(middle);
+        if (!Number.isFinite(middleDiff)) return null;
+        if (middleDiff === 0) return middle;
+        if (lowDiff * middleDiff < 0) high = middle;
+        else { low = middle; lowDiff = middleDiff; }
+      }
+      return (low + high) / 2;
     }
+    let a = x0; let b = x1; let da = d0; let db = d1;
+    for (let iteration = 0; iteration < 60; iteration += 1) {
+      if (Math.abs(db) <= rootTolerance) return b;
+      const denominator = db - da;
+      if (Math.abs(denominator) < 1e-14) return null;
+      let candidate = b - (db * (b - a)) / denominator;
+      if (!Number.isFinite(candidate) || candidate < Math.min(x0, x1) - step || candidate > Math.max(x0, x1) + step) {
+        candidate = (a + b) / 2;
+      }
+      const dc = diff(candidate);
+      if (!Number.isFinite(dc)) return null;
+      if (Math.abs(dc) <= rootTolerance) return candidate;
+      a = b; da = db; b = candidate; db = dc;
+    }
+    return Math.abs(db) <= acceptTolerance ? b : null;
+  };
+  const accept = (x, currentDiff) => {
+    const candidate = refineRoot(prevX, prevDiff, x, currentDiff);
+    if (candidate === null) return;
     const y = yAt(candidate);
-    if (!Number.isFinite(y) || Math.abs(diff(candidate)) > Math.max(tolerance * 20, 1e-5)) return;
+    if (!Number.isFinite(y) || Math.abs(diff(candidate)) > acceptTolerance) return;
     points.push({ x: candidate, y, kind, label });
   };
   for (let index = 1; index <= steps; index += 1) {
     const x = xMin + (xMax - xMin) * (index / steps);
     const currentDiff = diff(x);
     if (!Number.isFinite(currentDiff)) { prevX = x; prevDiff = NaN; inZeroRun = false; continue; }
-    if (Math.abs(currentDiff) <= tolerance) {
-      if (!inZeroRun) accept(x, currentDiff);
-      inZeroRun = true;
-    } else {
-      if (Number.isFinite(prevDiff) && Math.abs(prevDiff) > tolerance && currentDiff * prevDiff < 0) {
-        let low = prevX;
-        let high = x;
-        let lowDiff = prevDiff;
-        for (let iteration = 0; iteration < 56; iteration += 1) {
-          const middle = (low + high) / 2;
-          const middleDiff = diff(middle);
-          if (!Number.isFinite(middleDiff)) break;
-          if (lowDiff * middleDiff <= 0) high = middle;
-          else { low = middle; lowDiff = middleDiff; }
-        }
-        accept((low + high) / 2);
-      }
-      inZeroRun = false;
+    const nearZero = Math.abs(currentDiff) <= zeroTolerance;
+    if (!nearZero && Number.isFinite(prevDiff) && prevDiff * currentDiff < 0) {
+      accept(x, currentDiff);
+    } else if (nearZero && !inZeroRun) {
+      // 只取一段贴近零的采样中的第一个候选，避免曲线与线段重合时刷出一串交点。
+      accept(x, currentDiff);
     }
+    inZeroRun = nearZero;
     prevX = x;
     prevDiff = currentDiff;
   }
@@ -618,7 +649,7 @@ function renderPlotSvgInner(spec, options = {}) {
       const coord = showCoords && totalPoints <= 30
         ? `<text class="plot-coord" style="fill:${set.color};paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="10" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="${anchor}">${coordinateText(x, y)}</text>`
         : '';
-      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(`点 ${coordinateText(x, y)}`)}</title><circle cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
+      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(`点 ${coordinateText(x, y)}`)}</title><circle class="plot-dot plot-point-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
     }
     if (set.label) {
       const first = set.points.find(([x, y]) => x >= xMin && x <= xMax && y >= yMin && y <= yMax);
@@ -628,7 +659,10 @@ function renderPlotSvgInner(spec, options = {}) {
 
   // 交点：曲线之间、曲线与线段、线段之间、以及与坐标轴的交点
   if (showIntersections) {
-    const intersections = findPlotIntersections(spec, [xMin, xMax], [yMin, yMax]);
+    // 交点坐标按固定基准范围求解（与当前视图无关），再过滤到可见区域，
+    // 保证同一点在放大、缩小、平移前后坐标完全一致。
+    const intersections = findPlotIntersections(spec, initialRanges.xRange, initialRanges.yRange)
+      .filter((point) => point.x >= xMin && point.x <= xMax && point.y >= yMin && point.y <= yMax);
     for (const point of intersections) {
       const sx = px(point.x); const sy = py(point.y);
       const labelX = sx > PLOT_PAD.left + plotW - 92 ? sx - 9 : sx + 9;
@@ -637,7 +671,7 @@ function renderPlotSvgInner(spec, options = {}) {
       const coordLabel = intersections.length <= 20
         ? `<text class="plot-intersection-label" style="fill:var(--plot-text,#c3cedd);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="10" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="${anchor}">${coordinateText(point.x, point.y)}</text>`
         : '';
-      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(`${point.label} ${coordinateText(point.x, point.y)}`)}</title><path d="M${fmt(sx)} ${fmt(sy - 6)}L${fmt(sx + 6)} ${fmt(sy)}L${fmt(sx)} ${fmt(sy + 6)}L${fmt(sx - 6)} ${fmt(sy)}Z" style="fill:var(--plot-marker,#ffd43b);stroke:var(--plot-axis,#eef3f9)" stroke-width="1.4"/>${coordLabel}</g>`);
+      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(`${point.label} ${coordinateText(point.x, point.y)}`)}</title><circle class="plot-dot plot-intersection-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="5" style="fill:var(--plot-marker,#ffd43b);stroke:var(--panel,#11151d)" stroke-width="1.6"/>${coordLabel}</g>`);
     }
   }
 

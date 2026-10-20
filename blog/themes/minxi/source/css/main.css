@@ -2116,6 +2116,23 @@ body.search-open {
 .article-content .plot-curve,
 .article-content .plot-segment { cursor: pointer; }
 .article-content .graph-node-group { cursor: pointer; }
+/* 圆点选中微放大：只缩放圆点本身，坐标文字与位置不跟着动 */
+.article-content .plot-dot,
+.article-content .graph-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.16s ease;
+}
+.article-content .plot-point:hover .plot-dot,
+.article-content .plot-point.is-selected .plot-dot,
+.article-content .plot-intersection:hover .plot-dot,
+.article-content .plot-intersection.is-selected .plot-dot { transform: scale(1.45); }
+.article-content .graph-node-group:hover .graph-node,
+.article-content .graph-node-group.is-selected .graph-node { transform: scale(1.18); }
+@media (prefers-reduced-motion: reduce) {
+  .article-content .plot-dot,
+  .article-content .graph-node { transition: none; }
+}
 
 /* ------------------------------------------------------------------
    壁纸（由后台「外观」写入 source/_data/appearance.json）
