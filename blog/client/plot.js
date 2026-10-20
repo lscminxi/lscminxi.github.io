@@ -51,6 +51,9 @@ function initPlot(figure) {
     figure.dataset.viewIntersections = String(state.intersections);
     figure.dataset.viewEquations = String(state.equations);
   };
+  // 选中的点用「类型:坐标」标识，重绘后按同一坐标找回，选中态不丢、坐标不变。
+  let selectedPointKey = null;
+  const pointKey = (el) => `${el.dataset.kind}:${el.dataset.x}:${el.dataset.y}`;
   const draw = () => {
     figure.dataset.viewXMin = String(state.x[0]);
     figure.dataset.viewXMax = String(state.x[1]);
@@ -62,6 +65,11 @@ function initPlot(figure) {
       showCoords: state.coords,
       showIntersections: state.intersections,
     });
+    if (selectedPointKey) {
+      stage.querySelectorAll('[data-kind="point"], [data-kind="intersection"]').forEach((el) => {
+        el.classList.toggle('is-selected', pointKey(el) === selectedPointKey);
+      });
+    }
     syncToggles();
   };
   let drawQueued = false;
@@ -232,6 +240,23 @@ function initPlot(figure) {
     }
   });
 
+  // 点击（未拖动）选中一个点/交点：微微放大并固定显示它的坐标；
+  // 点别处取消选中。拖动后的 click 会被 moved 标志吞掉，不会误选。
+  stage.addEventListener('click', (event) => {
+    if (moved) { moved = false; return; }
+    const target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
+    stage.querySelectorAll('.is-selected').forEach((el) => el.classList.remove('is-selected'));
+    if (target && stage.contains(target)) {
+      target.classList.add('is-selected');
+      selectedPointKey = pointKey(target);
+      if (readout) {
+        readout.textContent = `${target.dataset.label || '点'}：(${number(target.dataset.x)}, ${number(target.dataset.y)})`;
+      }
+    } else {
+      selectedPointKey = null;
+    }
+  });
+
   const finishPointer = (event) => {
     pointers.delete(event.pointerId);
     if (!pointers.size) {
@@ -374,6 +399,14 @@ function initGraph(figure) {
     }
     const group = event.target?.closest?.('.graph-node-group');
     if (group && stage.contains(group)) {
+      readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`;
+    }
+  });
+  stage.addEventListener('click', (event) => {
+    const group = event.target?.closest?.('.graph-node-group');
+    stage.querySelectorAll('.graph-node-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
+    if (group && stage.contains(group)) {
+      group.classList.add('is-selected');
       readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`;
     }
   });
