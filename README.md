@@ -249,6 +249,46 @@ $$
 
 后台编辑器有「插入折叠框…」菜单，支持即时预览与点击展开。预览和正式文章共用 `blog/lib/fold-containers.cjs`，样式随主题深色配色。实时预览中点击标题即可展开/收起；修改正文或文章标题时保留已有折叠框的展开状态与预览滚动位置，切换视图不会重载预览。打开另一篇文章会重置状态；修改折叠框自身的标题时，该框按新折叠框处理。
 
+## 函数图像与可视化图
+
+两种围栏代码块，构建时直接生成静态 SVG（不需要前端脚本），正式文章和后台实时预览里都能看到，后台编辑器有「插入函数图像 / 插入可视化图」按钮。每行一条指令，写错的行会被忽略，不会让文章构建失败。
+
+**函数图像**（` ```plot `）：画函数曲线、标点、连点成线。
+
+    ```plot
+    title: 抛物线与正弦
+    f: x^2 - 2x + 1 ; color=red ; label=抛物线
+    f: sin(x) ; color=#0f7a6a
+    points: (1, 0), (2, 1) ; connect=true ; color=blue ; label=数据点
+    x: -3, 5
+    y: -2, 10
+    grid: on
+    ```
+
+- `f:` 一行一个函数（最多 8 个，没写颜色自动轮换配色）。表达式只支持 `x`、数字、`+ - * / ^`、括号、隐式乘法（`2x`、`2(x+1)`）和 `sin cos tan asin acos atan sqrt abs exp ln log log10 floor ceil round`，常量 `pi / e / tau`。用手写解析器求值、绝不用 `eval`，写错的表达式整行跳过。不连续的函数（如 `1/x`）会自动在间断处断线。
+- `points:` 描点（`(x, y)` 可写多个）；加 `connect=true` 连成折线；`line:` 是简写（默认连线、不画点，除非再写 `size=4`）。
+- 可选项都跟在 `; ` 后面：`color=`（英文/中文颜色名或 `#rrggbb`）、`label=`、`width=`（曲线粗细）、`dash=true`（虚线）。
+- `x:` / `y:` 定坐标范围（不写 `y:` 时按曲线自动）；`grid: off` 关网格；`title:` 显示图注。
+
+**可视化图**（` ```graph `）：点和边，适合画图论、状态机、流程关系。
+
+    ```graph
+    title: 示例图
+    directed: true
+    node: A ; label=起点 ; color=red
+    node: B ; x=120 ; y=40
+    node: C
+    edge: A -> B ; label=一步 ; color=blue
+    edge: B -> C
+    edge: C -- A ; dash=true
+    ```
+
+- `directed: true` 开有向图（默认无向）。`edge: A -> B` 是有向边（带箭头），`edge: A -- B` 是无向边；也可以把 `A -> B` 单独写一行。同一对点连多条边会自动用弧线错开，自环（`A -> A`）画在点上方。
+- `node: 点名 ; label=显示名 ; color=颜色 ; x= ; y= ; size=` 建点染色。**不写 x/y 的点自动按圆环布局**，边里引用到未声明的点会自动建点，最多 60 个点 / 120 条边。
+- 点和边的标注、标题都按纯文字转义输出，不会执行 HTML。
+
+实现上：`blog/lib/plots.cjs` 是正式渲染（`blog/scripts/katex.js`）与实时预览（`blog/client/preview.js`）共用的一份 Marked 扩展；样式在 `main.css` 的 `.md-plot / .md-graph`，坐标轴、网格、默认点边走主题变量，深浅色自动适配。回归测试：`cd blog && npm run test:plots`（表达式安全与求值、曲线断线、箭头/自环/自动布局、两处渲染一致、标注转义、未闭合围栏保留原文）。
+
 ## 访客登录与评论 / 点赞
 
 站点右上角现在常驻一个 **「登录」** 按钮（登录后显示 GitHub 头像与用户名），所有人都能用，不再藏着：
@@ -364,6 +404,7 @@ blog/
   tools/wallpaper.test.mjs    # 访客自选背景（壁纸库、上传 / 下架）回归测试
   tools/theme.test.mjs        # 深浅主题（切换、覆盖完整性、后台默认值）回归测试
   tools/nav.test.mjs          # 顶栏自动展开 / 小箭头（含「滑过就卡住」回归）测试
+  tools/plots.test.mjs        # 函数图像 / 可视化图（表达式安全、SVG 生成）回归测试
   source/
     _posts/                   # Markdown 文章
     _data/appearance.json     # 头像 / 壁纸 / 网页图标 / 可选背景（后台「外观」写入）

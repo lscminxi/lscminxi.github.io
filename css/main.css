@@ -2033,6 +2033,50 @@ body.search-open {
   .article-content .fold-box-body { padding: 4px 12px 12px; }
 }
 
+/* 函数图像（```plot）与可视化图（```graph）：构建时生成的静态 SVG，
+   坐标轴/网格/默认点边走主题变量，深浅色自动适配；用户指定的颜色直接写在元素上。 */
+.article-content .md-plot,
+.article-content .md-graph {
+  margin: 22px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 14px 14px 10px;
+  overflow-x: auto;
+}
+.article-content .md-plot svg,
+.article-content .md-graph svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 320px;
+}
+.article-content .md-plot figcaption,
+.article-content .md-graph figcaption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.article-content .plot-grid { stroke: var(--line); stroke-width: 1; }
+.article-content .plot-axis { stroke: var(--muted); stroke-width: 1.4; }
+.article-content .plot-tick { fill: var(--muted); font-size: 10px; }
+.article-content .plot-label { font-size: 12px; font-weight: 600; }
+.article-content .plot-curve { stroke-linejoin: round; stroke-linecap: round; }
+.article-content .graph-edge { stroke: var(--muted); }
+.article-content .graph-arrow { fill: var(--muted); }
+.article-content .graph-node { fill: var(--panel-raised); stroke: var(--accent); stroke-width: 2; }
+.article-content .graph-node-label { fill: var(--text); font-size: 12px; font-weight: 600; }
+.article-content .graph-node-label.on-color { fill: #ffffff; }
+.article-content .graph-node-sub { fill: var(--muted); font-size: 10px; }
+.article-content .graph-edge-label {
+  fill: var(--text);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 3px;
+}
+
 /* ------------------------------------------------------------------
    壁纸（由后台「外观」写入 source/_data/appearance.json）
    只有配置了壁纸时 layout.ejs 才会输出 html[data-wallpaper="on"]
@@ -3158,6 +3202,10 @@ html[data-theme="light"] .article-content .fold-box {
 html[data-theme="light"] .article-content .fold-box--success {
   --fold-color: #1c7f60;
   --fold-tint: rgba(31, 138, 104, 0.1);
+}
+/* 染色点上的文字在浅色下同样用白色（点本身的颜色不变） */
+html[data-theme="light"] .article-content .graph-node-label.on-color {
+  fill: #ffffff;
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   html[data-theme="light"][data-wallpaper="on"] .site-header {

@@ -2,9 +2,10 @@ import { Marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
 import foldContainers from '../lib/fold-containers.cjs';
+import plotExtensions from '../lib/plots.cjs';
 import options from '../lib/math-options.cjs';
 
-const markdown = new Marked({ gfm: true, breaks: true }, markedKatex(options), foldContainers());
+const markdown = new Marked({ gfm: true, breaks: true }, markedKatex(options), foldContainers(), plotExtensions());
 const escape = (text) => String(text).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[c]);
@@ -39,7 +40,7 @@ window.MinxiPreview = {
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src https: data:;">
       <base href="${escape(location.origin)}/">
-      <link rel="stylesheet" href="/css/main.css?v=fold-preview-2">
+      <link rel="stylesheet" href="/css/main.css?v=nav-3">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
       <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:28px;line-height:1.4;margin:0 0 12px}.article-content{min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>文章预览</title></head><body>

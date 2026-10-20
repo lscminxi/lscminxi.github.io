@@ -1219,6 +1219,14 @@
     event.target.value = "";
   });
 
+  $("#insert-plot").addEventListener("click", () => {
+    insertAtCursor(el.f.body, "\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red ; label=抛物线\npoints: (1, 0) ; color=blue ; label=顶点\nx: -3, 5\n```\n\n");
+  });
+
+  $("#insert-graph").addEventListener("click", () => {
+    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步\nedge: B -> C\nedge: C -- A\n```\n\n");
+  });
+
   function showEditor() {
     previewNeedsReset = true;
     el.viewApp.hidden = true;
