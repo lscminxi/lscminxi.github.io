@@ -1239,7 +1239,6 @@
             xMin: figure.dataset.viewXMin, xMax: figure.dataset.viewXMax,
             yMin: figure.dataset.viewYMin, yMax: figure.dataset.viewYMax,
             coords: figure.dataset.viewCoords, intersections: figure.dataset.viewIntersections,
-            equations: figure.dataset.viewEquations,
           }));
           previewGraphViews = [...doc.querySelectorAll('.md-graph svg')]
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
@@ -1282,7 +1281,7 @@
   });
 
   $("#insert-plot").addEventListener("click", () => {
-    insertAtCursor(el.f.body, "\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red ; label=抛物线\nf: -x + 3 ; color=green ; label=直线\npoints: (1, 0), (3, 2) ; connect=true ; color=blue ; label=数据点\nx: -3, 5\ncoords: on\nintersections: on\nequations: on\n```\n\n");
+    insertAtCursor(el.f.body, "\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red\nf: -x + 3 ; color=green\npoints: (1, 0), (3, 2) ; connect=true ; color=blue\nx: -3, 5\ncoords: on\nintersections: on\n```\n\n");
   });
 
   $("#insert-graph").addEventListener("click", () => {

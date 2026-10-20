@@ -33,10 +33,8 @@ function initPlot(figure) {
     y: savedRange(figure.dataset.viewYMin, figure.dataset.viewYMax, initial.yRange),
     coords: figure.dataset.viewCoords === undefined ? spec.coords : figure.dataset.viewCoords === 'true',
     intersections: figure.dataset.viewIntersections === undefined ? spec.intersections : figure.dataset.viewIntersections === 'true',
-    equations: figure.dataset.viewEquations === undefined ? spec.equations : figure.dataset.viewEquations === 'true',
   };
   const readout = figure.querySelector('.plot-readout');
-  const equationsBox = figure.querySelector('.plot-equations');
   // 跟随鼠标的坐标显示框（悬浮小卡片），与底部读数框显示同一份信息。
   const tooltip = figure.ownerDocument.createElement('div');
   tooltip.className = 'plot-tooltip';
@@ -74,10 +72,8 @@ function initPlot(figure) {
     figure.querySelectorAll('[data-plot-toggle]').forEach((button) => {
       button.setAttribute('aria-pressed', String(Boolean(state[button.dataset.plotToggle])));
     });
-    if (equationsBox) equationsBox.hidden = !state.equations;
     figure.dataset.viewCoords = String(state.coords);
     figure.dataset.viewIntersections = String(state.intersections);
-    figure.dataset.viewEquations = String(state.equations);
   };
   // 选中的点用「类型:坐标」标识，重绘后按同一坐标找回，选中态不丢、坐标不变。
   // 未选中任何点时不显示任何坐标（悬停也只加粗直线/放大圆点）。
@@ -89,8 +85,8 @@ function initPlot(figure) {
     if (!readout) return;
     if (!selectedPointInfo) { readout.textContent = defaultReadout; return; }
     readout.textContent = state.coords
-      ? `${selectedPointInfo.label}：(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`
-      : `已选中${selectedPointInfo.label}`;
+      ? `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`
+      : `已选中${selectedPointInfo.kind === 'intersection' ? '交点' : '点'}`;
   };
   const draw = () => {
     figure.dataset.viewXMin = String(state.x[0]);
@@ -190,8 +186,7 @@ function initPlot(figure) {
         selectedPointKey = null;
       }
       if (key === 'coords') hideTooltip();
-      if (key === 'equations') syncToggles();
-      else draw();
+      draw();
       updateSelectedReadout();
     });
   });
@@ -268,15 +263,11 @@ function initPlot(figure) {
         clearLineHover();
         hideTooltip();
         if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
-      } else if (kind === 'function') {
+      } else if (kind === 'function' || kind === 'segment') {
         clearLineHover();
         target.classList.add('is-hovered');
-        const item = spec.functions[Number(target.dataset.functionIndex)];
-        showDisplay(event, item?.label || '函数', target.dataset.equation || '');
-      } else if (kind === 'segment') {
-        clearLineHover();
-        target.classList.add('is-hovered');
-        showDisplay(event, '线段', target.dataset.equation || '');
+        hideTooltip();
+        if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
       }
       return;
     }
@@ -296,7 +287,8 @@ function initPlot(figure) {
     if (nearest && nearest.distance <= 16) {
       const curve = stage.querySelectorAll('.plot-curve')[nearest.index];
       curve?.classList.add('is-hovered');
-      showDisplay(event, spec.functions[nearest.index].label || `曲线 ${nearest.index + 1}`, `y = ${spec.functions[nearest.index].expr}`);
+      hideTooltip();
+      if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
     } else {
       hideTooltip();
       if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
@@ -314,12 +306,12 @@ function initPlot(figure) {
         kind: target.dataset.kind,
         x: target.dataset.x,
         y: target.dataset.y,
-        label: target.dataset.label || '点',
+        label: target.dataset.kind === 'intersection' ? '交点' : '点',
       };
       selectedPointKey = pointKey(target);
       clearLineHover();
       draw();
-      if (state.coords) showDisplay(event, selectedPointInfo.label, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
+      if (state.coords) showDisplay(event, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
       else { hideTooltip(); updateSelectedReadout(); }
     } else {
       selectedPointInfo = null;

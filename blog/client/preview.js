@@ -37,7 +37,7 @@ window.MinxiPreview = {
       fold.dataset.previewFoldKey = key;
       if (opened.has(key)) fold.open = true;
     });
-    // 把上次预览里每张函数图的视图（范围 + 坐标/交点/方程开关）写回去，
+    // 把上次预览里每张函数图的视图（范围 + 坐标/交点开关）写回去，
     // 使实时重渲染后平移/缩放状态不丢失；第几张图对第几个视图，按出现顺序。
     fragment.querySelectorAll('.md-plot').forEach((figure, index) => {
       const view = plotViews[index];
@@ -46,7 +46,6 @@ window.MinxiPreview = {
       set('data-view-x-min', view.xMin); set('data-view-x-max', view.xMax);
       set('data-view-y-min', view.yMin); set('data-view-y-max', view.yMax);
       set('data-view-coords', view.coords); set('data-view-intersections', view.intersections);
-      set('data-view-equations', view.equations);
     });
     fragment.querySelectorAll('.md-graph > svg, .md-graph svg').forEach((svg, index) => {
       if (graphViews[index]) svg.setAttribute('data-preview-viewbox', graphViews[index]);

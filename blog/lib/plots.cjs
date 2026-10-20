@@ -9,7 +9,7 @@
  * 语法（每行一条指令，# 或 // 开头为注释，写错的行会被忽略，不会让构建失败）：
  *
  * ```plot
- * f: x^2 - 2x + 1 ; color=red ; label=抛物线
+ * f: x^2 - 2x + 1 ; color=red
  * f: sin(x) ; color=#0f7a6a
  * points: (0,1), (1,0), (2,1) ; connect=true ; color=blue
  * x: -5, 5
@@ -221,7 +221,7 @@ const PLOT_PAD = { left: 50, right: 16, top: 16, bottom: 38 };
 function parsePlotSpec(source) {
   const spec = {
     functions: [], pointSets: [], xRange: [-10, 10], yRange: null,
-    grid: true, coords: true, intersections: true, equations: true, interactive: true, title: '',
+    grid: true, coords: true, intersections: true, interactive: true, title: '',
   };
   for (const rawLine of String(source).split('\n')) {
     const line = rawLine.trim();
@@ -231,7 +231,7 @@ function parsePlotSpec(source) {
     if ((match = /^grid\s*[:：]\s*(.+)$/i.exec(line))) { spec.grid = truthy(match[1], true); continue; }
     if ((match = /^(?:coords?|coordinates|坐标)\s*[:：]\s*(.+)$/i.exec(line))) { spec.coords = truthy(match[1], true); continue; }
     if ((match = /^(?:intersections?|交点)\s*[:：]\s*(.+)$/i.exec(line))) { spec.intersections = truthy(match[1], true); continue; }
-    if ((match = /^(?:equations?|方程)\s*[:：]\s*(.+)$/i.exec(line))) { spec.equations = truthy(match[1], true); continue; }
+    if (/^(?:equations?|方程)\s*[:：]/i.test(line)) continue; // 兼容旧写法：方程已不在图中显示
     if ((match = /^(?:interactive|交互)\s*[:：]\s*(.+)$/i.exec(line))) { spec.interactive = truthy(match[1], true); continue; }
     if ((match = /^[xX]\s*[:：]\s*(.+)$/.exec(line))) { spec.xRange = finitePair(match[1]) || spec.xRange; continue; }
     if ((match = /^[yY]\s*[:：]\s*(.+)$/.exec(line))) { spec.yRange = finitePair(match[1]) || spec.yRange; continue; }
@@ -244,7 +244,7 @@ function parsePlotSpec(source) {
           connect: truthy(options.connect ?? options.line, false),
           color: parseColor(options.color) || '',
           size: clamp(options.size, 2, 9, 5),
-          label: labelText(options.label || ''),
+          label: '',
         });
       }
       continue;
@@ -257,7 +257,7 @@ function parsePlotSpec(source) {
           points, connect: true,
           color: parseColor(options.color) || '',
           size: clamp(options.size, 0, 9, 0),
-          label: labelText(options.label || ''),
+          label: '',
         });
       }
       continue;
@@ -269,7 +269,7 @@ function parsePlotSpec(source) {
           fn: compileExpression(expr),
           expr,
           color: parseColor(options.color) || '',
-          label: labelText(options.label || ''),
+          label: '',
           width: clamp(options.width, 1, 6, 2.5),
           dash: truthy(options.dash, false),
         });
@@ -305,17 +305,6 @@ function formatNumber(value, digits = 4) {
 
 const coordinateText = (x, y) => `(${formatNumber(x)}, ${formatNumber(y)})`;
 
-function lineEquation([x1, y1], [x2, y2]) {
-  if (![x1, y1, x2, y2].every(Number.isFinite) || (x1 === x2 && y1 === y2)) return '';
-  if (Math.abs(x2 - x1) < 1e-12) return `x = ${formatNumber(x1)}`;
-  const slope = (y2 - y1) / (x2 - x1);
-  const intercept = y1 - slope * x1;
-  if (Math.abs(slope) < 1e-12) return `y = ${formatNumber(y1)}`;
-  const slopeText = Math.abs(slope - 1) < 1e-12 ? 'x' : Math.abs(slope + 1) < 1e-12 ? '-x' : `${formatNumber(slope)}x`;
-  if (Math.abs(intercept) < 1e-12) return `y = ${slopeText}`;
-  return `y = ${slopeText} ${intercept > 0 ? '+' : '-'} ${formatNumber(Math.abs(intercept))}`;
-}
-
 function getPlotSegments(spec) {
   const segments = [];
   spec.pointSets.forEach((set, setIndex) => {
@@ -328,18 +317,6 @@ function getPlotSegments(spec) {
     }
   });
   return segments;
-}
-
-function getPlotEquations(spec) {
-  const equations = [];
-  spec.functions.forEach((item, index) => {
-    equations.push({ type: 'function', index, color: item.color, label: item.label || '', text: `y = ${item.expr}` });
-  });
-  for (const segment of getPlotSegments(spec)) {
-    const text = lineEquation(segment.from, segment.to);
-    if (text) equations.push({ type: 'segment', ...segment, text });
-  }
-  return equations;
 }
 
 function resolvePlotRanges(spec) {
@@ -619,13 +596,12 @@ function renderPlotSvgInner(spec, options = {}) {
   out.push(`<text class="plot-tick" style="fill:var(--plot-text,#c3cedd)" font-size="10" x="${fmt(PLOT_PAD.left - 6)}" y="${fmt(PLOT_PAD.top - 4)}" text-anchor="end">y</text>`);
   out.push(`<rect class="plot-frame" style="fill:none;stroke:var(--plot-grid,#66758c);opacity:.95" stroke-width="1.2" x="${PLOT_PAD.left}" y="${PLOT_PAD.top}" width="${plotW}" height="${plotH}"/>`);
 
-  // 连点线段（按线段分开，方便显示每段方程与交互命中）
+  // 连点线段（按线段分开，方便交互命中）
   for (const segment of getPlotSegments(spec)) {
     const clipped = clipSegmentToRange(segment, [xMin, xMax], [yMin, yMax]);
     if (!clipped) continue;
     const [[cx1, cy1], [cx2, cy2]] = clipped;
-    const equation = lineEquation(segment.from, segment.to);
-    out.push(`<path class="plot-segment" data-kind="segment" data-x1="${segment.from[0]}" data-y1="${segment.from[1]}" data-x2="${segment.to[0]}" data-y2="${segment.to[1]}" data-equation="${escape(equation)}" d="M${fmt(px(cx1))} ${fmt(py(cy1))}L${fmt(px(cx2))} ${fmt(py(cy2))}" fill="none" stroke="${segment.color}" stroke-width="2"><title>${escape(equation || '线段')}</title></path>`);
+    out.push(`<path class="plot-segment" data-kind="segment" data-x1="${segment.from[0]}" data-y1="${segment.from[1]}" data-x2="${segment.to[0]}" data-y2="${segment.to[1]}" d="M${fmt(px(cx1))} ${fmt(py(cy1))}L${fmt(px(cx2))} ${fmt(py(cy2))}" fill="none" stroke="${segment.color}" stroke-width="2"><title>线段</title></path>`);
   }
 
   // 函数曲线：不连续处断开
@@ -641,17 +617,11 @@ function renderPlotSvgInner(spec, options = {}) {
       prev = [sx, sy];
     }
     if (path) {
-      out.push(`<path class="plot-curve" data-kind="function" data-function-index="${index}" data-equation="${escape(`y = ${item.expr}`)}" d="${path}" fill="none" stroke="${item.color}" stroke-width="${item.width}"${item.dash ? ' stroke-dasharray="7 5"' : ''}><title>${escape(`y = ${item.expr}`)}</title></path>`);
-    }
-    if (item.label) {
-      const probe = values[Math.floor(SAMPLES * 0.75)];
-      const anchor = Number.isFinite(probe?.[1]) && probe[1] >= yMin && probe[1] <= yMax ? probe : values.find(([, y]) => Number.isFinite(y) && y >= yMin && y <= yMax);
-      if (anchor) out.push(`<text class="plot-label" font-size="12" font-weight="600" x="${fmt(px(anchor[0]) + 6)}" y="${fmt(py(anchor[1]) - 6)}" fill="${item.color}">${escape(item.label)}</text>`);
+      out.push(`<path class="plot-curve" data-kind="function" data-function-index="${index}" d="${path}" fill="none" stroke="${item.color}" stroke-width="${item.width}"${item.dash ? ' stroke-dasharray="7 5"' : ''}><title>函数曲线</title></path>`);
     }
   });
 
-  // 明确给出的点与坐标
-  const totalPoints = spec.pointSets.reduce((sum, set) => sum + set.points.length, 0);
+  // 明确给出的点与坐标（图内不显示点的名称）
   for (const set of spec.pointSets) {
     for (const [x, y] of set.points) {
       if (x < xMin || x > xMax || y < yMin || y > yMax) continue;
@@ -659,11 +629,7 @@ function renderPlotSvgInner(spec, options = {}) {
       const coord = showCoords && isSelected('point', x, y)
         ? coordTag(sx, sy, coordinateText(x, y), 'plot-coord', set.color)
         : '';
-      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(set.label || '点')}</title><circle class="plot-dot plot-point-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
-    }
-    if (set.label) {
-      const first = set.points.find(([x, y]) => x >= xMin && x <= xMax && y >= yMin && y <= yMax);
-      if (first) out.push(`<text class="plot-label" font-size="12" font-weight="600" x="${fmt(px(first[0]) + 8)}" y="${fmt(py(first[1]) - 12)}" fill="${set.color}">${escape(set.label)}</text>`);
+      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="点"><title>点</title><circle class="plot-dot plot-point-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
     }
   }
 
@@ -678,7 +644,7 @@ function renderPlotSvgInner(spec, options = {}) {
       const coordLabel = showCoords && isSelected('intersection', point.x, point.y)
         ? coordTag(sx, sy, coordinateText(point.x, point.y), 'plot-intersection-label', 'var(--plot-text,#c3cedd)')
         : '';
-      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(point.label)}</title><circle class="plot-intersection-hit" cx="${fmt(sx)}" cy="${fmt(sy)}" r="11" fill="transparent"/><circle class="plot-dot plot-intersection-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="5" style="fill:var(--plot-marker,#ffd43b);stroke:var(--panel,#11151d)" stroke-width="1.6"/>${coordLabel}</g>`);
+      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="交点"><title>交点</title><circle class="plot-intersection-hit" cx="${fmt(sx)}" cy="${fmt(sy)}" r="11" fill="transparent"/><circle class="plot-dot plot-intersection-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="5" style="fill:var(--plot-marker,#ffd43b);stroke:var(--panel,#11151d)" stroke-width="1.6"/>${coordLabel}</g>`);
     }
   }
 
@@ -686,22 +652,11 @@ function renderPlotSvgInner(spec, options = {}) {
   return out.join('');
 }
 
-function renderPlotEquations(spec) {
-  const equations = getPlotEquations(spec);
-  if (!equations.length) return '';
-  const items = equations.map((item) => {
-    const name = item.label ? `${escape(item.label)}：` : '';
-    const range = item.type === 'segment' ? ` <span class="plot-equation-range">${coordinateText(item.from[0], item.from[1])} → ${coordinateText(item.to[0], item.to[1])}</span>` : '';
-    return `<li><span class="plot-equation-swatch" style="background:${item.color}"></span><span>${name}${escape(item.text)}${range}</span></li>`;
-  }).join('');
-  return `<div class="plot-equations"${spec.equations ? '' : ' hidden'}><h3>方程</h3><ul>${items}</ul></div>`;
-}
-
 function renderPlotSvg(spec, options = {}) {
   const svg = renderPlotSvgInner(spec, options);
   const caption = spec.title ? `<figcaption>${escape(spec.title)}</figcaption>` : '';
   const pressed = (value) => value ? 'true' : 'false';
-  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button><button type="button" data-plot-toggle="equations" aria-pressed="${pressed(spec.equations)}">方程</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；点击点或交点查看坐标；悬停直线会微微加粗。</p>${renderPlotEquations(spec)}${caption}</figure>\n`;
+  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；点击点或交点查看坐标；悬停直线会微微加粗。</p>${caption}</figure>\n`;
 }
 
 /* ---------------- 可视化图 ```graph ---------------- */
@@ -1101,9 +1056,7 @@ module.exports.renderPlotSvg = renderPlotSvg;
 module.exports.renderPlotSvgInner = renderPlotSvgInner;
 module.exports.resolvePlotRanges = resolvePlotRanges;
 module.exports.findPlotIntersections = findPlotIntersections;
-module.exports.getPlotEquations = getPlotEquations;
 module.exports.getPlotSegments = getPlotSegments;
-module.exports.lineEquation = lineEquation;
 module.exports.PLOT_GEOMETRY = { width: PLOT_W, height: PLOT_H, pad: PLOT_PAD };
 module.exports.convertPlotFences = convertPlotFences;
 module.exports.parseGraphSpec = parseGraphSpec;

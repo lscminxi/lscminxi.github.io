@@ -52,8 +52,10 @@ const PLOT_MD = [
   FENCE,
 ].join('\n');
 
-test('plot spec draws curves, connected points, colors and labels', () => {
-  const svg = plots.renderPlotSvg(plots.parsePlotSpec(PLOT_MD.split('\n').slice(1, -1).join('\n')));
+test('plot spec draws curves and connected points without in-figure names', () => {
+  const spec = plots.parsePlotSpec(PLOT_MD.split('\n').slice(1, -1).join('\n'));
+  const svg = plots.renderPlotSvg(spec);
+  const inner = plots.renderPlotSvgInner(spec, { xRange: [-3, 5], yRange: [-2, 10] });
   assert.match(svg, /<path class="plot-curve"[^>]*stroke="#e03131"/, '指定颜色（red）要生效');
   assert.ok(svg.includes('class="plot-frame"'), '绘图区要有可见边框');
   assert.ok((svg.match(/class="plot-grid"/g) || []).length >= 4, '网格线要画出来');
@@ -61,8 +63,8 @@ test('plot spec draws curves, connected points, colors and labels', () => {
   assert.equal((svg.match(/plot-point-dot/g) || []).length, 3, '三个散点');
   assert.ok(svg.includes('r="5"'), '函数描点默认半径加大到 5');
   assert.match(svg, /<path class="plot-segment"[^>]*stroke="#1971c2"/, 'points connect 要连成线');
-  assert.ok(svg.includes('抛物线'), '图例文字');
-  assert.ok(svg.includes('<figcaption>抛物线与正弦</figcaption>'));
+  assert.ok(!inner.includes('class="plot-label"') && !inner.includes('>抛物线</text>'), '图内不显示曲线或点的名称');
+  assert.ok(svg.includes('<figcaption>抛物线与正弦</figcaption>'), '图题仍保留');
 });
 
 test('discontinuous functions break the path instead of drawing across the gap', () => {
@@ -194,7 +196,7 @@ test('editor offers one-click plot/graph templates', async () => {
 
 /* ---------------- 坐标 / 交点 / 方程 / 网格对比度 ---------------- */
 
-test('plot shows point coordinates, intersections and function/segment equations', () => {
+test('plot shows selected point coordinates and intersections without equations or names', () => {
   const spec = plots.parsePlotSpec('f: x\nf: -x + 2\npoints: (0,0), (2,2) ; connect=true\nx: -3, 5\ny: -3, 5');
   const intersections = plots.findPlotIntersections(spec, [-3, 5], [-3, 5]);
   assert.ok(intersections.some((point) => Math.abs(point.x - 1) < 1e-6 && Math.abs(point.y - 1) < 1e-6), '两条直线交于 (1, 1)');
@@ -206,17 +208,18 @@ test('plot shows point coordinates, intersections and function/segment equations
   assert.ok(selectedPoint.includes('class="plot-coord"') && selectedPoint.includes('class="plot-coord-box"') && selectedPoint.includes('(2, 2)'), '只有选中的描点显示圆角坐标框');
   const selectedIntersection = plots.renderPlotSvgInner(spec, { xRange: [-3, 5], yRange: [-3, 5], selectedPointKey: 'intersection:1:1' });
   assert.ok(selectedIntersection.includes('(1, 1)'), '只有选中的交点显示坐标');
-  assert.ok(svg.includes('class="plot-equations"') && svg.includes('y = -x + 2'), '显示函数方程');
-  assert.equal(plots.lineEquation([0, 1], [2, 5]), 'y = 2x + 1');
-  assert.equal(plots.lineEquation([0, 2], [3, 2]), 'y = 2', '水平线方程');
-  assert.equal(plots.lineEquation([1, 0], [1, 3]), 'x = 1', '竖直线方程');
+  assert.ok(!svg.includes('class="plot-equations"') && !svg.includes('data-plot-toggle="equations"'), '函数图不显示方程区和方程开关');
+  const labeled = plots.parsePlotSpec('f: -x + 2 ; label=曲线名\npoints: (2,2) ; label=点名\nx: -3, 5\ny: -3, 5');
+  const labeledInner = plots.renderPlotSvgInner(labeled, { xRange: [-3, 5], yRange: [-3, 5], selectedPointKey: 'point:2:2' });
+  assert.ok(!labeledInner.includes('class="plot-label"') && !labeledInner.includes('曲线名') && !labeledInner.includes('点名'), '图内不显示曲线和点的名称');
+  assert.ok(!labeledInner.includes('data-equation') && !labeledInner.includes('y = -x + 2'), '图内不附带方程文字');
 });
 
-test('plot display switches can hide coordinates, intersections and equations', () => {
+test('plot display switches can hide coordinates and intersections', () => {
   const svg = plots.renderPlotSvg(plots.parsePlotSpec('f: x\npoints: (1,1)\ncoords: off\nintersections: off\nequations: off'));
   assert.ok(!svg.includes('class="plot-coord"'), '关闭坐标后不显示点坐标');
   assert.ok(!svg.includes('class="plot-intersection"'), '关闭交点后不画交点');
-  assert.match(svg, /<div class="plot-equations" hidden>/, '关闭方程后隐藏方程区');
+  assert.ok(!svg.includes('data-plot-toggle="equations"'), '旧 equations 写法被忽略且不生成方程开关');
 });
 
 test('plot grid uses dedicated high-contrast theme variables in both modes', async () => {
@@ -289,12 +292,12 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     figure.querySelector('[data-plot-toggle="coords"]').click();
     await waitFrame();
 
-    // 悬停到直线上：只微微加粗并显示方程，不显示当前点坐标。
+    // 悬停到直线上：只微微加粗，不显示方程、名称或当前点坐标。
     const curve = stage.querySelector('.plot-curve');
     pointer(page, curve, 'pointermove', 340, 210);
     assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), true, '悬停直线时对应直线高亮');
-    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '悬停直线时显示方程框');
-    assert.ok(!figure.querySelector('.plot-tooltip').textContent.includes('(0, 0)'), '悬停直线不显示当前坐标');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停直线不显示方程框');
+    assert.ok(!figure.querySelector('.plot-readout').textContent.includes('y = x'), '读数不显示方程');
     assert.ok(!figure.querySelector('.plot-readout').textContent.includes('(0, 0)'), '读数也不显示悬停坐标');
 
     // 第一次 click 是拖动结束的那次（应被吞掉），第二次才真正选中。
@@ -423,7 +426,6 @@ test('editor preview gets the same plot interactions via parent enhancement (ifr
       xMin: item.dataset.viewXMin, xMax: item.dataset.viewXMax,
       yMin: item.dataset.viewYMin, yMax: item.dataset.viewYMax,
       coords: item.dataset.viewCoords, intersections: item.dataset.viewIntersections,
-      equations: item.dataset.viewEquations,
     }));
     const page2 = new JSDOM(dom.window.MinxiPreview.document({ body: md, plotViews: views }), {
       url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true,
@@ -511,6 +513,7 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.plot-curve.is-hovered'), '函数曲线悬停加粗');
   assert.ok(css.includes('.graph-edge-group:hover .graph-edge-line'), '图边悬停加粗');
   assert.ok(css.includes('.graph-node-ring'), '图顶点外圈样式');
+  assert.ok(!css.includes('.plot-equations') && !css.includes('.plot-label'), '函数图方程区与图内名称样式已删除');
   assert.ok(css.includes('.graph-edge-group.is-algo-active .graph-edge-line'), '图算法边高亮样式');
   assert.ok(css.includes('.graph-node-group.is-cut-vertex .graph-node-ring'), '割点外圈样式');
 });
