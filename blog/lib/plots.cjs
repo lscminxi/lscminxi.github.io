@@ -571,6 +571,8 @@ function renderPlotSvgInner(spec, options = {}) {
   const [yMin, yMax] = options.yRange || initialRanges.yRange;
   const showCoords = options.showCoords ?? spec.coords;
   const showIntersections = options.showIntersections ?? spec.intersections;
+  const selectedPointKey = options.selectedPointKey || '';
+  const isSelected = (kind, x, y) => selectedPointKey === `${kind}:${x}:${y}`;
   const plotW = PLOT_W - PLOT_PAD.left - PLOT_PAD.right;
   const plotH = PLOT_H - PLOT_PAD.top - PLOT_PAD.bottom;
   const SAMPLES = 260;
@@ -654,10 +656,10 @@ function renderPlotSvgInner(spec, options = {}) {
     for (const [x, y] of set.points) {
       if (x < xMin || x > xMax || y < yMin || y > yMax) continue;
       const sx = px(x); const sy = py(y);
-      const coord = showCoords && totalPoints <= 30
+      const coord = showCoords && isSelected('point', x, y)
         ? coordTag(sx, sy, coordinateText(x, y), 'plot-coord', set.color)
         : '';
-      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(`点 ${coordinateText(x, y)}`)}</title><circle class="plot-dot plot-point-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
+      out.push(`<g class="plot-point" data-kind="point" data-x="${x}" data-y="${y}" data-label="${escape(set.label || '点')}"><title>${escape(set.label || '点')}</title><circle class="plot-dot plot-point-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="${Math.max(set.size, 2)}" fill="${set.color}"/>${coord}</g>`);
     }
     if (set.label) {
       const first = set.points.find(([x, y]) => x >= xMin && x <= xMax && y >= yMin && y <= yMax);
@@ -673,10 +675,10 @@ function renderPlotSvgInner(spec, options = {}) {
       .filter((point) => point.x >= xMin && point.x <= xMax && point.y >= yMin && point.y <= yMax);
     for (const point of intersections) {
       const sx = px(point.x); const sy = py(point.y);
-      const coordLabel = intersections.length <= 20
+      const coordLabel = showCoords && isSelected('intersection', point.x, point.y)
         ? coordTag(sx, sy, coordinateText(point.x, point.y), 'plot-intersection-label', 'var(--plot-text,#c3cedd)')
         : '';
-      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(`${point.label} ${coordinateText(point.x, point.y)}`)}</title><circle class="plot-dot plot-intersection-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="5" style="fill:var(--plot-marker,#ffd43b);stroke:var(--panel,#11151d)" stroke-width="1.6"/>${coordLabel}</g>`);
+      out.push(`<g class="plot-intersection" data-kind="intersection" data-x="${point.x}" data-y="${point.y}" data-label="${escape(point.label)}"><title>${escape(point.label)}</title><circle class="plot-intersection-hit" cx="${fmt(sx)}" cy="${fmt(sy)}" r="11" fill="transparent"/><circle class="plot-dot plot-intersection-dot" cx="${fmt(sx)}" cy="${fmt(sy)}" r="5" style="fill:var(--plot-marker,#ffd43b);stroke:var(--panel,#11151d)" stroke-width="1.6"/>${coordLabel}</g>`);
     }
   }
 
@@ -699,7 +701,7 @@ function renderPlotSvg(spec, options = {}) {
   const svg = renderPlotSvgInner(spec, options);
   const caption = spec.title ? `<figcaption>${escape(spec.title)}</figcaption>` : '';
   const pressed = (value) => value ? 'true' : 'false';
-  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button><button type="button" data-plot-toggle="equations" aria-pressed="${pressed(spec.equations)}">方程</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；把指针移到点、交点或曲线上可查看坐标与方程。</p>${renderPlotEquations(spec)}${caption}</figure>\n`;
+  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button><button type="button" data-plot-toggle="equations" aria-pressed="${pressed(spec.equations)}">方程</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；点击点或交点查看坐标；悬停直线会微微加粗。</p>${renderPlotEquations(spec)}${caption}</figure>\n`;
 }
 
 /* ---------------- 可视化图 ```graph ---------------- */

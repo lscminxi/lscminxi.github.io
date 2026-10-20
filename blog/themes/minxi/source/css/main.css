@@ -2144,6 +2144,12 @@ body.search-open {
 /* 坐标标签框 */
 .article-content .plot-coord-box { fill: var(--panel-raised); stroke: var(--line); opacity: 0.96; }
 .article-content .plot-coord-tag text { paint-order: stroke; stroke: var(--panel); stroke-width: 2px; }
+/* 交点不直接显现：只有一个透明命中区，悬停或选中时才出现圆点；
+   选中交点只突出圆点本身，不给下面的直线加高亮。 */
+.article-content .plot-intersection-hit { pointer-events: all; }
+.article-content .plot-intersection-dot { opacity: 0; }
+.article-content .plot-intersection:hover .plot-intersection-dot,
+.article-content .plot-intersection.is-selected .plot-intersection-dot { opacity: 1; }
 /* 鼠标落在线上：对应直线微微加粗 */
 .article-content .plot-curve,
 .article-content .plot-segment,
@@ -2171,7 +2177,7 @@ body.search-open {
 .article-content .graph-node {
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 0.16s ease;
+  transition: transform 0.16s ease, opacity 0.16s ease;
 }
 .article-content .plot-point:hover .plot-dot,
 .article-content .plot-point.is-selected .plot-dot,

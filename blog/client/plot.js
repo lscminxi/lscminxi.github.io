@@ -80,8 +80,18 @@ function initPlot(figure) {
     figure.dataset.viewEquations = String(state.equations);
   };
   // 选中的点用「类型:坐标」标识，重绘后按同一坐标找回，选中态不丢、坐标不变。
+  // 未选中任何点时不显示任何坐标（悬停也只加粗直线/放大圆点）。
+  const defaultReadout = '拖动平移、滚轮缩放；点击点或交点查看固定坐标，悬停直线会微微加粗。';
   let selectedPointKey = null;
+  let selectedPointInfo = null;
   const pointKey = (el) => `${el.dataset.kind}:${el.dataset.x}:${el.dataset.y}`;
+  const updateSelectedReadout = () => {
+    if (!readout) return;
+    if (!selectedPointInfo) { readout.textContent = defaultReadout; return; }
+    readout.textContent = state.coords
+      ? `${selectedPointInfo.label}：(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`
+      : `已选中${selectedPointInfo.label}`;
+  };
   const draw = () => {
     figure.dataset.viewXMin = String(state.x[0]);
     figure.dataset.viewXMax = String(state.x[1]);
@@ -92,6 +102,7 @@ function initPlot(figure) {
       yRange: state.y,
       showCoords: state.coords,
       showIntersections: state.intersections,
+      selectedPointKey,
     });
     if (selectedPointKey) {
       stage.querySelectorAll('[data-kind="point"], [data-kind="intersection"]').forEach((el) => {
@@ -165,7 +176,8 @@ function initPlot(figure) {
         state.x = [...initial.xRange];
         state.y = [...initial.yRange];
         draw();
-        if (readout) readout.textContent = '已重置视图。拖动平移，滚轮或双指缩放。';
+        if (selectedPointInfo) updateSelectedReadout();
+        else if (readout) readout.textContent = '已重置视图。拖动平移，滚轮或双指缩放。';
       }
     });
   });
@@ -173,8 +185,14 @@ function initPlot(figure) {
     button.addEventListener('click', () => {
       const key = button.dataset.plotToggle;
       state[key] = !state[key];
+      if (key === 'intersections' && !state.intersections && selectedPointInfo?.kind === 'intersection') {
+        selectedPointInfo = null;
+        selectedPointKey = null;
+      }
+      if (key === 'coords') hideTooltip();
       if (key === 'equations') syncToggles();
       else draw();
+      updateSelectedReadout();
     });
   });
 
@@ -245,21 +263,24 @@ function initPlot(figure) {
     const target = event.target?.closest?.('[data-kind]');
     if (target && stage.contains(target)) {
       const kind = target.dataset.kind;
-      if (kind === 'point') { clearLineHover(); showDisplay(event, target.dataset.label || '点', `(${number(target.dataset.x)}, ${number(target.dataset.y)})`); }
-      else if (kind === 'intersection') { clearLineHover(); showDisplay(event, target.dataset.label || '交点', `(${number(target.dataset.x)}, ${number(target.dataset.y)})`); }
-      else if (kind === 'function') {
+      if (kind === 'point' || kind === 'intersection') {
+        // 只让圆点自己突出，坐标等点击选中后再显示；也不给下面的直线加高亮。
+        clearLineHover();
+        hideTooltip();
+        if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
+      } else if (kind === 'function') {
         clearLineHover();
         target.classList.add('is-hovered');
         const item = spec.functions[Number(target.dataset.functionIndex)];
-        showDisplay(event, item?.label || target.dataset.equation || '函数', `(${number(data.x)}, ${number(item?.fn(data.x))}) · ${target.dataset.equation || ''}`);
+        showDisplay(event, item?.label || '函数', target.dataset.equation || '');
       } else if (kind === 'segment') {
         clearLineHover();
         target.classList.add('is-hovered');
-        showDisplay(event, '线段', `${target.dataset.equation || ''} · (${number(target.dataset.x1)}, ${number(target.dataset.y1)}) → (${number(target.dataset.x2)}, ${number(target.dataset.y2)})`);
+        showDisplay(event, '线段', target.dataset.equation || '');
       }
       return;
     }
-    if (!data.inside) { hideTooltip(); clearLineHover(); return; }
+    if (!data.inside) { hideTooltip(); clearLineHover(); if (!selectedPointInfo && readout) readout.textContent = defaultReadout; return; }
     let nearest = null;
     const frame = frameBox();
     spec.functions.forEach((item, index) => {
@@ -275,9 +296,10 @@ function initPlot(figure) {
     if (nearest && nearest.distance <= 16) {
       const curve = stage.querySelectorAll('.plot-curve')[nearest.index];
       curve?.classList.add('is-hovered');
-      showDisplay(event, spec.functions[nearest.index].label || `曲线 ${nearest.index + 1}`, `(${number(data.x)}, ${number(nearest.y)}) · y = ${spec.functions[nearest.index].expr}`);
+      showDisplay(event, spec.functions[nearest.index].label || `曲线 ${nearest.index + 1}`, `y = ${spec.functions[nearest.index].expr}`);
     } else {
-      showDisplay(event, '当前坐标', `(${number(data.x)}, ${number(data.y)})`);
+      hideTooltip();
+      if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
     }
   });
   stage.addEventListener('pointerleave', () => { hideTooltip(); clearLineHover(); });
@@ -287,13 +309,24 @@ function initPlot(figure) {
   stage.addEventListener('click', (event) => {
     if (moved) { moved = false; return; }
     const target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
-    stage.querySelectorAll('.is-selected').forEach((el) => el.classList.remove('is-selected'));
     if (target && stage.contains(target)) {
-      target.classList.add('is-selected');
+      selectedPointInfo = {
+        kind: target.dataset.kind,
+        x: target.dataset.x,
+        y: target.dataset.y,
+        label: target.dataset.label || '点',
+      };
       selectedPointKey = pointKey(target);
-      showDisplay(event, target.dataset.label || '点', `(${number(target.dataset.x)}, ${number(target.dataset.y)})`);
+      clearLineHover();
+      draw();
+      if (state.coords) showDisplay(event, selectedPointInfo.label, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
+      else { hideTooltip(); updateSelectedReadout(); }
     } else {
+      selectedPointInfo = null;
       selectedPointKey = null;
+      draw();
+      hideTooltip();
+      updateSelectedReadout();
     }
   });
 
@@ -334,6 +367,7 @@ function initPlot(figure) {
   });
 
   draw();
+  updateSelectedReadout();
 }
 
 /* ---------------- 可视化图：拖动平移 / 缩放 / 点坐标读数 ---------------- */

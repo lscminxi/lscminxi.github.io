@@ -170,9 +170,12 @@ test('plot shows point coordinates, intersections and function/segment equations
   assert.ok(intersections.some((point) => Math.abs(point.x - 1) < 1e-6 && Math.abs(point.y - 1) < 1e-6), '两条直线交于 (1, 1)');
   assert.ok(intersections.some((point) => Math.abs(point.x) < 1e-6 && Math.abs(point.y) < 1e-6), '包含与坐标轴的交点');
   const svg = plots.renderPlotSvg(spec);
-  assert.ok(svg.includes('class="plot-coord"') && svg.includes('(2, 2)'), '明确给出的点显示坐标');
-  assert.ok(svg.includes('class="plot-coord-box"'), '坐标文字带圆角显示框');
-  assert.ok(svg.includes('class="plot-intersection"') && svg.includes('(1, 1)'), '交点有标记和坐标');
+  assert.ok(!svg.includes('class="plot-coord"'), '未选中时描点和交点都不显示坐标标签');
+  assert.ok(svg.includes('class="plot-intersection-hit"'), '交点保留透明命中区，但不直接显现圆点');
+  const selectedPoint = plots.renderPlotSvgInner(spec, { xRange: [-3, 5], yRange: [-3, 5], selectedPointKey: 'point:2:2' });
+  assert.ok(selectedPoint.includes('class="plot-coord"') && selectedPoint.includes('class="plot-coord-box"') && selectedPoint.includes('(2, 2)'), '只有选中的描点显示圆角坐标框');
+  const selectedIntersection = plots.renderPlotSvgInner(spec, { xRange: [-3, 5], yRange: [-3, 5], selectedPointKey: 'intersection:1:1' });
+  assert.ok(selectedIntersection.includes('(1, 1)'), '只有选中的交点显示坐标');
   assert.ok(svg.includes('class="plot-equations"') && svg.includes('y = -x + 2'), '显示函数方程');
   assert.equal(plots.lineEquation([0, 1], [2, 5]), 'y = 2x + 1');
   assert.equal(plots.lineEquation([0, 2], [3, 2]), 'y = 2', '水平线方程');
@@ -226,6 +229,12 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     };
     assert.equal(figure.classList.contains('is-interactive'), true, '前台脚本接管图像');
     assert.equal(rangeWidth(), 10);
+    assert.equal(stage.querySelector('.plot-coord'), null, '没有选中点时不显示坐标');
+    assert.match(figure.querySelector('.plot-readout').textContent, /点击点或交点查看固定坐标/, '初始读数只给操作提示');
+    const initialDot = stage.querySelector('.plot-point');
+    pointer(page, initialDot, 'pointermove', 408, 148);
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停描点也不显示坐标');
+    assert.ok(!figure.querySelector('.plot-readout').textContent.includes('(1, 1)'), '悬停描点时读数不泄露坐标');
 
     figure.querySelector('[data-plot-action="zoom-in"]').click();
     await waitFrame();
@@ -247,21 +256,44 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     figure.querySelector('[data-plot-action="reset"]').click();
     await waitFrame();
     assert.equal(rangeWidth(), 10, '重置恢复初始范围');
+    figure.querySelector('[data-plot-toggle="coords"]').click();
+    await waitFrame();
 
-    // 悬停到直线上：对应曲线加粗并弹出坐标显示框。
+    // 悬停到直线上：只微微加粗并显示方程，不显示当前点坐标。
     const curve = stage.querySelector('.plot-curve');
     pointer(page, curve, 'pointermove', 340, 210);
     assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), true, '悬停直线时对应直线高亮');
-    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '悬停时坐标显示框可见');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '悬停直线时显示方程框');
+    assert.ok(!figure.querySelector('.plot-tooltip').textContent.includes('(0, 0)'), '悬停直线不显示当前坐标');
+    assert.ok(!figure.querySelector('.plot-readout').textContent.includes('(0, 0)'), '读数也不显示悬停坐标');
 
     // 第一次 click 是拖动结束的那次（应被吞掉），第二次才真正选中。
     const dot = stage.querySelector('.plot-point');
     pointer(page, dot, 'click', 100, 100);
     pointer(page, dot, 'click', 100, 100);
     assert.equal(stage.querySelector('.plot-point').classList.contains('is-selected'), true, '点击选中一个点');
+    assert.ok(stage.querySelector('.plot-coord')?.textContent.includes('(1, 1)'), '选中描点后才显示坐标');
     figure.querySelector('[data-plot-action="zoom-in"]').click();
     await waitFrame();
     assert.ok(stage.querySelector('.plot-point.is-selected'), '缩放重绘后仍按同一坐标保持选中');
+    assert.ok(stage.querySelector('.plot-coord')?.textContent.includes('(1, 1)'), '缩放后选中点坐标仍显示且不变');
+
+    // 点击空白取消选中，坐标立刻消失。
+    pointer(page, stage, 'click', 620, 380);
+    assert.equal(stage.querySelector('.plot-point.is-selected'), null, '点击空白取消选中');
+    assert.equal(stage.querySelector('.plot-coord'), null, '取消选中后不显示坐标');
+
+    // 交点默认只有命中区：悬停时不突出直线、不显示坐标；选中后只显示交点坐标。
+    const intersection = stage.querySelector('.plot-intersection');
+    pointer(page, intersection, 'pointermove', 340, 210);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), false, '悬停交点不突出直线');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停交点不显示坐标');
+    pointer(page, intersection, 'click', 340, 210);
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '点击选中交点');
+    assert.equal(stage.querySelector('.plot-curve.is-hovered'), null, '选中交点不突出关联直线');
+    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '选中交点后才显示它的坐标');
+    pointer(page, stage, 'click', 620, 380);
+    assert.equal(stage.querySelector('.plot-coord-tag'), null, '取消交点选中后坐标消失');
   } finally { page.window.close(); }
 });
 
@@ -400,6 +432,9 @@ test('points gently enlarge when selected (CSS)', async () => {
   assert.ok(css.includes('.plot-intersection.is-selected .plot-dot'), '交点选中态样式');
   assert.ok(css.includes('transform: scale(1.45)'), '选中微放大');
   assert.ok(css.includes('.graph-node-group.is-selected .graph-node'), '图顶点选中态样式');
+  assert.ok(css.includes('.plot-intersection-dot { opacity: 0; }'), '交点圆点默认隐藏');
+  assert.ok(css.includes('.plot-intersection:hover .plot-intersection-dot'), '悬停交点才显现圆点');
+  assert.ok(css.includes('.plot-intersection.is-selected .plot-intersection-dot'), '选中交点显现圆点');
 });
 
 
