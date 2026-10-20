@@ -55,6 +55,9 @@ const PLOT_MD = [
 test('plot spec draws curves, connected points, colors and labels', () => {
   const svg = plots.renderPlotSvg(plots.parsePlotSpec(PLOT_MD.split('\n').slice(1, -1).join('\n')));
   assert.match(svg, /<path class="plot-curve"[^>]*stroke="#e03131"/, '指定颜色（red）要生效');
+  assert.ok(svg.includes('class="plot-frame"'), '绘图区要有可见边框');
+  assert.ok((svg.match(/class="plot-grid"/g) || []).length >= 4, '网格线要画出来');
+  assert.equal((svg.match(/class="plot-axis"/g) || []).length, 2, 'x 轴和 y 轴都要画出来');
   assert.equal((svg.match(/<circle/g) || []).length, 3, '三个散点');
   assert.match(svg, /<path d="M[^"]*" fill="none" stroke="#1971c2"/, 'points connect 要连成线');
   assert.ok(svg.includes('抛物线'), '图例文字');

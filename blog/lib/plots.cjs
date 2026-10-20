@@ -338,10 +338,12 @@ function renderPlotSvg(spec) {
     if (Math.abs(y) > yStep / 100) out.push(`<text class="plot-tick" x="${PLOT_PAD.left - 6}" y="${fmt(sy + 3)}" text-anchor="end">${fmt(Math.round(y * 1e6) / 1e6)}</text>`);
   }
   // 坐标轴
-  if (yMin < 0 && yMax > 0) out.push(`<line class="plot-axis" x1="${PLOT_PAD.left}" y1="${fmt(py(0))}" x2="${PLOT_PAD.left + plotW}" y2="${fmt(py(0))}"/>`);
-  if (xMin < 0 && xMax > 0) out.push(`<line class="plot-axis" x1="${fmt(px(0))}" y1="${PLOT_PAD.top}" x2="${fmt(px(0))}" y2="${PLOT_PAD.top + plotH}"/>`);
+  if (yMin <= 0 && yMax >= 0) out.push(`<line class="plot-axis" x1="${PLOT_PAD.left}" y1="${fmt(py(0))}" x2="${PLOT_PAD.left + plotW}" y2="${fmt(py(0))}"/>`);
+  if (xMin <= 0 && xMax >= 0) out.push(`<line class="plot-axis" x1="${fmt(px(0))}" y1="${PLOT_PAD.top}" x2="${fmt(px(0))}" y2="${PLOT_PAD.top + plotH}"/>`);
   out.push(`<text class="plot-tick" x="${fmt(PLOT_PAD.left + plotW)}" y="${fmt(PLOT_PAD.top + plotH + 16)}" text-anchor="end">x</text>`);
   out.push(`<text class="plot-tick" x="${fmt(PLOT_PAD.left - 6)}" y="${fmt(PLOT_PAD.top - 4)}" text-anchor="end">y</text>`);
+
+  out.push(`<rect class="plot-frame" x="${PLOT_PAD.left}" y="${PLOT_PAD.top}" width="${plotW}" height="${plotH}"/>`);
 
   // 函数曲线：不连续处断开（跳变超过画布高度就另起一段）
   spec.functions.forEach((item, index) => {
@@ -504,7 +506,7 @@ function renderGraphSvg(spec) {
     if (edge.from === edge.to) {
       // 自环：点上方画一个小圆
       const r = a.size + 8;
-      out.push(`<circle cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none"${edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge"'} stroke-width="2"${dash}/>`);
+      out.push(`<circle cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none"${edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge"'} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(x1 + (r - 4) * 0.72, y1 - a.size - r + 6 - (r - 4) * 0.72, Math.PI / 4, color));
       if (edge.label) out.push(`<text class="graph-edge-label" x="${fmt(x1)}" y="${fmt(y1 - a.size - 2 * r - 2)}" text-anchor="middle">${escape(edge.label)}</text>`);
       continue;
@@ -522,7 +524,7 @@ function renderGraphSvg(spec) {
     let endX = x2 - ux * b.size; let endY = y2 - uy * b.size;
     let labelX = mx; let labelY = my;
     if (offset === 0) {
-      out.push(`<line x1="${fmt(startX)}" y1="${fmt(startY)}" x2="${fmt(endX)}" y2="${fmt(endY)}"${strokeAttr} stroke-width="2"${dash}/>`);
+      out.push(`<line x1="${fmt(startX)}" y1="${fmt(startY)}" x2="${fmt(endX)}" y2="${fmt(endY)}"${strokeAttr} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(endX, endY, Math.atan2(uy, ux), color));
       labelX = (startX + endX) / 2; labelY = (startY + endY) / 2 - 5;
     } else {
@@ -530,7 +532,7 @@ function renderGraphSvg(spec) {
       const cxp = (x1 + x2) / 2 - uy * offset * 2; const cyp = (y1 + y2) / 2 + ux * offset * 2;
       const tx = endX - cxp; const ty = endY - cyp; const tl = Math.hypot(tx, ty) || 1;
       endX = x2 - (tx / tl) * b.size; endY = y2 - (ty / tl) * b.size;
-      out.push(`<path d="M${fmt(startX)} ${fmt(startY)} Q${fmt(cxp)} ${fmt(cyp)} ${fmt(endX)} ${fmt(endY)}" fill="none"${strokeAttr} stroke-width="2"${dash}/>`);
+      out.push(`<path d="M${fmt(startX)} ${fmt(startY)} Q${fmt(cxp)} ${fmt(cyp)} ${fmt(endX)} ${fmt(endY)}" fill="none"${strokeAttr} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(endX, endY, Math.atan2(ty, tx), color));
       labelX = 0.25 * startX + 0.5 * cxp + 0.25 * endX; labelY = 0.25 * startY + 0.5 * cyp + 0.25 * endY - 5;
     }

@@ -2058,13 +2058,14 @@ body.search-open {
   color: var(--muted);
   text-align: center;
 }
-.article-content .plot-grid { stroke: var(--line); stroke-width: 1; }
-.article-content .plot-axis { stroke: var(--muted); stroke-width: 1.4; }
+.article-content .plot-grid { stroke: var(--muted); stroke-width: 1; opacity: 0.3; }
+.article-content .plot-axis { stroke: var(--text); stroke-width: 1.6; opacity: 0.65; }
+.article-content .plot-frame { fill: none; stroke: var(--muted); stroke-width: 1.2; opacity: 0.7; }
 .article-content .plot-tick { fill: var(--muted); font-size: 10px; }
 .article-content .plot-label { font-size: 12px; font-weight: 600; }
 .article-content .plot-curve { stroke-linejoin: round; stroke-linecap: round; }
-.article-content .graph-edge { stroke: var(--muted); }
-.article-content .graph-arrow { fill: var(--muted); }
+.article-content .graph-edge { stroke: var(--text); opacity: 0.55; }
+.article-content .graph-arrow { fill: var(--text); opacity: 0.55; }
 .article-content .graph-node { fill: var(--panel-raised); stroke: var(--accent); stroke-width: 2; }
 .article-content .graph-node-label { fill: var(--text); font-size: 12px; font-weight: 600; }
 .article-content .graph-node-label.on-color { fill: #ffffff; }
