@@ -243,7 +243,7 @@ function parsePlotSpec(source) {
           points,
           connect: truthy(options.connect ?? options.line, false),
           color: parseColor(options.color) || '',
-          size: clamp(options.size, 2, 9, 4),
+          size: clamp(options.size, 2, 9, 5),
           label: labelText(options.label || ''),
         });
       }
@@ -670,7 +670,7 @@ const NODE_ID = /^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/;
 function parseGraphSpec(source) {
   const spec = { directed: false, nodes: new Map(), edges: [], title: '' };
   const ensureNode = (id) => {
-    if (!spec.nodes.has(id)) spec.nodes.set(id, { id, label: '', x: null, y: null, color: '', size: 16 });
+    if (!spec.nodes.has(id)) spec.nodes.set(id, { id, label: '', x: null, y: null, color: '', size: 20 });
     return spec.nodes.get(id);
   };
   const addEdge = (from, to, arrow, options) => {
@@ -700,7 +700,7 @@ function parseGraphSpec(source) {
         const node = ensureNode(id);
         node.label = labelText(options.label || '');
         node.color = parseColor(options.color) || node.color;
-        node.size = clamp(options.size ?? options.r, 10, 30, node.size);
+        node.size = clamp(options.size ?? options.r, 10, 34, node.size);
         const x = Number(options.x); const y = Number(options.y);
         if (options.x !== undefined && Number.isFinite(x)) node.x = x;
         if (options.y !== undefined && Number.isFinite(y)) node.y = y;

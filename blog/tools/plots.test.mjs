@@ -59,6 +59,7 @@ test('plot spec draws curves, connected points, colors and labels', () => {
   assert.ok((svg.match(/class="plot-grid"/g) || []).length >= 4, '网格线要画出来');
   assert.equal((svg.match(/class="plot-axis"/g) || []).length, 2, 'x 轴和 y 轴都要画出来');
   assert.equal((svg.match(/<circle/g) || []).length, 3, '三个散点');
+  assert.ok(svg.includes('r="5"'), '函数描点默认半径加大到 5');
   assert.match(svg, /<path class="plot-segment"[^>]*stroke="#1971c2"/, 'points connect 要连成线');
   assert.ok(svg.includes('抛物线'), '图例文字');
   assert.ok(svg.includes('<figcaption>抛物线与正弦</figcaption>'));
@@ -87,6 +88,7 @@ test('graph draws nodes, directed arrows, colors and labels', () => {
     'edge: B -> C',
   ].join('\n')));
   assert.match(svg, /<circle class="graph-node" fill="#e03131"/, '点染色');
+  assert.match(svg, /<circle class="graph-node"[^>]*r="20"/, '图的点默认半径加大到 20');
   assert.ok(svg.includes('起点') && svg.includes('一步'), '点/边标注');
   assert.equal((svg.match(/<polygon/g) || []).length, 2, '两条有向边各有一个箭头，无向边没有');
   assert.equal((svg.match(/<circle class="graph-node"/g) || []).length, 3, '边里未声明的 C 自动建点');
@@ -227,11 +229,13 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     assert.ok(rangeWidth() < 10, '点击放大后显示范围变小');
 
     const beforePan = Number(stage.querySelector('svg').dataset.xMin);
+    const beforePanY = Number(stage.querySelector('svg').dataset.yMin);
     pointer(page, stage, 'pointerdown', 340, 210);
-    pointer(page, stage, 'pointermove', 408, 210);
-    pointer(page, stage, 'pointerup', 408, 210);
+    pointer(page, stage, 'pointermove', 408, 252);
+    pointer(page, stage, 'pointerup', 408, 252);
     await waitFrame();
-    assert.ok(Number(stage.querySelector('svg').dataset.xMin) < beforePan, '向右拖动后视图向左平移');
+    assert.ok(Number(stage.querySelector('svg').dataset.xMin) < beforePan, '向右拖动后视图向左平移（内容跟随指针）');
+    assert.ok(Number(stage.querySelector('svg').dataset.yMin) > beforePanY, '向下拖动后 y 范围同向移动（内容跟随指针向下）');
 
     figure.querySelector('[data-plot-toggle="coords"]').click();
     await waitFrame();

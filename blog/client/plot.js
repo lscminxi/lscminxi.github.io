@@ -180,8 +180,10 @@ function initPlot(figure) {
         const dxData = ((point.x - dragStart.point.x) / frame.width) * (dragStart.x[1] - dragStart.x[0]);
         const dyData = ((point.y - dragStart.point.y) / frame.height) * (dragStart.y[1] - dragStart.y[0]);
         if (Math.abs(event.movementX || 0) > 0 || Math.abs(point.x - dragStart.point.x) + Math.abs(point.y - dragStart.point.y) > 2) moved = true;
+        // 抓着画布拖：内容跟随指针（与 Desmos/GeoGebra 一致）。屏幕 y 向下、
+        // 数据 y 向上，所以 y 范围要与拖动同向移动，之前写反了。
         state.x = dragStart.x.map((value) => value - dxData);
-        state.y = dragStart.y.map((value) => value - dyData);
+        state.y = dragStart.y.map((value) => value + dyData);
         scheduleDraw();
         return;
       }
