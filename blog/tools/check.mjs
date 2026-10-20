@@ -57,6 +57,10 @@ assert.deepEqual(look, configured, "public/appearance.json must match source/_da
 assert(index.includes('id="wallpaper-dialog"'), "Background picker dialog is missing");
 assert(index.includes("/js/wallpaper.js"), "Background picker script is missing");
 assert(index.includes("data-open-wallpaper"), "Background picker trigger is missing");
+for (const id of ["wallpaper-save-current", "wallpaper-saved-grid", "wallpaper-saved-note", "wallpaper-saved-empty"]) {
+  assert(index.includes(`id="${id}"`), `Logged-in wallpaper saving UI is missing: #${id}`);
+}
+assert(index.includes("/js/wallpaper.js?v=wallpaper-2"), "Wallpaper script must use the saved-wallpaper cache version");
 const defaultSrc = /data-wallpaper-src="([^"]*)"/.exec(index);
 assert.equal(
   decoded(defaultSrc?.[1] ?? ""),

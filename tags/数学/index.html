@@ -13,10 +13,10 @@
   <meta property="og:url" content="https://lscminxi.github.io/tags/%E6%95%B0%E5%AD%A6/index.html">
   <link rel="canonical" href="https://lscminxi.github.io/tags/%E6%95%B0%E5%AD%A6/index.html">
     <script src="/js/theme.js?v=theme-1"></script>
-  <script src="/js/wallpaper.js?v=wallpaper-1"></script>
+  <script src="/js/wallpaper.js?v=wallpaper-2"></script>
   <link rel="icon" type="image/png" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="apple-touch-icon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css?v=nav-2">
+  <link rel="stylesheet" href="/css/main.css?v=nav-3">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <style>
     :root {
@@ -82,6 +82,15 @@
     <p class="wallpaper-lead">下面这些图片由站长管理。你的选择只保存在自己的浏览器里（localStorage），不会影响其他访客，也不会改动站点文件。</p>
     <p class="wallpaper-current" id="wallpaper-current"></p>
     <div class="wallpaper-grid" id="wallpaper-grid" role="group" aria-label="可选背景"></div>
+    <section class="wallpaper-saved" aria-labelledby="wallpaper-saved-title">
+      <div class="wallpaper-saved-head">
+        <h3 id="wallpaper-saved-title">我保存的壁纸 <span id="wallpaper-saved-count"></span></h3>
+        <button class="wallpaper-save-current" id="wallpaper-save-current" type="button">登录后保存</button>
+      </div>
+      <p class="wallpaper-saved-note" id="wallpaper-saved-note">登录后可以把当前壁纸保存到你的 GitHub 账号；下次用同一账号登录时会优先使用你自己的壁纸。保存内容只在这台设备的浏览器里，不会上传。</p>
+      <div class="wallpaper-grid wallpaper-saved-grid" id="wallpaper-saved-grid" role="group" aria-label="我保存的壁纸"></div>
+      <p class="wallpaper-saved-empty" id="wallpaper-saved-empty">还没有保存的壁纸。选好一张后点「保存当前壁纸」即可。</p>
+    </section>
     <p class="wallpaper-status" id="wallpaper-status" role="status" hidden></p>
     <form class="wallpaper-custom" id="wallpaper-url-form">
       <label for="wallpaper-url">也可以填自己的图片外链</label>

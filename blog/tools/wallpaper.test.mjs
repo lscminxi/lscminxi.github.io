@@ -20,6 +20,7 @@ const dialogMarkup = /<dialog id="wallpaper-dialog"[\s\S]*?<\/dialog>/.exec(buil
 const triggerMarkup = /<button class="wallpaper-trigger"[\s\S]*?<\/button>/.exec(builtPage)?.[0];
 const htmlAttributes = /<html ([^>]*)>/.exec(builtPage)?.[1] || "";
 
+const AUTH_STORAGE_KEY = "minxi.auth.user";
 const appearancePath = "blog/source/_data/appearance.json";
 const imagePath = "blog/source/images/old.png";
 
@@ -122,6 +123,37 @@ test("visitor choices are normalized: unknown modes, hostile urls and out-of-ran
   });
 });
 
+test("saved wallpapers are account-scoped, deduplicated and cleaned", () => {
+  assert.equal(appearance.normalizeLoginName(" @Alice-1 "), "Alice-1");
+  assert.equal(appearance.normalizeLoginName("-bad"), "");
+  assert.equal(appearance.normalizeLoginName("bad name"), "");
+  assert.equal(appearance.wallpaperStorageKey("Alice"), "minxi.wallpaper.user.alice");
+  assert.equal(appearance.wallpaperStorageKey(""), appearance.VISITOR_STORAGE_KEY);
+  assert.equal(appearance.savedWallpapersStorageKey("Alice"), "minxi.wallpaper.saved.alice");
+  assert.equal(appearance.savedWallpapersStorageKey(""), "");
+
+  const saved = appearance.normalizeSavedWallpapers([
+    { url: "https://cdn.example.com/a.png", label: "  星空  ", dim: 999, blur: -2 },
+    { url: "https://cdn.example.com/a.png", label: "重复" },
+    { url: "javascript:alert(1)", label: "危险" },
+    { url: "/images/b.png" },
+    "nope",
+  ]);
+  assert.deepEqual(saved.map((item) => item.url), ["https://cdn.example.com/a.png", "/images/b.png"]);
+  assert.deepEqual(saved[0], {
+    id: appearance.wallpaperId("https://cdn.example.com/a.png"),
+    url: "https://cdn.example.com/a.png",
+    label: "星空",
+    dim: 95,
+    blur: 0,
+  });
+  const updated = appearance.upsertSavedWallpaper(saved, { url: "/images/b.png", label: "森林", dim: 30 });
+  assert.deepEqual(updated.map((item) => item.label), ["森林", "星空"], "重复保存会更新并移到最前面");
+  assert.equal(appearance.removeSavedWallpaper(updated, updated[0].id)[0].url, "https://cdn.example.com/a.png");
+  const many = appearance.normalizeSavedWallpapers(Array.from({ length: 40 }, (_, i) => ({ url: `/images/${i}.png` })));
+  assert.equal(many.length, appearance.MAX_SAVED_WALLPAPERS);
+});
+
 test("resolving a visitor choice follows the gallery, the site default and removals", () => {
   const site = { wallpaper: "https://cdn.example.com/default.png", wallpaperDim: 48, wallpaperBlur: 2 };
   // 选中壁纸库里的一张：用列表里的最新地址（管理员改了地址也跟随）。
@@ -169,12 +201,15 @@ test("resolving a visitor choice follows the gallery, the site default and remov
 
 /* ================= 访客端（构建产物 + 打包脚本） ================= */
 
-async function visitor({ stored = null, galleryData = fileData, fetchStatus = 200, html = null } = {}) {
+async function visitor({ stored = null, authUser = null, userStored = undefined, saved = undefined, galleryData = fileData, fetchStatus = 200, html = null } = {}) {
   assert(dialogMarkup && triggerMarkup, "构建产物里应包含背景选择对话框（先运行 npm run build）");
   const page = html ?? `<!doctype html><html ${htmlAttributes}><head></head><body><div class="header-actions">${triggerMarkup}</div>${dialogMarkup}</body></html>`;
   const dom = new JSDOM(page, { url: "https://lscminxi.github.io/", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   if (stored !== null) w.localStorage.setItem(appearance.VISITOR_STORAGE_KEY, typeof stored === "string" ? stored : JSON.stringify(stored));
+  if (authUser) w.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+  if (authUser && userStored !== undefined) w.localStorage.setItem(appearance.wallpaperStorageKey(authUser.login), JSON.stringify(userStored));
+  if (authUser && saved !== undefined) w.localStorage.setItem(appearance.savedWallpapersStorageKey(authUser.login), JSON.stringify(saved));
   const state = { fetches: [] };
   w.fetch = async (url) => {
     state.fetches.push(String(url));
@@ -273,6 +308,99 @@ test("any visitor can open the picker and choose a background from the gallery",
     $("#wallpaper-grid .wallpaper-tile[data-mode='none']").click();
     assert.equal(w.document.documentElement.hasAttribute("data-wallpaper"), false);
     assert.equal(JSON.parse(w.localStorage.getItem(appearance.VISITOR_STORAGE_KEY)).mode, "none");
+  } finally {
+    await closeVisitor(dom);
+  }
+});
+
+test("saving a wallpaper requires login and prompts instead of saving for guests", async () => {
+  const { dom, w, $ } = await visitor({ stored: { mode: "gallery", id: "second-2", url: "/images/old.png" } });
+  const calls = [];
+  try {
+    w.MinxiAuth = { requireLogin: (feature) => { calls.push(feature); return false; } };
+    $(".wallpaper-trigger").click();
+    await wait(() => w.document.querySelectorAll("#wallpaper-grid .wallpaper-tile").length === gallery.length + 2);
+    assert.equal($("#wallpaper-save-current").textContent, "登录后保存");
+    $("#wallpaper-save-current").click();
+    assert.deepEqual(calls, ["保存壁纸"], "未登录点保存应弹登录提醒");
+    assert.deepEqual([...w.MinxiWallpaper.savedWallpapers()], []);
+    assert.equal(w.MinxiWallpaper.login(), "");
+  } finally {
+    await closeVisitor(dom);
+  }
+});
+
+test("a logged-in user saves wallpapers to their own account and accounts stay separate", async () => {
+  const alice = { login: "Alice", name: "Alice", avatarUrl: "" };
+  const { dom, w, $ } = await visitor({
+    stored: { mode: "gallery", id: "second-2", url: "/images/old.png" },
+    authUser: alice,
+  });
+  const aliceKey = appearance.wallpaperStorageKey("alice");
+  const aliceSavedKey = appearance.savedWallpapersStorageKey("alice");
+  const bobKey = appearance.wallpaperStorageKey("bob");
+  try {
+    assert.equal(w.MinxiWallpaper.login(), "Alice");
+    $(".wallpaper-trigger").click();
+    await wait(() => w.document.querySelectorAll("#wallpaper-grid .wallpaper-tile").length === gallery.length + 2);
+    assert.equal($("#wallpaper-save-current").textContent, "保存当前壁纸");
+    assert.match($("#wallpaper-saved-note").textContent, /@Alice/);
+
+    $("#wallpaper-save-current").click();
+    let saved = JSON.parse(w.localStorage.getItem(aliceSavedKey));
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].url, "/images/old.png");
+    assert.equal(saved[0].label, "第二张");
+    assert.equal($("#wallpaper-saved-grid .wallpaper-saved-tile")?.dataset.url, "/images/old.png");
+
+    // 再保存一张自己的外链：进入同一个账号的壁纸库，且不改访客记录。
+    $("#wallpaper-url").value = "https://cdn.example.com/mine.webp";
+    $("#wallpaper-url-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+    $("#wallpaper-save-current").click();
+    saved = JSON.parse(w.localStorage.getItem(aliceSavedKey));
+    assert.deepEqual(saved.map((item) => item.url), ["https://cdn.example.com/mine.webp", "/images/old.png"]);
+    assert.equal(JSON.parse(w.localStorage.getItem(aliceKey)).url, "https://cdn.example.com/mine.webp");
+    assert.equal(JSON.parse(w.localStorage.getItem(appearance.VISITOR_STORAGE_KEY)).mode, "gallery", "登录后的选择不能覆盖访客记录");
+
+    // 点回保存过的旧壁纸，会按保存时的设置应用，并写进 Alice 自己的当前选择。
+    $("#wallpaper-saved-grid .wallpaper-saved-tile[data-url='/images/old.png'] .wallpaper-saved-main").click();
+    assert.equal(cssVar(w, "--wallpaper-image"), 'url("/images/old.png")');
+    assert.deepEqual(JSON.parse(w.localStorage.getItem(aliceKey)), { mode: "custom", url: "/images/old.png", dim: saved[1].dim ?? siteDim, blur: saved[1].blur ?? siteBlur });
+
+    // 删除一张保存的壁纸。
+    $("#wallpaper-saved-grid .wallpaper-saved-tile[data-url='https://cdn.example.com/mine.webp'] .wallpaper-saved-remove").click();
+    assert.deepEqual(JSON.parse(w.localStorage.getItem(aliceSavedKey)).map((item) => item.url), ["/images/old.png"]);
+
+    // 换成 Bob：看不到 Alice 保存的壁纸，自己的选择也单独保存。
+    w.document.dispatchEvent(new w.CustomEvent("minxi:auth-changed", { detail: { user: { login: "Bob" } } }));
+    assert.equal(w.MinxiWallpaper.login(), "Bob");
+    assert.deepEqual([...w.MinxiWallpaper.savedWallpapers()], []);
+    assert.match($("#wallpaper-saved-note").textContent, /@Bob/);
+    $("#wallpaper-grid .wallpaper-tile[data-mode='none']").click();
+    assert.equal(JSON.parse(w.localStorage.getItem(bobKey)).mode, "none");
+    assert.equal(JSON.parse(w.localStorage.getItem(aliceKey)).url, "/images/old.png", "Bob 的选择不能覆盖 Alice 的记录");
+
+    // 退出登录：回到访客壁纸与未登录保存提示。
+    w.document.dispatchEvent(new w.CustomEvent("minxi:auth-changed", { detail: { user: null } }));
+    assert.equal(w.MinxiWallpaper.login(), "");
+    assert.equal(w.MinxiWallpaper.current().url, "/images/old.png");
+    assert.equal($("#wallpaper-save-current").textContent, "登录后保存");
+  } finally {
+    await closeVisitor(dom);
+  }
+});
+
+test("a logged-in user cannot save the plain background as a wallpaper", async () => {
+  const { dom, w, $ } = await visitor({
+    authUser: { login: "Carol" },
+    userStored: { mode: "none" },
+  });
+  try {
+    $(".wallpaper-trigger").click();
+    await wait(() => $("#wallpaper-save-current"));
+    $("#wallpaper-save-current").click();
+    assert.match($("#wallpaper-status").textContent, /纯色背景/);
+    assert.deepEqual([...w.MinxiWallpaper.savedWallpapers()], []);
   } finally {
     await closeVisitor(dom);
   }

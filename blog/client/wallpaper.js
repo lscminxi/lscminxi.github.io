@@ -7,9 +7,10 @@
  *   2. 之后从公开的 /appearance.json 读取管理员维护的壁纸库；
  *   3. 接线「选择背景」对话框，让任何访客都能自由换背景。
  *
- * 访客的选择只写进自己的 localStorage（键名 minxi.wallpaper）：
- *   - 不产生任何 GitHub 提交，静态站点与后端文件完全不变；
- *   - 每个访客、每台设备互不影响；
+ * 选择只写进自己的 localStorage，不产生 GitHub 提交，也不改站点文件：
+ *   - 未登录沿用访客键 minxi.wallpaper；
+ *   - 登录后当前选择与「我保存的壁纸」按 GitHub 账号分键保存，
+ *     同一台设备换账号不会串号（静态站没有后端，因此不会跨设备同步）；
  *   - 管理员把某张图从壁纸库下架后，选过它的访客会自动回落到站点默认壁纸。
  * 地址校验与站点构建共用 lib/appearance.cjs 的同一套规则。
  */
@@ -17,6 +18,7 @@ import appearance from '../lib/appearance.cjs';
 import { appearanceJson, appearanceDataUrl } from './data.js';
 
 const KEY = appearance.VISITOR_STORAGE_KEY;
+const AUTH_STORAGE_KEY = 'minxi.auth.user'; // 与 lib/auth.cjs 的 AUTH_STORAGE_KEY 一致
 const root = document.documentElement;
 
 const numberOr = (value, fallback) => {
@@ -42,11 +44,27 @@ let galleryReady = false;
 let galleryPromise = null;
 let current = { mode: 'default', id: '', url: '', label: '', dim: siteDefaults.wallpaperDim, blur: siteDefaults.wallpaperBlur };
 
-/* ---------------- 本地存储 ---------------- */
+/* ---------------- 本地存储（登录后按 GitHub 账号分开） ---------------- */
 
-function readStored() {
+function sessionLogin() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    const user = raw ? JSON.parse(raw) : null;
+    return appearance.normalizeLoginName(user?.login || '');
+  } catch {
+    return '';
+  }
+}
+
+let currentLogin = sessionLogin();
+let savedWallpapers = [];
+
+const activeStorageKey = () => appearance.wallpaperStorageKey(currentLogin);
+
+function readStoredFrom(key) {
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     try {
       return JSON.parse(raw);
@@ -58,14 +76,46 @@ function readStored() {
   }
 }
 
+function readStored() {
+  const own = readStoredFrom(activeStorageKey());
+  if (own !== null || !currentLogin) return own;
+  // 第一次以某账号登录时，先沿用这台设备上原来的访客选择；
+  // 之后只要这个账号做过选择，就会一直读自己的记录。
+  return readStoredFrom(KEY);
+}
+
 function writeStored(value) {
   try {
-    if (value) localStorage.setItem(KEY, JSON.stringify(value));
-    else localStorage.removeItem(KEY);
+    const key = activeStorageKey();
+    if (value) localStorage.setItem(key, JSON.stringify(value));
+    else if (currentLogin) localStorage.setItem(key, JSON.stringify({ mode: 'default' }));
+    else localStorage.removeItem(key);
   } catch {
     /* 隐私模式 / 存储被禁用时忽略：只是记不住选择，页面照常显示 */
   }
 }
+
+function readSavedWallpapers() {
+  const key = appearance.savedWallpapersStorageKey(currentLogin);
+  if (!key) return [];
+  try {
+    return appearance.normalizeSavedWallpapers(JSON.parse(localStorage.getItem(key) || '[]'));
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedWallpapers() {
+  const key = appearance.savedWallpapersStorageKey(currentLogin);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(savedWallpapers));
+  } catch {
+    /* 存储不可用时只是保存不了，页面照常显示 */
+  }
+}
+
+savedWallpapers = readSavedWallpapers();
 
 /* ---------------- 应用到页面 ---------------- */
 
@@ -165,14 +215,7 @@ function setStatus(message, kind = '') {
   status.hidden = !message;
 }
 
-function tile({ mode, id = '', url = '', label = '' }) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'wallpaper-tile';
-  button.dataset.mode = mode;
-  if (id) button.dataset.id = id;
-  if (url) button.dataset.url = url;
-
+function tileFace({ url = '', label = '' }) {
   const frame = document.createElement('span');
   frame.className = 'wallpaper-thumb';
   if (url) {
@@ -194,10 +237,132 @@ function tile({ mode, id = '', url = '', label = '' }) {
 
   const name = document.createElement('span');
   name.className = 'wallpaper-name';
-  name.textContent = label || (mode === 'default' ? '站点默认' : mode === 'none' ? '不使用图片' : '未命名');
+  name.textContent = label || '未命名';
+  return [frame, name];
+}
+
+function tile({ mode, id = '', url = '', label = '' }) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'wallpaper-tile';
+  button.dataset.mode = mode;
+  if (id) button.dataset.id = id;
+  if (url) button.dataset.url = url;
+  const [frame, name] = tileFace({ url, label });
+  if (!label) name.textContent = mode === 'default' ? '站点默认' : mode === 'none' ? '不使用图片' : '未命名';
   button.append(frame, name);
   button.addEventListener('click', () => choose({ mode, id, url }));
   return button;
+}
+
+/* ---------------- 登录后保存壁纸 ---------------- */
+
+function requireLoginForSaved() {
+  if (currentLogin) return true;
+  if (window.MinxiAuth?.requireLogin) return window.MinxiAuth.requireLogin('保存壁纸');
+  setStatus('请先登录，登录后才能保存壁纸。', 'err');
+  return false;
+}
+
+function savedLabelForCurrent() {
+  if (current.label) return current.label;
+  const fromGallery = gallery.find((item) => item.id === current.id || item.url === current.url);
+  if (fromGallery?.label) return fromGallery.label;
+  const existing = savedWallpapers.find((item) => item.url === current.url);
+  if (existing?.label) return existing.label;
+  if (current.mode === 'default') return '站点默认';
+  try {
+    const path = new URL(current.url, window.location.href).pathname;
+    const file = decodeURIComponent(path.split('/').filter(Boolean).pop() || '');
+    return file.replace(/\.[a-z0-9]+$/i, '') || '我的壁纸';
+  } catch {
+    return '我的壁纸';
+  }
+}
+
+function saveCurrentWallpaper() {
+  if (!requireLoginForSaved()) return false;
+  if (!current.url) {
+    setStatus('当前是纯色背景，没有图片可以保存；先选一张壁纸再保存。', 'err');
+    return false;
+  }
+  const entry = appearance.normalizeSavedWallpaper({
+    url: current.url,
+    label: savedLabelForCurrent(),
+    dim: current.dim,
+    blur: current.blur,
+  });
+  if (!entry) {
+    setStatus('这张壁纸的地址不可用，无法保存。', 'err');
+    return false;
+  }
+  savedWallpapers = appearance.upsertSavedWallpaper(savedWallpapers, entry);
+  writeSavedWallpapers();
+  renderDialog();
+  setStatus(`已保存到 @${currentLogin} 的壁纸库（这台设备），下次用这个账号登录会自动使用。`, 'ok');
+  return true;
+}
+
+function chooseSaved(entry) {
+  const chosen = select({ mode: 'custom', url: entry.url, dim: entry.dim ?? current.dim, blur: entry.blur ?? current.blur });
+  if (!chosen) return setStatus('这张保存的壁纸地址已不可用。', 'err');
+  setStatus(`正在使用你保存的壁纸${entry.label ? `「${entry.label}」` : ''}。`, 'ok');
+}
+
+function savedTile(entry) {
+  const active = Boolean(current.url) && current.url === entry.url;
+  const wrap = document.createElement('div');
+  wrap.className = `wallpaper-tile wallpaper-saved-tile${active ? ' active' : ''}`;
+  wrap.dataset.mode = 'saved';
+  wrap.dataset.id = entry.id;
+  wrap.dataset.url = entry.url;
+
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'wallpaper-saved-main';
+  main.setAttribute('aria-pressed', String(active));
+  main.append(...tileFace(entry));
+  main.addEventListener('click', () => chooseSaved(entry));
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'wallpaper-saved-remove';
+  remove.textContent = '×';
+  remove.title = `删除保存的壁纸${entry.label ? `「${entry.label}」` : ''}`;
+  remove.setAttribute('aria-label', remove.title);
+  remove.addEventListener('click', () => {
+    savedWallpapers = appearance.removeSavedWallpaper(savedWallpapers, entry.id);
+    writeSavedWallpapers();
+    renderDialog();
+    setStatus('已从你的壁纸库里删除这张壁纸。', 'ok');
+  });
+
+  wrap.append(main, remove);
+  return wrap;
+}
+
+function renderSavedWallpapers() {
+  const grid = $('#wallpaper-saved-grid');
+  const empty = $('#wallpaper-saved-empty');
+  const note = $('#wallpaper-saved-note');
+  const count = $('#wallpaper-saved-count');
+  const saveButton = $('#wallpaper-save-current');
+  if (!grid || !empty || !note || !saveButton) return;
+  grid.textContent = '';
+  if (!currentLogin) {
+    count.textContent = '';
+    saveButton.textContent = '登录后保存';
+    note.textContent = '登录后可以把当前壁纸保存到你的 GitHub 账号；下次用同一账号登录时会优先使用你自己的壁纸。保存内容只在这台设备的浏览器里，不会上传。';
+    empty.textContent = '登录后，这里会显示你保存的壁纸。';
+    empty.hidden = false;
+    return;
+  }
+  count.textContent = savedWallpapers.length ? `（${savedWallpapers.length}/${appearance.MAX_SAVED_WALLPAPERS}）` : '';
+  saveButton.textContent = '保存当前壁纸';
+  note.textContent = `已登录 @${currentLogin}。你保存的壁纸只属于这个账号（保存在这台设备，不会上传，也不会影响其他人）。`;
+  for (const entry of savedWallpapers) grid.append(savedTile(entry));
+  empty.textContent = '还没有保存的壁纸。选好一张后点「保存当前壁纸」即可。';
+  empty.hidden = savedWallpapers.length > 0;
 }
 
 /**
@@ -267,11 +432,14 @@ function renderDialog() {
     const output = $('#wallpaper-blur-value');
     if (output) output.textContent = `${current.blur}px`;
   }
+  renderSavedWallpapers();
   const hint = $('#wallpaper-current');
   if (hint) {
+    const savedLabel = savedWallpapers.find((item) => item.url === current.url)?.label;
+    const where = currentLogin ? `已按 @${currentLogin} 保存在这台设备` : '仅保存在这台设备';
     hint.textContent = current.url
-      ? `当前背景：${current.label || (current.mode === 'custom' ? current.url : current.mode === 'default' ? '站点默认' : '已选图片')}（仅保存在这台设备）`
-      : '当前背景：纯色深色背景（仅保存在这台设备）';
+      ? `当前背景：${current.label || savedLabel || (current.mode === 'custom' ? current.url : current.mode === 'default' ? '站点默认' : '已选图片')}（${where}）`
+      : `当前背景：纯色深色背景（${where}）`;
   }
   const url = $('#wallpaper-url');
   if (url) url.value = current.mode === 'custom' ? current.url : '';
@@ -328,6 +496,7 @@ function wireDialog() {
     button.hidden = false; // 没有脚本时按钮没有意义，这里才显示
     button.addEventListener('click', () => openDialog());
   });
+  $('#wallpaper-save-current')?.addEventListener('click', saveCurrentWallpaper);
   $('#close-wallpaper')?.addEventListener('click', closeDialog);
   $('#wallpaper-done')?.addEventListener('click', closeDialog);
   $('#wallpaper-reset')?.addEventListener('click', () => {
@@ -372,6 +541,19 @@ function wireDialog() {
   });
 }
 
+/* 登录状态变化（登录 / 退出 / 换账号）时，切换到那个账号自己的壁纸记录。 */
+document.addEventListener('minxi:auth-changed', (event) => {
+  const login = appearance.normalizeLoginName(event.detail?.user?.login || '');
+  if (login === currentLogin) {
+    renderSavedWallpapers();
+    return;
+  }
+  currentLogin = login;
+  savedWallpapers = readSavedWallpapers();
+  apply(readStored(), { ready: galleryReady });
+  if (!login) setStatus('已退出登录，现在显示这台设备原来的访客壁纸。');
+});
+
 /* ---------------- 启动 ---------------- */
 
 // 1) 先把访客的选择画上去（脚本在 <head> 中同步执行，早于第一次绘制）。
@@ -396,6 +578,9 @@ window.MinxiWallpaper = {
   loadGallery,
   openDialog,
   closeDialog,
+  saveCurrentWallpaper,
+  savedWallpapers: () => savedWallpapers.map((entry) => ({ ...entry })),
+  login: () => currentLogin,
   current: () => ({ ...current }),
   gallery: () => gallery.map((entry) => ({ ...entry })),
   siteDefaults: () => ({ ...siteDefaults }),

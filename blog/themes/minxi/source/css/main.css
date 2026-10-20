@@ -2194,6 +2194,88 @@ html[data-wallpaper="on"] .site-header {
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+.wallpaper-saved {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 14px;
+}
+.wallpaper-saved-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+.wallpaper-saved-head h3 {
+  font-size: 13px;
+  font-weight: 550;
+}
+.wallpaper-saved-head h3 span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.wallpaper-save-current {
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--panel-raised);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 11px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.wallpaper-save-current:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wallpaper-saved-note,
+.wallpaper-saved-empty {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.wallpaper-saved-grid {
+  margin-bottom: 8px;
+}
+.wallpaper-saved-tile {
+  position: relative;
+  cursor: default;
+}
+.wallpaper-saved-main {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.wallpaper-saved-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.wallpaper-saved-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wallpaper-saved-remove:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .wallpaper-status {
   font-size: 11px;
   line-height: 1.7;
