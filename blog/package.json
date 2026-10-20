@@ -18,7 +18,8 @@
     "test:auth": "npm run assets && node --test tools/auth-comments.test.mjs",
     "test:wallpaper": "npm run assets && npm run build && node --test tools/wallpaper.test.mjs",
     "test:theme": "npm run assets && npm run build && node --test tools/theme.test.mjs",
-    "test:nav": "npm run build && node --test tools/nav.test.mjs"
+    "test:nav": "npm run build && node --test tools/nav.test.mjs",
+    "test:plots": "npm run assets && node --test tools/plots.test.mjs"
   },
   "engines": {
     "node": ">=22"

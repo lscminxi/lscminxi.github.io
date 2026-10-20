@@ -45,7 +45,7 @@ async function setup({
   w.clearTimeout = () => {};
   w.setInterval = () => 0;
   w.clearInterval = () => {};
-  // 新流程：OAuth 授权只暂存在 sessionStorage 的新键里；localStorage 里的旧键是历史遗留，应被忽略并清除。
+  // 两种验证方式：sessionStorage 暂存 OAuth 授权/未记住的令牌；localStorage 只存勾选「记住此设备」的令牌。恢复时都要走完整验证。
   if (storedToken) {
     if (storage === "localStorage") w.localStorage.setItem("minxi.admin.token", storedToken);
     else w.sessionStorage.setItem("minxi.admin.oauth-token", storedToken);
@@ -172,19 +172,95 @@ test("an empty allowlist rejects everyone rather than granting access to every w
   }
 });
 
-test("a legacy token left in localStorage is ignored and cleared, never restoring a session", async () => {
+test("a remembered token in localStorage restores the session only after the same full verification", async () => {
   const { dom, w, $, requests } = await setup({
+    storedToken: "remembered-token",
+    storage: "localStorage",
+  });
+  try {
+    await waitFor(() => !$("#view-app").hidden);
+    assert.equal($("#user-chip").textContent, "@lscminxi");
+    assert(requests.some((request) => request.pathname === "/user"), "记住的令牌也要先确认账号身份");
+    assert(requests.some((request) => request.pathname === apiRoot), "还要确认仓库写权限");
+    assert.equal(w.localStorage.getItem("minxi.admin.token"), "remembered-token", "验证通过才保留记住的令牌");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a remembered token belonging to another account is rejected and cleared", async () => {
+  const { dom, w, $ } = await setup({
     login: "another-user",
     storedToken: "remembered-token",
     storage: "localStorage",
   });
   try {
-    await waitFor(() => !$("#login-button").disabled);
+    await submitLogin({ $, w });
     assert.equal($("#view-app").hidden, true);
-    assert.equal($("#token-input"), null, "手工粘贴令牌的入口必须已删除");
-    assert.equal($("#login-form"), null, "令牌表单必须已删除");
-    assert.equal(w.localStorage.getItem("minxi.admin.token"), null, "旧键应被清除");
-    assert(!requests.some((request) => request.origin === "https://api.github.com"), "localStorage 里的旧令牌绝不能被拿去调 GitHub");
+    assert.match($("#login-error").textContent, /@another-user/);
+    assert.equal(w.localStorage.getItem("minxi.admin.token"), null, "验证不通过必须清掉记住的令牌");
+    assert.equal(w.sessionStorage.getItem("minxi.admin.oauth-token"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+async function submitTokenForm({ w, $ }, value, remember = false) {
+  await waitFor(() => $("#token-input"));
+  $("#token-input").value = value;
+  $("#token-remember").checked = remember;
+  $("#token-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+}
+
+test("pasting a valid owner token logs in (method 2) and stores it for this tab only by default", async () => {
+  const { dom, w, $, requests } = await setup({ storedToken: "" });
+  try {
+    await submitTokenForm({ w, $ }, "pasted-token-123");
+    await waitFor(() => !$("#view-app").hidden);
+    assert.equal($("#user-chip").textContent, "@lscminxi");
+    assert(requests.some((request) => request.pathname === "/user"));
+    assert(requests.some((request) => request.pathname === apiRoot));
+    assert.equal(w.sessionStorage.getItem("minxi.admin.oauth-token"), "pasted-token-123");
+    assert.equal(w.localStorage.getItem("minxi.admin.token"), null, "不勾记住就不能写 localStorage");
+    assert.equal($("#token-input").value, "", "进入后清空输入框");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("pasting a token with remember-me stores it in localStorage for this device", async () => {
+  const { dom, w, $ } = await setup({ storedToken: "" });
+  try {
+    await submitTokenForm({ w, $ }, "remembered-paste", true);
+    await waitFor(() => !$("#view-app").hidden);
+    assert.equal(w.localStorage.getItem("minxi.admin.token"), "remembered-paste");
+    assert.equal(w.sessionStorage.getItem("minxi.admin.oauth-token"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("pasting another account's token is rejected and nothing is stored", async () => {
+  const { dom, w, $ } = await setup({ login: "another-user", storedToken: "" });
+  try {
+    await submitTokenForm({ w, $ }, "not-owner-token", true);
+    await waitFor(() => Boolean($("#login-error").textContent));
+    assert.equal($("#view-app").hidden, true);
+    assert.match($("#login-error").textContent, /不是站长/);
+    assert.equal(w.localStorage.getItem("minxi.admin.token"), null);
+    assert.equal(w.sessionStorage.getItem("minxi.admin.oauth-token"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("an empty token paste is rejected locally without calling GitHub", async () => {
+  const { dom, w, $, requests } = await setup({ storedToken: "" });
+  try {
+    await submitTokenForm({ w, $ }, "   ");
+    await waitFor(() => Boolean($("#login-error").textContent));
+    assert.match($("#login-error").textContent, /请先粘贴/);
+    assert(!requests.some((request) => request.origin === "https://api.github.com"));
   } finally {
     dom.window.close();
   }

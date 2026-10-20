@@ -31,6 +31,9 @@ const MAX_ID_LENGTH = 64;
 
 // 访客自己选择的背景只保存在浏览器里（localStorage），不提交任何东西到仓库。
 const VISITOR_STORAGE_KEY = 'minxi.wallpaper';
+const USER_WALLPAPER_STORAGE_PREFIX = 'minxi.wallpaper.user.';
+const SAVED_WALLPAPERS_STORAGE_PREFIX = 'minxi.wallpaper.saved.';
+const MAX_SAVED_WALLPAPERS = 24;
 const VISITOR_MODES = Object.freeze(['default', 'none', 'gallery', 'custom']);
 
 // 主题（浅色 / 深色）同样是访客自己的选择，键名与取值都在这里统一维护。
@@ -239,6 +242,73 @@ function resolveVisitorWallpaper(stored, gallery = [], site = {}, options = {}) 
   return { ...base, dim: choice.dim ?? base.dim, blur: choice.blur ?? base.blur };
 }
 
+/* ---------------- 登录用户的壁纸（按 GitHub 账号分开保存） ----------------
+ * 静态站没有账号后端，所以「账号保存」是把壁纸与 GitHub 登录名绑定、
+ * 分开写进这台设备的浏览器存储：换账号看到自己的，不同人共用浏览器也互不覆盖。 */
+
+function normalizeLoginName(value) {
+  if (typeof value !== 'string') return '';
+  const login = value.trim().replace(/^@+/, '');
+  return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(login) ? login : '';
+}
+
+/** 当前壁纸选择实际写入的键：登录用户按账号分开，未登录沿用原访客键。 */
+function wallpaperStorageKey(login) {
+  const normalized = normalizeLoginName(login);
+  return normalized ? `${USER_WALLPAPER_STORAGE_PREFIX}${normalized.toLowerCase()}` : VISITOR_STORAGE_KEY;
+}
+
+/** 登录用户「我保存的壁纸」列表的键；未登录没有列表，返回空字符串。 */
+function savedWallpapersStorageKey(login) {
+  const normalized = normalizeLoginName(login);
+  return normalized ? `${SAVED_WALLPAPERS_STORAGE_PREFIX}${normalized.toLowerCase()}` : '';
+}
+
+function savedTuning(input, choice) {
+  for (const key of ['dim', 'blur']) {
+    if (input && input[key] !== undefined) choice[key] = input[key];
+  }
+  return choice;
+}
+
+/** 清洗一张「我保存的壁纸」：只保留安全地址、名称和压暗 / 模糊。 */
+function normalizeSavedWallpaper(input) {
+  if (typeof input === 'string') input = { url: input };
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const url = normalizeUrl(input.url ?? input.image ?? input.src);
+  if (!url) return null;
+  const normalizedChoice = normalizeVisitorChoice({ mode: 'custom', url, dim: input.dim, blur: input.blur }) || { mode: 'custom', url };
+  const entry = { id: wallpaperId(url), url, label: cleanLabel(input.label ?? input.title ?? input.name) };
+  return savedTuning(normalizedChoice, entry);
+}
+
+/** 清洗整个保存列表：丢危险地址、按地址去重，并限制数量。 */
+function normalizeSavedWallpapers(input) {
+  const list = Array.isArray(input) ? input : [];
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    if (out.length >= MAX_SAVED_WALLPAPERS) break;
+    const entry = normalizeSavedWallpaper(item);
+    if (!entry || seen.has(entry.url)) continue;
+    seen.add(entry.url);
+    out.push(entry);
+  }
+  return out;
+}
+
+/** 保存当前壁纸：同地址更新名称 / 调校并移到最前面。 */
+function upsertSavedWallpaper(input, entryInput) {
+  const entry = normalizeSavedWallpaper(entryInput);
+  if (!entry) return normalizeSavedWallpapers(input);
+  return [entry, ...normalizeSavedWallpapers(input).filter((item) => item.url !== entry.url)].slice(0, MAX_SAVED_WALLPAPERS);
+}
+
+function removeSavedWallpaper(input, idOrUrl) {
+  const target = typeof idOrUrl === 'string' ? idOrUrl.trim() : '';
+  return normalizeSavedWallpapers(input).filter((item) => item.id !== target && item.url !== target);
+}
+
 /** 主题模式：只接受 auto / light / dark，其它输入一律回落到 auto。 */
 function normalizeTheme(value) {
   if (typeof value !== 'string') return DEFAULTS.theme;
@@ -319,6 +389,16 @@ module.exports = {
   MAX_WALLPAPERS,
   MAX_LABEL_LENGTH,
   VISITOR_STORAGE_KEY,
+  USER_WALLPAPER_STORAGE_PREFIX,
+  SAVED_WALLPAPERS_STORAGE_PREFIX,
+  MAX_SAVED_WALLPAPERS,
+  normalizeLoginName,
+  wallpaperStorageKey,
+  savedWallpapersStorageKey,
+  normalizeSavedWallpaper,
+  normalizeSavedWallpapers,
+  upsertSavedWallpaper,
+  removeSavedWallpaper,
   VISITOR_MODES,
   THEME_STORAGE_KEY,
   THEME_MODES,

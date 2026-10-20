@@ -2,15 +2,20 @@ import { Marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
 import foldContainers from '../lib/fold-containers.cjs';
+import plotExtensions from '../lib/plots.cjs';
 import options from '../lib/math-options.cjs';
+// 函数图像交互（拖动/缩放/坐标读数）。注意：预览 iframe 本身仍然零脚本
+// （sandbox 不带 allow-scripts，绝不能加），交互是由后台父页面把监听器
+// 挂到 iframe 的文档上完成的，见下面的 enhance()。
+import './plot.js';
 
-const markdown = new Marked({ gfm: true, breaks: true }, markedKatex(options), foldContainers());
+const markdown = new Marked({ gfm: true, breaks: true }, markedKatex(options), foldContainers(), plotExtensions());
 const escape = (text) => String(text).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[c]);
 
 window.MinxiPreview = {
-  document({ title = '', description = '', body = '', openFolds = [] }) {
+  document({ title = '', description = '', body = '', openFolds = [], plotViews = [], graphViews = [] }) {
     // Sanitize before inserting. The sandboxed iframe also blocks scripts, forms
     // and all active content. Same-origin is allowed only for local CSS/fonts;
     // NEVER add allow-scripts to the iframe sandbox.
@@ -32,14 +37,30 @@ window.MinxiPreview = {
       fold.dataset.previewFoldKey = key;
       if (opened.has(key)) fold.open = true;
     });
+    // 把上次预览里每张函数图的视图（范围 + 坐标/交点/方程开关）写回去，
+    // 使实时重渲染后平移/缩放状态不丢失；第几张图对第几个视图，按出现顺序。
+    fragment.querySelectorAll('.md-plot').forEach((figure, index) => {
+      const view = plotViews[index];
+      if (!view) return;
+      const set = (name, value) => { if (value !== undefined && value !== null && value !== '') figure.setAttribute(name, String(value)); };
+      set('data-view-x-min', view.xMin); set('data-view-x-max', view.xMax);
+      set('data-view-y-min', view.yMin); set('data-view-y-max', view.yMax);
+      set('data-view-coords', view.coords); set('data-view-intersections', view.intersections);
+      set('data-view-equations', view.equations);
+    });
+    fragment.querySelectorAll('.md-graph > svg, .md-graph svg').forEach((svg, index) => {
+      if (graphViews[index]) svg.setAttribute('data-preview-viewbox', graphViews[index]);
+    });
     const wrapper = document.createElement('div');
     wrapper.append(fragment);
     const content = wrapper.innerHTML;
-    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    // 预览跟随后台当前主题（深/浅），网格等主题变量随之切换，与正式页一致。
+    const themeAttr = document.documentElement?.dataset?.theme === 'light' ? ' data-theme="light"' : '';
+    return `<!doctype html><html lang="zh-CN"${themeAttr}><head><meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src https: data:;">
       <base href="${escape(location.origin)}/">
-      <link rel="stylesheet" href="/css/main.css?v=fold-preview-2">
+      <link rel="stylesheet" href="/css/main.css?v=nav-5">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
       <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:28px;line-height:1.4;margin:0 0 12px}.article-content{min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>文章预览</title></head><body>
@@ -47,5 +68,10 @@ window.MinxiPreview = {
       <p class="article-description">${escape(description)}</p>
       <div class="article-content">${content || '<p class="preview-empty">在左侧输入正文，即可看到预览。</p>'}</div>
       </body></html>`;
+  },
+  // 由后台父页面在预览 iframe 每次加载后调用：iframe 内部不执行任何脚本，
+  // 拖动/缩放/读数的监听器全部由父页面挂到 iframe 文档上（同源才可访问）。
+  enhance(root) {
+    if (root) window.MinxiPlots?.initPlots(root);
   },
 };

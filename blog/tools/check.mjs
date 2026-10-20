@@ -57,6 +57,10 @@ assert.deepEqual(look, configured, "public/appearance.json must match source/_da
 assert(index.includes('id="wallpaper-dialog"'), "Background picker dialog is missing");
 assert(index.includes("/js/wallpaper.js"), "Background picker script is missing");
 assert(index.includes("data-open-wallpaper"), "Background picker trigger is missing");
+for (const id of ["wallpaper-save-current", "wallpaper-saved-grid", "wallpaper-saved-note", "wallpaper-saved-empty"]) {
+  assert(index.includes(`id="${id}"`), `Logged-in wallpaper saving UI is missing: #${id}`);
+}
+assert(index.includes("/js/wallpaper.js?v=wallpaper-2"), "Wallpaper script must use the saved-wallpaper cache version");
 const defaultSrc = /data-wallpaper-src="([^"]*)"/.exec(index);
 assert.equal(
   decoded(defaultSrc?.[1] ?? ""),
@@ -111,17 +115,22 @@ assert(adminHtml.includes('id="view-noaccess"'), "Admin no-access view is missin
 assert(adminHtml.includes("你无权限进入"), "Admin no-access message is missing");
 const adminJsOut = await readFile(join(root, "admin", "admin.js"), "utf8");
 assert(adminJsOut.includes("allowedLogins"), "Admin allowlist guard is missing");
-assert(!adminHtml.includes('id="token-input"'), "Admin must not offer a paste-a-token login");
-assert(!adminHtml.includes('id="login-form"'), "Admin token form must be removed");
+assert(adminHtml.includes('id="token-input"'), "Admin paste-a-token login (method 2) is missing");
+assert(adminHtml.includes('id="token-form"'), "Admin token form is missing");
 assert(adminHtml.includes("使用 GitHub 登录进入后台"), "Admin GitHub OAuth entry is missing");
 
 const css = await readFile(join(root, "css", "main.css"), "utf8");
 assert(css.includes('html[data-theme="light"]'), "Light theme styles are missing");
 assert(css.includes("rgba(var(--veil-rgb)"), "Wallpaper veil must be theme aware");
-// 浅色模式不要壁纸雾面：body::after 的提亮层必须关掉（深色压暗层保留）。
+// 深浅色都保留壁纸雾面：深色压暗 / 浅色提亮（走 --veil-rgb 与 --wallpaper-veil），
+// 浅色不许再用 background-image: none 把 body::after 的雾面关掉。
 assert(
-  /html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{[^}]*background-image:\s*none/.test(css),
-  "Light theme must not put a fog veil over the wallpaper",
+  !/html\[data-theme="light"\]\[data-wallpaper="on"\] body::after\s*\{\s*background-image:\s*none/.test(css),
+  "Light theme must keep the wallpaper veil (brightening layer)",
+);
+assert(
+  /html\[data-wallpaper="on"\] body::after\s*\{[^}]*rgba\(var\(--veil-rgb\), var\(--wallpaper-veil/.test(css),
+  "Wallpaper veil must use the theme-aware veil color and the dim setting",
 );
 // 行号与代码对齐：gutter 必须与代码同字号同行高，且两列顶部对齐。
 const gutterPre = /\.highlight \.gutter pre\s*\{([^}]*)\}/.exec(css)?.[1] || "";
