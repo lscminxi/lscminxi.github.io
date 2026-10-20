@@ -7,7 +7,7 @@ workers_dev = true
 
 [vars]
 # 下面两项部署时改成你自己的值（Client ID 不是机密，可以写这里）：
-GITHUB_CLIENT_ID = ""
+GITHUB_CLIENT_ID = "Ov23liRQRP65PNxJ7N6V"
 ALLOWED_ORIGINS = "https://lscminxi.github.io"
 # GITHUB_CLIENT_SECRET 请勿写在这里！在 Cloudflare 后台 Settings → Variables 里
 # 用「Secret」类型添加，或者命令行：wrangler secret put GITHUB_CLIENT_SECRET

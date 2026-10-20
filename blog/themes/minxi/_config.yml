@@ -21,8 +21,8 @@ comments:
 #                   oauth-worker/ 里的小后端，再把下面 client_id 与 worker_url 填好；
 #                   没填全时会自动回落到 local，不会坏页。client_secret 绝不要填到这里。
 auth:
-  provider: local
+  provider: oauth
   oauth:
-    client_id: ""
-    worker_url: ""
+    client_id: "Ov23liRQRP65PNxJ7N6V"
+    worker_url: "https://minxi-github-auth.lsc-minxi.workers.dev"
     scope: "read:user"
