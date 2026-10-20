@@ -1286,7 +1286,7 @@
   });
 
   $("#insert-graph").addEventListener("click", () => {
-    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步\nedge: B -> C\nedge: C -- A\n```\n\n");
+    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -- A ; weight=5\n```\n\n");
   });
 
   function showEditor() {

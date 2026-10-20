@@ -2165,6 +2165,28 @@ body.search-open {
 .article-content .graph-edge-group:hover .graph-arrow,
 .article-content .graph-edge-group.is-hovered .graph-arrow,
 .article-content .graph-edge-group.is-selected .graph-arrow { opacity: 1; }
+/* 图算法高亮（连通分量 / 桥与割点 / 最小生成树 / 二分图） */
+.article-content .graph-edge-group.is-algo-active .graph-edge-line,
+.article-content .graph-edge-group.is-algo-bridge .graph-edge-line,
+.article-content .graph-edge-group.is-algo-conflict .graph-edge-line {
+  stroke: var(--algo-edge-color, var(--accent)) !important;
+  stroke-width: 4.6;
+  opacity: 1 !important;
+}
+.article-content .graph-edge-group.is-algo-active .graph-arrow,
+.article-content .graph-edge-group.is-algo-bridge .graph-arrow,
+.article-content .graph-edge-group.is-algo-conflict .graph-arrow {
+  fill: var(--algo-edge-color, var(--accent)) !important;
+  opacity: 1 !important;
+}
+.article-content .graph-edge-group.is-algo-dim .graph-edge-line { opacity: 0.13 !important; }
+.article-content .graph-edge-group.is-algo-dim .graph-arrow { opacity: 0.13 !important; }
+.article-content .graph-node-group.is-algo-node .graph-node-ring,
+.article-content .graph-node-group.is-cut-vertex .graph-node-ring { opacity: 0.95; }
+.article-content .graph-node-group.is-cut-vertex .graph-node-ring {
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 5px rgb(255 146 43 / 0.65));
+}
 /* 参考图编辑器：顶点悬停/选中时出现深色外圈 */
 .article-content .graph-node-ring {
   opacity: 0; transform-box: fill-box; transform-origin: center;

@@ -102,6 +102,36 @@ test('undirected graphs draw no arrows; self loops render', () => {
   assert.ok((svg.match(/<circle/g) || []).length >= 3, '包含自环的小圆');
 });
 
+test('graph algorithms find components, bridges, cut vertices, MST and bipartite conflicts', () => {
+  const spec = plots.parseGraphSpec([
+    'node: A', 'node: B', 'node: C', 'node: D', 'node: E',
+    'edge: A - B ; weight=5',
+    'edge: B - C ; label=1',
+    'edge: A - C ; weight=3',
+    'edge: C - D ; weight=2',
+  ].join('\n'));
+  assert.equal(spec.edges[0].weight, 5, 'weight= 解析边权');
+  assert.equal(spec.edges[1].weight, 1, '纯数字标注也作为边权');
+  const result = plots.analyzeGraph(spec);
+  assert.deepEqual(result.components.map((component) => component.join('')), ['ABCD', 'E'], '连通分量包含孤立点');
+  assert.deepEqual(result.bridges, [3], '只有 C-D 是桥');
+  assert.deepEqual(result.cutVertices, ['C'], 'C 是割点');
+  assert.deepEqual(result.mst.edges, [1, 3, 2], 'Kruskal 按权重选边');
+  assert.equal(result.mst.totalWeight, 6, '最小生成森林总权重');
+  assert.equal(result.bipartite.ok, false, '三角形不是二分图');
+  assert.notEqual(result.bipartite.conflict, null, '二分图判定给出冲突边');
+  const parallel = plots.analyzeGraphData(['A', 'B'], [
+    { from: 'A', to: 'B', weight: 1 }, { from: 'A', to: 'B', weight: 1 },
+  ]);
+  assert.deepEqual(parallel.bridges, [], '平行边互为回边，都不是桥');
+  const evenCycle = plots.analyzeGraphData(['A', 'B', 'C', 'D'], [
+    { from: 'A', to: 'B' }, { from: 'B', to: 'C' }, { from: 'C', to: 'D' }, { from: 'D', to: 'A' },
+  ]);
+  assert.equal(evenCycle.bipartite.ok, true, '偶环是二分图');
+  const svg = plots.renderGraphSvg(spec);
+  assert.ok(svg.includes('data-edge-index="0"') && svg.includes('data-weight="5"'), '边组带编号和权重供前端算法定位');
+});
+
 test('graph honours explicit coordinates ordering', () => {
   const svg = plots.renderGraphSvg(plots.parseGraphSpec('node: L ; x=0 ; y=0\nnode: R ; x=100 ; y=0'));
   const circles = [...svg.matchAll(/<circle class="graph-node"[^>]*cx="([\d.]+)"/g)].map((m) => Number(m[1]));
@@ -323,6 +353,38 @@ test('interactive graph zooms and reports node coordinates', async () => {
   } finally { page.window.close(); }
 });
 
+test('interactive graph algorithms highlight components, bridges, MST and bipartite results', async () => {
+  const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nnode: C ; x=200 ; y=0\nnode: D ; x=300 ; y=0\nedge: A - B ; weight=5\nedge: B - C ; label=1\nedge: A - C ; weight=3\nedge: C - D ; weight=2\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-graph');
+    const svg = figure.querySelector('svg');
+    const readout = figure.querySelector('.plot-readout');
+    const edgeByIndex = (index) => svg.querySelector(`[data-edge-index="${index}"]`);
+
+    figure.querySelector('[data-graph-algo="components"]').click();
+    assert.match(readout.textContent, /连通分量：共 1 个/, '连通分量给出结论');
+    assert.equal(svg.querySelectorAll('.graph-node-group.is-algo-node').length, 4, '连通分量给顶点染色');
+
+    figure.querySelector('[data-graph-algo="bridges"]').click();
+    assert.equal(edgeByIndex(3).classList.contains('is-algo-bridge'), true, '桥被高亮');
+    assert.ok([...svg.querySelectorAll('.graph-node-group')].find((group) => group.dataset.nodeId === 'C').classList.contains('is-cut-vertex'), '割点被标出');
+    assert.match(readout.textContent, /桥与割点/, '桥与割点给出结论');
+
+    figure.querySelector('[data-graph-algo="mst"]').click();
+    assert.equal(edgeByIndex(1).classList.contains('is-algo-active'), true, '最小生成树选中最轻边');
+    assert.equal(edgeByIndex(0).classList.contains('is-algo-dim'), true, '未选中的重边变淡');
+    assert.match(readout.textContent, /总权重 6/, '最小生成树给出总权重');
+
+    figure.querySelector('[data-graph-algo="bipartite"]').click();
+    assert.match(readout.textContent, /不是二分图/, '三角形被判定为非二分图');
+    assert.ok(svg.querySelector('.graph-edge-group.is-algo-conflict'), '冲突边被标红');
+
+    figure.querySelector('[data-graph-algo="clear"]').click();
+    assert.equal(svg.querySelector('.is-algo-active, .is-algo-bridge, .is-algo-conflict, .is-algo-node'), null, '清除算法恢复原图');
+    assert.equal(figure.querySelector('[data-graph-algo="mst"]').getAttribute('aria-pressed'), 'false', '清除后按钮恢复未选中');
+  } finally { page.window.close(); }
+});
+
 
 test('editor preview gets the same plot interactions via parent enhancement (iframe stays script-free)', async () => {
   const md = `${FENCE}plot\nf: x\nf: -x + 2\npoints: (1,1) ; connect=true\nx: -5, 5\ny: -5, 5\n${FENCE}`;
@@ -377,7 +439,7 @@ test('editor preview gets the same plot interactions via parent enhancement (ifr
 });
 
 test('editor preview graph is interactive via parent enhancement', async () => {
-  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
+  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B ; weight=7\n${FENCE}` });
   const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
   try {
     dom.window.MinxiPreview.enhance(page.window.document);
@@ -387,6 +449,9 @@ test('editor preview graph is interactive via parent enhancement', async () => {
     figure.querySelector('[data-graph-action="zoom-in"]').click();
     assert.notEqual(svg.getAttribute('viewBox'), before, '预览里的可视化图可以缩放');
     assert.ok(svg.getAttribute('data-preview-viewbox'), '图的视图会被记录以便重渲染恢复');
+    assert.ok(figure.querySelector('[data-graph-algo="mst"]'), '预览里也有图算法工具栏');
+    figure.querySelector('[data-graph-algo="mst"]').click();
+    assert.match(figure.querySelector('.plot-readout').textContent, /总权重 7/, '预览里最小生成树能读到边权');
   } finally { page.window.close(); }
 });
 
@@ -446,4 +511,6 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.plot-curve.is-hovered'), '函数曲线悬停加粗');
   assert.ok(css.includes('.graph-edge-group:hover .graph-edge-line'), '图边悬停加粗');
   assert.ok(css.includes('.graph-node-ring'), '图顶点外圈样式');
+  assert.ok(css.includes('.graph-edge-group.is-algo-active .graph-edge-line'), '图算法边高亮样式');
+  assert.ok(css.includes('.graph-node-group.is-cut-vertex .graph-node-ring'), '割点外圈样式');
 });

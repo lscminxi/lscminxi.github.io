@@ -1,6 +1,6 @@
 import plots from '../lib/plots.cjs';
 
-const { parsePlotSpec, renderPlotSvgInner, resolvePlotRanges } = plots;
+const { parsePlotSpec, renderPlotSvgInner, resolvePlotRanges, analyzeGraphData } = plots;
 
 const number = (value) => {
   const rounded = Number(Number(value).toFixed(4));
@@ -389,7 +389,7 @@ function initGraph(figure) {
   const toolbar = doc.createElement('div');
   toolbar.className = 'plot-toolbar graph-toolbar';
   toolbar.setAttribute('aria-label', '可视化图工具');
-  toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div>';
+  toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div><div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>';
   figure.insertBefore(toolbar, stage);
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
@@ -451,6 +451,123 @@ function initGraph(figure) {
   };
   const centerPoint = () => ({ x: current[0] + current[2] / 2, y: current[1] + current[3] / 2 });
 
+  /* 图算法（仿 Another Graph Editor 的 Algos 面板）：在现有图上高亮结果，
+   * 不改动原始点边；再次点击同一算法或「清除算法」恢复原样。 */
+  const nodeEls = [...svg.querySelectorAll('.graph-node-group')];
+  const edgeEls = [...svg.querySelectorAll('.graph-edge-group')];
+  const nodeName = new Map(nodeEls.map((el) => [el.dataset.nodeId, el.dataset.nodeLabel || el.dataset.nodeId]));
+  const nameOf = (id) => nodeName.get(id) || id;
+  const graphAnalysis = analyzeGraphData(
+    nodeEls.map((el) => el.dataset.nodeId),
+    edgeEls.map((el) => ({ from: el.dataset.from, to: el.dataset.to, directed: el.dataset.directed === 'true', weight: Number(el.dataset.weight || 1) })),
+  );
+  const componentPalette = ['#4dabf7', '#ffd43b', '#69db7c', '#ff8787', '#b197fc', '#ffa94d', '#63e6be', '#f783ac'];
+  const originalPaint = new Map();
+  let activeAlgorithm = '';
+  let algorithmSummary = '';
+  const rememberPaint = (group) => {
+    if (originalPaint.has(group)) return;
+    const circle = group.querySelector('.graph-node');
+    const ring = group.querySelector('.graph-node-ring');
+    const label = group.querySelector('.graph-node-label');
+    originalPaint.set(group, {
+      circleStyle: circle?.getAttribute('style'), circleFill: circle?.getAttribute('fill'),
+      ringStyle: ring?.getAttribute('style'), labelStyle: label?.getAttribute('style'),
+    });
+  };
+  const paintNode = (group, color) => {
+    rememberPaint(group);
+    const circle = group.querySelector('.graph-node');
+    const ring = group.querySelector('.graph-node-ring');
+    const label = group.querySelector('.graph-node-label');
+    if (circle) { circle.style.fill = color; circle.style.stroke = 'var(--panel, #11151d)'; }
+    if (ring) ring.style.stroke = color;
+    if (label) label.style.fill = '#10131a';
+    group.classList.add('is-algo-node');
+  };
+  const markEdge = (group, mode, color) => {
+    group.classList.add(mode);
+    if (color) group.style.setProperty('--algo-edge-color', color);
+  };
+  const clearAlgorithm = (restoreReadout = true) => {
+    activeAlgorithm = '';
+    algorithmSummary = '';
+    edgeEls.forEach((el) => {
+      el.classList.remove('is-algo-active', 'is-algo-dim', 'is-algo-bridge', 'is-algo-conflict');
+      el.style.removeProperty('--algo-edge-color');
+    });
+    nodeEls.forEach((group) => {
+      group.classList.remove('is-algo-node', 'is-cut-vertex');
+      const saved = originalPaint.get(group);
+      if (!saved) return;
+      const circle = group.querySelector('.graph-node');
+      const ring = group.querySelector('.graph-node-ring');
+      const label = group.querySelector('.graph-node-label');
+      for (const [el, style] of [[circle, saved.circleStyle], [ring, saved.ringStyle], [label, saved.labelStyle]]) {
+        if (!el) continue;
+        if (style === null || style === undefined) el.removeAttribute('style'); else el.setAttribute('style', style);
+      }
+      if (circle) { if (saved.circleFill === null || saved.circleFill === undefined) circle.removeAttribute('fill'); else circle.setAttribute('fill', saved.circleFill); }
+    });
+    toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => button.setAttribute('aria-pressed', 'false'));
+    if (restoreReadout) readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+  };
+  const edgeName = (el) => `${nameOf(el.dataset.from)} — ${nameOf(el.dataset.to)}`;
+  const applyAlgorithm = (mode) => {
+    if (activeAlgorithm === mode) { clearAlgorithm(); return; }
+    clearAlgorithm(false);
+    activeAlgorithm = mode;
+    toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.graphAlgo === mode)));
+    const directedNote = graphAnalysis.directed ? '（有向边按无向结构计算）' : '';
+    if (mode === 'components') {
+      const componentOf = new Map();
+      graphAnalysis.components.forEach((component, index) => component.forEach((id) => componentOf.set(id, index)));
+      nodeEls.forEach((group) => paintNode(group, componentPalette[(componentOf.get(group.dataset.nodeId) || 0) % componentPalette.length]));
+      edgeEls.forEach((el) => markEdge(el, 'is-algo-active', componentPalette[(componentOf.get(el.dataset.from) || 0) % componentPalette.length]));
+      algorithmSummary = `连通分量：共 ${graphAnalysis.components.length} 个${directedNote} · ${graphAnalysis.components.map((component, index) => `分量 ${index + 1}：${component.map(nameOf).join('、')}`).join('；')}`;
+    } else if (mode === 'bridges') {
+      const bridgeSet = new Set(graphAnalysis.bridges);
+      edgeEls.forEach((el) => markEdge(el, bridgeSet.has(Number(el.dataset.edgeIndex)) ? 'is-algo-bridge' : 'is-algo-dim', bridgeSet.has(Number(el.dataset.edgeIndex)) ? '#ff6b6b' : ''));
+      const cutSet = new Set(graphAnalysis.cutVertices);
+      nodeEls.forEach((group) => {
+        if (!cutSet.has(group.dataset.nodeId)) return;
+        rememberPaint(group);
+        group.classList.add('is-cut-vertex');
+        const ring = group.querySelector('.graph-node-ring');
+        if (ring) ring.style.stroke = '#ff922b';
+      });
+      const bridgeNames = graphAnalysis.bridges.map((index) => edgeEls[index] && edgeName(edgeEls[index])).filter(Boolean);
+      algorithmSummary = `桥与割点${directedNote}：桥 ${bridgeNames.length} 条${bridgeNames.length ? `（${bridgeNames.join('、')}）` : ''}；割点 ${graphAnalysis.cutVertices.length} 个${graphAnalysis.cutVertices.length ? `（${graphAnalysis.cutVertices.map(nameOf).join('、')}）` : ''}`;
+    } else if (mode === 'mst') {
+      const mstSet = new Set(graphAnalysis.mst.edges);
+      edgeEls.forEach((el) => markEdge(el, mstSet.has(Number(el.dataset.edgeIndex)) ? 'is-algo-active' : 'is-algo-dim', '#51cf66'));
+      const weight = Number(graphAnalysis.mst.totalWeight.toFixed(4));
+      algorithmSummary = `${graphAnalysis.mst.complete && graphAnalysis.components.length === 1 ? '最小生成树' : '最小生成森林'}${directedNote}：选中 ${graphAnalysis.mst.edges.length} 条边，总权重 ${weight}（边权取 weight= 或纯数字标注，未写时按 1）`;
+    } else if (mode === 'bipartite') {
+      const sideColors = ['#4dabf7', '#ffd43b'];
+      nodeEls.forEach((group) => {
+        const side = graphAnalysis.bipartite.colors[group.dataset.nodeId];
+        if (side !== undefined) paintNode(group, sideColors[side]);
+      });
+      edgeEls.forEach((el) => markEdge(el, Number(el.dataset.edgeIndex) === graphAnalysis.bipartite.conflict ? 'is-algo-conflict' : 'is-algo-active', Number(el.dataset.edgeIndex) === graphAnalysis.bipartite.conflict ? '#ff6b6b' : ''));
+      if (graphAnalysis.bipartite.ok) {
+        const sides = [[], []];
+        Object.entries(graphAnalysis.bipartite.colors).forEach(([id, side]) => sides[side].push(nameOf(id)));
+        algorithmSummary = `二分图判定${directedNote}：是二分图 · 一侧：${sides[0].join('、') || '（空）'}；另一侧：${sides[1].join('、') || '（空）'}`;
+      } else {
+        const conflictEl = edgeEls[graphAnalysis.bipartite.conflict];
+        algorithmSummary = `二分图判定${directedNote}：不是二分图${conflictEl ? ` · 冲突边 ${edgeName(conflictEl)} 连接了同侧点或自环` : ''}`;
+      }
+    }
+    readout.textContent = algorithmSummary;
+  };
+  toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.dataset.graphAlgo === 'clear') clearAlgorithm();
+      else applyAlgorithm(button.dataset.graphAlgo);
+    });
+  });
+
   toolbar.querySelectorAll('[data-graph-action]').forEach((button) => {
     button.addEventListener('click', () => {
       if (button.dataset.graphAction === 'zoom-in') zoomAt(centerPoint(), 0.75);
@@ -509,9 +626,13 @@ function initGraph(figure) {
       showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
     } else {
       hideTooltip();
+      if (algorithmSummary) readout.textContent = algorithmSummary;
     }
   });
-  stage.addEventListener('pointerleave', hideTooltip);
+  stage.addEventListener('pointerleave', () => {
+    hideTooltip();
+    if (algorithmSummary) readout.textContent = algorithmSummary;
+  });
   stage.addEventListener('click', (event) => {
     const edge = event.target?.closest?.('.graph-edge-group');
     const group = event.target?.closest?.('.graph-node-group');

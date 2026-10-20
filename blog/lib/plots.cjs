@@ -717,11 +717,16 @@ function parseGraphSpec(source) {
   const addEdge = (from, to, arrow, options) => {
     if (spec.edges.length >= 120) return;
     ensureNode(from); ensureNode(to);
+    const explicitWeight = Number(options.weight ?? options.w);
+    const rawLabel = labelText(options.label || '');
+    const numericLabel = /^-?(?:\d+\.?\d*|\.\d+)$/.test(rawLabel) ? Number(rawLabel) : NaN;
+    const weight = Number.isFinite(explicitWeight) ? explicitWeight : (Number.isFinite(numericLabel) ? numericLabel : 1);
     spec.edges.push({
       from, to,
       directed: spec.directed && arrow,
       color: parseColor(options.color) || '',
-      label: labelText(options.label || ''),
+      label: rawLabel || (Number.isFinite(explicitWeight) ? String(explicitWeight) : ''),
+      weight,
       dash: truthy(options.dash, false),
     });
   };
@@ -785,6 +790,123 @@ function layoutGraph(spec) {
   return nodes;
 }
 
+/* ---------------- 图算法（参考 Another Graph Editor 的 Algos 面板） ----------------
+ * 输入是点 id 数组与边数组（边带 from/to/weight）。连通性、桥/割点、
+ * 最小生成树与二分图判定都按无向结构计算；有向边只在结果里注明这一点。
+ * 桥/割点用 DFS 低链接值并按边编号区分平行边，所以重边不会被误判为桥。 */
+function analyzeGraphData(nodeIds, edges) {
+  const ids = [...new Set((nodeIds || []).map(String))];
+  const order = new Map(ids.map((id, index) => [id, index]));
+  const normalized = (edges || []).map((edge, index) => ({
+    index,
+    from: String(edge.from),
+    to: String(edge.to),
+    directed: Boolean(edge.directed),
+    weight: Number.isFinite(Number(edge.weight)) ? Number(edge.weight) : 1,
+  })).filter((edge) => order.has(edge.from) && order.has(edge.to));
+  const adjacency = new Map(ids.map((id) => [id, []]));
+  for (const edge of normalized) {
+    if (edge.from === edge.to) continue;
+    adjacency.get(edge.from).push({ to: edge.to, edgeIndex: edge.index });
+    adjacency.get(edge.to).push({ to: edge.from, edgeIndex: edge.index });
+  }
+
+  // 连通分量（忽略方向的弱连通分量）
+  const components = [];
+  const seen = new Set();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    const component = [];
+    const queue = [id];
+    seen.add(id);
+    while (queue.length) {
+      const current = queue.shift();
+      component.push(current);
+      for (const next of adjacency.get(current) || []) {
+        if (!seen.has(next.to)) { seen.add(next.to); queue.push(next.to); }
+      }
+    }
+    components.push(component);
+  }
+
+  // 二分图染色；自环或同色邻点都会给出冲突边
+  const colors = {};
+  let conflict = null;
+  for (const id of ids) {
+    if (colors[id] !== undefined) continue;
+    colors[id] = 0;
+    const queue = [id];
+    while (queue.length && conflict === null) {
+      const current = queue.shift();
+      for (const next of adjacency.get(current) || []) {
+        if (colors[next.to] === undefined) { colors[next.to] = 1 - colors[current]; queue.push(next.to); }
+        else if (colors[next.to] === colors[current]) { conflict = next.edgeIndex; break; }
+      }
+    }
+    if (conflict !== null) break;
+  }
+  if (conflict === null) {
+    const selfLoop = normalized.find((edge) => edge.from === edge.to);
+    if (selfLoop) conflict = selfLoop.index;
+  }
+
+  // 桥与割点（Tarjan 低链接值，按边编号排除父边，平行边互为回边）
+  const disc = new Map(); const low = new Map();
+  const bridges = []; const cutVertices = new Set();
+  let timer = 0;
+  const dfs = (node, parentEdge) => {
+    timer += 1;
+    disc.set(node, timer); low.set(node, timer);
+    let children = 0;
+    for (const next of adjacency.get(node) || []) {
+      if (next.edgeIndex === parentEdge) continue;
+      if (!disc.has(next.to)) {
+        children += 1;
+        dfs(next.to, next.edgeIndex);
+        low.set(node, Math.min(low.get(node), low.get(next.to)));
+        if (low.get(next.to) > disc.get(node)) bridges.push(next.edgeIndex);
+        if (parentEdge !== -1 && low.get(next.to) >= disc.get(node)) cutVertices.add(node);
+      } else {
+        low.set(node, Math.min(low.get(node), disc.get(next.to)));
+      }
+    }
+    if (parentEdge === -1 && children > 1) cutVertices.add(node);
+  };
+  for (const id of ids) if (!disc.has(id)) dfs(id, -1);
+
+  // 最小生成森林（Kruskal）：按权重升序选边，自环不参与
+  const parent = new Map(ids.map((id) => [id, id]));
+  const find = (id) => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root);
+    let current = id;
+    while (parent.get(current) !== current) { const next = parent.get(current); parent.set(current, root); current = next; }
+    return root;
+  };
+  const mstEdges = [];
+  let totalWeight = 0;
+  for (const edge of [...normalized].filter((edge) => edge.from !== edge.to).sort((a, b) => a.weight - b.weight || a.index - b.index)) {
+    const a = find(edge.from); const b = find(edge.to);
+    if (a === b) continue;
+    parent.set(a, b);
+    mstEdges.push(edge.index);
+    totalWeight += edge.weight;
+  }
+
+  return {
+    components,
+    bridges: bridges.sort((a, b) => a - b),
+    cutVertices: ids.filter((id) => cutVertices.has(id)),
+    bipartite: { ok: conflict === null, colors, conflict },
+    mst: { edges: mstEdges, totalWeight, complete: mstEdges.length === Math.max(0, ids.length - components.length) },
+    directed: normalized.some((edge) => edge.directed),
+  };
+}
+
+function analyzeGraph(spec) {
+  return analyzeGraphData([...spec.nodes.keys()], spec.edges);
+}
+
 function renderGraphSvg(spec) {
   const nodes = layoutGraph(spec);
   if (!nodes.length) return `<figure class="md-graph"><svg class="md-graph-svg" viewBox="0 0 200 60" role="img" aria-label="空图"></svg></figure>\n`;
@@ -811,10 +933,10 @@ function renderGraphSvg(spec) {
     const fill = color ? ` class="graph-arrow" fill="${color}"` : ' class="graph-arrow" style="fill:var(--text,#e6eaf0);opacity:.6"';
     return `<polygon points="${fmt(x)},${fmt(y)} ${fmt(x + size * Math.cos(a1))},${fmt(y + size * Math.sin(a1))} ${fmt(x + size * Math.cos(a2))},${fmt(y + size * Math.sin(a2))}"${fill}/>`;
   };
-  for (const edge of spec.edges) {
+  for (const [edgeIndex, edge] of spec.edges.entries()) {
     const a = byId.get(edge.from); const b = byId.get(edge.to);
     if (!a || !b) continue;
-    out.push(`<g class="graph-edge-group" data-from="${escape(edge.from)}" data-to="${escape(edge.to)}" data-label="${escape(edge.label || '')}" data-directed="${edge.directed ? 'true' : 'false'}">`);
+    out.push(`<g class="graph-edge-group" data-edge-index="${edgeIndex}" data-from="${escape(edge.from)}" data-to="${escape(edge.to)}" data-label="${escape(edge.label || '')}" data-weight="${edge.weight ?? 1}" data-directed="${edge.directed ? 'true' : 'false'}">`);
     const closeEdge = () => out.push('</g>');
     const color = edge.color || '';
     const strokeAttr = edge.color ? ` class="graph-edge-line" stroke="${edge.color}"` : ' class="graph-edge-line graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.72"';
@@ -986,4 +1108,6 @@ module.exports.PLOT_GEOMETRY = { width: PLOT_W, height: PLOT_H, pad: PLOT_PAD };
 module.exports.convertPlotFences = convertPlotFences;
 module.exports.parseGraphSpec = parseGraphSpec;
 module.exports.renderGraphSvg = renderGraphSvg;
+module.exports.analyzeGraph = analyzeGraph;
+module.exports.analyzeGraphData = analyzeGraphData;
 module.exports.parseColor = parseColor;
