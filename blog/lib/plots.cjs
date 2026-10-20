@@ -813,7 +813,7 @@ function renderGraphSvg(spec) {
     if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="middle">${escape(edge.label)}</text>`);
   }
 
-  // 点（画在边上面）；包成一组并带布局坐标，方便交互时显示
+  // 点（画在边上面）；包成一组并带点名，方便交互时提示（不显示坐标）
   for (const node of nodes) {
     const x = sx(node.x); const y = sy(node.y);
     const fillAttr = node.color ? ` fill="${node.color}"` : ' style="fill:var(--panel-raised,#151a23);stroke:var(--accent,#5ce0c4)" stroke-width="2"';
@@ -821,7 +821,7 @@ function renderGraphSvg(spec) {
     const sub = node.label && node.label !== node.id && node.id !== text
       ? `<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`
       : '';
-    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-x="${formatNumber(node.x)}" data-y="${formatNumber(node.y)}"><title>${escape(`${text} (${formatNumber(node.x)}, ${formatNumber(node.y)})`)}</title><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
+    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}"><title>${escape(text)}</title><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
   }
 
   out.push('</svg>');

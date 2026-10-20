@@ -256,8 +256,10 @@ test('interactive graph zooms and reports node coordinates', async () => {
     figure.querySelector('[data-graph-action="zoom-in"]').click();
     assert.notEqual(svg.getAttribute('viewBox'), before, '图的缩放按钮改变 viewBox');
     const group = svg.querySelector('.graph-node-group');
+    assert.equal(group.hasAttribute('data-x'), false, '顶点不再携带坐标');
+    assert.ok(!group.querySelector('title').textContent.includes('(0, 0)'), '顶点提示不显示坐标');
     pointer(page, group, 'pointermove', 100, 100);
-    assert.match(figure.querySelector('.plot-readout').textContent, /点 A：\(0, 0\)/, '悬停点显示布局坐标');
+    assert.equal(figure.querySelector('.plot-readout').textContent, '点 A', '悬停顶点只显示点名');
   } finally { page.window.close(); }
 });
 

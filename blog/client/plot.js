@@ -295,7 +295,7 @@ function initGraph(figure) {
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
-  readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看坐标。';
+  readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   stage.after(readout);
 
   const initial = (svg.getAttribute('viewBox') || '0 0 680 320').split(/\s+/).map(Number);
@@ -374,7 +374,7 @@ function initGraph(figure) {
     }
     const group = event.target?.closest?.('.graph-node-group');
     if (group && stage.contains(group)) {
-      readout.textContent = `点 ${group.dataset.nodeId}：(${group.dataset.x}, ${group.dataset.y})`;
+      readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`;
     }
   });
   const finish = (event) => {
