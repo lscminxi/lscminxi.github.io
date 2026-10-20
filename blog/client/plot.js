@@ -1,6 +1,6 @@
 import plots from '../lib/plots.cjs';
 
-const { parsePlotSpec, renderPlotSvgInner, resolvePlotRanges, analyzeGraphData } = plots;
+const { parsePlotSpec, renderPlotSvgInner, resolvePlotRanges, analyzeGraphData, lineEquation } = plots;
 
 const number = (value) => {
   const rounded = Number(Number(value).toFixed(4));
@@ -77,16 +77,26 @@ function initPlot(figure) {
   };
   // 选中的点用「类型:坐标」标识，重绘后按同一坐标找回，选中态不丢、坐标不变。
   // 未选中任何点时不显示任何坐标（悬停也只加粗直线/放大圆点）。
-  const defaultReadout = '拖动平移、滚轮缩放；点击点或交点查看固定坐标，悬停直线会微微加粗。';
+  const defaultReadout = '拖动平移、滚轮缩放；选中点或交点看坐标，选中直线看方程式。';
   let selectedPointKey = null;
   let selectedPointInfo = null;
+  let selectedLineKey = null;
+  let selectedLineInfo = null;
   const pointKey = (el) => `${el.dataset.kind}:${el.dataset.x}:${el.dataset.y}`;
+  const lineKey = (el) => el.dataset.kind === 'function'
+    ? `function:${el.dataset.functionIndex}`
+    : `segment:${el.dataset.segmentIndex}`;
+  const hasSelection = () => Boolean(selectedPointInfo || selectedLineInfo);
   const updateSelectedReadout = () => {
     if (!readout) return;
-    if (!selectedPointInfo) { readout.textContent = defaultReadout; return; }
-    readout.textContent = state.coords
-      ? `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`
-      : `已选中${selectedPointInfo.kind === 'intersection' ? '交点' : '点'}`;
+    if (selectedPointInfo) {
+      readout.textContent = state.coords
+        ? `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`
+        : `已选中${selectedPointInfo.kind === 'intersection' ? '交点' : '点'}`;
+      return;
+    }
+    if (selectedLineInfo) { readout.textContent = selectedLineInfo.equation; return; }
+    readout.textContent = defaultReadout;
   };
   const draw = () => {
     figure.dataset.viewXMin = String(state.x[0]);
@@ -103,6 +113,11 @@ function initPlot(figure) {
     if (selectedPointKey) {
       stage.querySelectorAll('[data-kind="point"], [data-kind="intersection"]').forEach((el) => {
         el.classList.toggle('is-selected', pointKey(el) === selectedPointKey);
+      });
+    }
+    if (selectedLineKey) {
+      stage.querySelectorAll('[data-kind="function"], [data-kind="segment"]').forEach((el) => {
+        el.classList.toggle('is-selected', lineKey(el) === selectedLineKey);
       });
     }
     stage.append(tooltip);
@@ -172,7 +187,7 @@ function initPlot(figure) {
         state.x = [...initial.xRange];
         state.y = [...initial.yRange];
         draw();
-        if (selectedPointInfo) updateSelectedReadout();
+        if (hasSelection()) updateSelectedReadout();
         else if (readout) readout.textContent = '已重置视图。拖动平移，滚轮或双指缩放。';
       }
     });
@@ -262,16 +277,16 @@ function initPlot(figure) {
         // 只让圆点自己突出，坐标等点击选中后再显示；也不给下面的直线加高亮。
         clearLineHover();
         hideTooltip();
-        if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
+        if (!hasSelection() && readout) readout.textContent = defaultReadout;
       } else if (kind === 'function' || kind === 'segment') {
         clearLineHover();
         target.classList.add('is-hovered');
         hideTooltip();
-        if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
+        if (!hasSelection() && readout) readout.textContent = defaultReadout;
       }
       return;
     }
-    if (!data.inside) { hideTooltip(); clearLineHover(); if (!selectedPointInfo && readout) readout.textContent = defaultReadout; return; }
+    if (!data.inside) { hideTooltip(); clearLineHover(); if (!hasSelection() && readout) readout.textContent = defaultReadout; return; }
     let nearest = null;
     const frame = frameBox();
     spec.functions.forEach((item, index) => {
@@ -288,10 +303,10 @@ function initPlot(figure) {
       const curve = stage.querySelectorAll('.plot-curve')[nearest.index];
       curve?.classList.add('is-hovered');
       hideTooltip();
-      if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
+      if (!hasSelection() && readout) readout.textContent = defaultReadout;
     } else {
       hideTooltip();
-      if (!selectedPointInfo && readout) readout.textContent = defaultReadout;
+      if (!hasSelection() && readout) readout.textContent = defaultReadout;
     }
   });
   stage.addEventListener('pointerleave', () => { hideTooltip(); clearLineHover(); });
@@ -301,7 +316,10 @@ function initPlot(figure) {
   stage.addEventListener('click', (event) => {
     if (moved) { moved = false; return; }
     const target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
+    const lineTarget = event.target?.closest?.('[data-kind="function"], [data-kind="segment"]');
     if (target && stage.contains(target)) {
+      selectedLineKey = null;
+      selectedLineInfo = null;
       selectedPointInfo = {
         kind: target.dataset.kind,
         x: target.dataset.x,
@@ -313,9 +331,22 @@ function initPlot(figure) {
       draw();
       if (state.coords) showDisplay(event, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
       else { hideTooltip(); updateSelectedReadout(); }
+    } else if (lineTarget && stage.contains(lineTarget)) {
+      selectedPointInfo = null;
+      selectedPointKey = null;
+      selectedLineKey = lineKey(lineTarget);
+      selectedLineInfo = lineTarget.dataset.kind === 'function'
+        ? { kind: 'function', equation: `y = ${spec.functions[Number(lineTarget.dataset.functionIndex)]?.expr || ''}` }
+        : { kind: 'segment', equation: lineEquation([Number(lineTarget.dataset.x1), Number(lineTarget.dataset.y1)], [Number(lineTarget.dataset.x2), Number(lineTarget.dataset.y2)]) };
+      clearLineHover();
+      draw();
+      if (selectedLineInfo.equation) showDisplay(event, selectedLineInfo.equation);
+      else { hideTooltip(); updateSelectedReadout(); }
     } else {
       selectedPointInfo = null;
       selectedPointKey = null;
+      selectedLineKey = null;
+      selectedLineInfo = null;
       draw();
       hideTooltip();
       updateSelectedReadout();

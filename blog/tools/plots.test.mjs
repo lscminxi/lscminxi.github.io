@@ -209,10 +209,13 @@ test('plot shows selected point coordinates and intersections without equations 
   const selectedIntersection = plots.renderPlotSvgInner(spec, { xRange: [-3, 5], yRange: [-3, 5], selectedPointKey: 'intersection:1:1' });
   assert.ok(selectedIntersection.includes('(1, 1)'), '只有选中的交点显示坐标');
   assert.ok(!svg.includes('class="plot-equations"') && !svg.includes('data-plot-toggle="equations"'), '函数图不显示方程区和方程开关');
-  const labeled = plots.parsePlotSpec('f: -x + 2 ; label=曲线名\npoints: (2,2) ; label=点名\nx: -3, 5\ny: -3, 5');
+  const labeled = plots.parsePlotSpec('f: -x + 2 ; label=曲线名\npoints: (0,0), (2,2) ; connect=true ; label=点名\nx: -3, 5\ny: -3, 5');
   const labeledInner = plots.renderPlotSvgInner(labeled, { xRange: [-3, 5], yRange: [-3, 5], selectedPointKey: 'point:2:2' });
   assert.ok(!labeledInner.includes('class="plot-label"') && !labeledInner.includes('曲线名') && !labeledInner.includes('点名'), '图内不显示曲线和点的名称');
   assert.ok(!labeledInner.includes('data-equation') && !labeledInner.includes('y = -x + 2'), '图内不附带方程文字');
+  assert.ok(labeledInner.includes('data-segment-index="0"'), '线段带选中定位编号');
+  assert.equal(plots.lineEquation([0, 1], [2, 5]), 'y = 2x + 1', '选中线段时才计算并显示方程式');
+  assert.equal(plots.lineEquation([1, 0], [1, 3]), 'x = 1', '竖直线段方程式');
 });
 
 test('plot display switches can hide coordinates and intersections', () => {
@@ -263,7 +266,7 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     assert.equal(figure.classList.contains('is-interactive'), true, '前台脚本接管图像');
     assert.equal(rangeWidth(), 10);
     assert.equal(stage.querySelector('.plot-coord'), null, '没有选中点时不显示坐标');
-    assert.match(figure.querySelector('.plot-readout').textContent, /点击点或交点查看固定坐标/, '初始读数只给操作提示');
+    assert.match(figure.querySelector('.plot-readout').textContent, /选中点或交点看坐标，选中直线看方程式/, '初始读数只给操作提示');
     const initialDot = stage.querySelector('.plot-point');
     pointer(page, initialDot, 'pointermove', 408, 148);
     assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停描点也不显示坐标');
@@ -327,6 +330,44 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '选中交点后才显示它的坐标');
     pointer(page, stage, 'click', 620, 380);
     assert.equal(stage.querySelector('.plot-coord-tag'), null, '取消交点选中后坐标消失');
+  } finally { page.window.close(); }
+});
+
+test('interactive plot shows equation only for a selected line and coordinates only for a selected point', async () => {
+  const page = await interactiveDom(render(`${FENCE}plot\nf: 0\npoints: (1,1), (3,2) ; connect=true\nx: -5, 5\ny: -5, 5\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    const readout = figure.querySelector('.plot-readout');
+    const tooltip = figure.querySelector('.plot-tooltip');
+
+    const curve = stage.querySelector('.plot-curve');
+    pointer(page, curve, 'click', 340, 100);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '点击选中函数曲线');
+    assert.equal(readout.textContent, 'y = 0', '选中曲线后才显示方程式');
+    assert.equal(tooltip.classList.contains('is-visible'), true, '选中曲线时显示方程框');
+
+    figure.querySelector('[data-plot-action="zoom-in"]').click();
+    await waitFrame();
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '缩放重绘后仍选中同一曲线');
+    assert.equal(readout.textContent, 'y = 0', '缩放后仍显示选中曲线方程式');
+
+    const segment = stage.querySelector('.plot-segment');
+    pointer(page, segment, 'click', 340, 200);
+    assert.equal(stage.querySelector('.plot-segment').classList.contains('is-selected'), true, '点击选中线段');
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), false, '选中线段后取消曲线选中');
+    assert.equal(readout.textContent, 'y = 0.5x + 0.5', '选中线段后才显示它的方程式');
+
+    const dot = stage.querySelector('.plot-point');
+    pointer(page, dot, 'click', 100, 100);
+    assert.equal(stage.querySelector('.plot-segment').classList.contains('is-selected'), false, '选中点后取消线段选中');
+    assert.equal(readout.textContent, '(1, 1)', '选中点后只显示坐标');
+    assert.ok(stage.querySelector('.plot-coord')?.textContent.includes('(1, 1)'), '选中点的坐标框出现');
+
+    pointer(page, stage, 'click', 620, 380);
+    assert.equal(stage.querySelector('.is-selected'), null, '点击空白取消全部选中');
+    assert.ok(!readout.textContent.includes('y ='), '取消选中后不显示方程式');
+    assert.equal(stage.querySelector('.plot-coord'), null, '取消选中后不显示坐标');
   } finally { page.window.close(); }
 });
 
@@ -515,5 +556,7 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.graph-node-ring'), '图顶点外圈样式');
   assert.ok(!css.includes('.plot-equations') && !css.includes('.plot-label'), '函数图方程区与图内名称样式已删除');
   assert.ok(css.includes('.graph-edge-group.is-algo-active .graph-edge-line'), '图算法边高亮样式');
+  assert.ok(css.includes('.plot-curve.is-selected'), '选中函数曲线加粗样式');
+  assert.ok(css.includes('.plot-segment.is-selected'), '选中线段加粗样式');
   assert.ok(css.includes('.graph-node-group.is-cut-vertex .graph-node-ring'), '割点外圈样式');
 });

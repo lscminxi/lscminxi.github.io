@@ -305,6 +305,18 @@ function formatNumber(value, digits = 4) {
 
 const coordinateText = (x, y) => `(${formatNumber(x)}, ${formatNumber(y)})`;
 
+// 只供选中线段时显示方程式使用，图上平时不写方程。
+function lineEquation([x1, y1], [x2, y2]) {
+  if (![x1, y1, x2, y2].every(Number.isFinite) || (x1 === x2 && y1 === y2)) return '';
+  if (Math.abs(x2 - x1) < 1e-12) return `x = ${formatNumber(x1)}`;
+  const slope = (y2 - y1) / (x2 - x1);
+  const intercept = y1 - slope * x1;
+  if (Math.abs(slope) < 1e-12) return `y = ${formatNumber(y1)}`;
+  const slopeText = Math.abs(slope - 1) < 1e-12 ? 'x' : Math.abs(slope + 1) < 1e-12 ? '-x' : `${formatNumber(slope)}x`;
+  if (Math.abs(intercept) < 1e-12) return `y = ${slopeText}`;
+  return `y = ${slopeText} ${intercept > 0 ? '+' : '-'} ${formatNumber(Math.abs(intercept))}`;
+}
+
 function getPlotSegments(spec) {
   const segments = [];
   spec.pointSets.forEach((set, setIndex) => {
@@ -596,12 +608,12 @@ function renderPlotSvgInner(spec, options = {}) {
   out.push(`<text class="plot-tick" style="fill:var(--plot-text,#c3cedd)" font-size="10" x="${fmt(PLOT_PAD.left - 6)}" y="${fmt(PLOT_PAD.top - 4)}" text-anchor="end">y</text>`);
   out.push(`<rect class="plot-frame" style="fill:none;stroke:var(--plot-grid,#66758c);opacity:.95" stroke-width="1.2" x="${PLOT_PAD.left}" y="${PLOT_PAD.top}" width="${plotW}" height="${plotH}"/>`);
 
-  // 连点线段（按线段分开，方便交互命中）
-  for (const segment of getPlotSegments(spec)) {
+  // 连点线段（按线段分开，方便交互命中与选中）
+  for (const [segmentIndex, segment] of getPlotSegments(spec).entries()) {
     const clipped = clipSegmentToRange(segment, [xMin, xMax], [yMin, yMax]);
     if (!clipped) continue;
     const [[cx1, cy1], [cx2, cy2]] = clipped;
-    out.push(`<path class="plot-segment" data-kind="segment" data-x1="${segment.from[0]}" data-y1="${segment.from[1]}" data-x2="${segment.to[0]}" data-y2="${segment.to[1]}" d="M${fmt(px(cx1))} ${fmt(py(cy1))}L${fmt(px(cx2))} ${fmt(py(cy2))}" fill="none" stroke="${segment.color}" stroke-width="2"><title>线段</title></path>`);
+    out.push(`<path class="plot-segment" data-kind="segment" data-segment-index="${segmentIndex}" data-x1="${segment.from[0]}" data-y1="${segment.from[1]}" data-x2="${segment.to[0]}" data-y2="${segment.to[1]}" d="M${fmt(px(cx1))} ${fmt(py(cy1))}L${fmt(px(cx2))} ${fmt(py(cy2))}" fill="none" stroke="${segment.color}" stroke-width="2"><title>线段</title></path>`);
   }
 
   // 函数曲线：不连续处断开
@@ -656,7 +668,7 @@ function renderPlotSvg(spec, options = {}) {
   const svg = renderPlotSvgInner(spec, options);
   const caption = spec.title ? `<figcaption>${escape(spec.title)}</figcaption>` : '';
   const pressed = (value) => value ? 'true' : 'false';
-  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；点击点或交点查看坐标；悬停直线会微微加粗。</p>${caption}</figure>\n`;
+  return `<figure class="md-plot" data-plot-source="${escape(options.source || '')}" data-plot-interactive="${spec.interactive ? 'true' : 'false'}"><div class="plot-toolbar" aria-label="函数图像工具"><div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-plot-action="zoom-out" aria-label="缩小">−</button><button type="button" data-plot-action="zoom-in" aria-label="放大">＋</button><button type="button" data-plot-action="reset">重置</button></div><div class="plot-tools" role="group" aria-label="显示选项"><button type="button" data-plot-toggle="coords" aria-pressed="${pressed(spec.coords)}">坐标</button><button type="button" data-plot-toggle="intersections" aria-pressed="${pressed(spec.intersections)}">交点</button></div></div><div class="plot-stage">${svg}</div><p class="plot-readout" aria-live="polite">拖动平移，滚轮或双指缩放；选中点或交点看坐标，选中直线看方程式。</p>${caption}</figure>\n`;
 }
 
 /* ---------------- 可视化图 ```graph ---------------- */
@@ -1057,6 +1069,7 @@ module.exports.renderPlotSvgInner = renderPlotSvgInner;
 module.exports.resolvePlotRanges = resolvePlotRanges;
 module.exports.findPlotIntersections = findPlotIntersections;
 module.exports.getPlotSegments = getPlotSegments;
+module.exports.lineEquation = lineEquation;
 module.exports.PLOT_GEOMETRY = { width: PLOT_W, height: PLOT_H, pad: PLOT_PAD };
 module.exports.convertPlotFences = convertPlotFences;
 module.exports.parseGraphSpec = parseGraphSpec;

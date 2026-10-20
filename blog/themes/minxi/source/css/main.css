@@ -2151,6 +2151,8 @@ body.search-open {
 .article-content .plot-curve.is-hovered,
 .article-content .plot-segment:hover,
 .article-content .plot-segment.is-hovered { stroke-width: 4.4; }
+.article-content .plot-curve.is-selected,
+.article-content .plot-segment.is-selected { stroke-width: 4.8; }
 .article-content .graph-edge-hit { pointer-events: stroke; }
 .article-content .graph-edge-group:hover .graph-edge-line,
 .article-content .graph-edge-group.is-hovered .graph-edge-line,
