@@ -76,12 +76,13 @@ function initPlot(figure) {
     figure.dataset.viewIntersections = String(state.intersections);
   };
   // 选中的点用「类型:坐标」标识，重绘后按同一坐标找回，选中态不丢、坐标不变。
-  // 未选中任何点时不显示任何坐标（悬停也只加粗直线/放大圆点）。
+  // 未选中任何点时不显示任何坐标；一旦选中（移上、按下或点击）就显示。
   const defaultReadout = '拖动平移、滚轮缩放；选中点或交点看坐标，选中直线看方程式。';
   let selectedPointKey = null;
   let selectedPointInfo = null;
   let selectedLineKey = null;
   let selectedLineInfo = null;
+  let selectionSource = '';
   const pointKey = (el) => `${el.dataset.kind}:${el.dataset.x}:${el.dataset.y}`;
   const lineKey = (el) => el.dataset.kind === 'function'
     ? `function:${el.dataset.functionIndex}`
@@ -199,6 +200,7 @@ function initPlot(figure) {
       if (key === 'intersections' && !state.intersections && selectedPointInfo?.kind === 'intersection') {
         selectedPointInfo = null;
         selectedPointKey = null;
+        selectionSource = '';
       }
       if (key === 'coords') hideTooltip();
       draw();
@@ -241,8 +243,10 @@ function initPlot(figure) {
       };
       dragStart = null;
     }
-    hideTooltip();
     stage.classList.add('is-dragging');
+    // 一按到点/线就立即选中并显示；触摸没有 hover，这一步尤其重要。
+    if (pressTarget) selectAt(event, 'press', { preservePress: true });
+    else hideTooltip();
   });
 
   stage.addEventListener('pointermove', (event) => {
@@ -255,6 +259,15 @@ function initPlot(figure) {
         // 没超过点击阈值时不要平移/重绘：重绘会换掉被按下的 SVG 节点，
         // 随后 click 的目标丢失，选中（坐标/方程式）就永远触发不了。
         if (Math.hypot(event.clientX - dragStart.clientX, event.clientY - dragStart.clientY) <= CLICK_DRAG_THRESHOLD) return;
+        if (!moved && selectionSource === 'press') {
+          selectedPointInfo = null;
+          selectedPointKey = null;
+          selectedLineKey = null;
+          selectedLineInfo = null;
+          selectionSource = '';
+          hideTooltip();
+          updateSelectedReadout();
+        }
         moved = true;
         const frame = frameBox();
         const dxData = ((point.x - dragStart.point.x) / frame.width) * (dragStart.x[1] - dragStart.x[0]);
@@ -279,6 +292,10 @@ function initPlot(figure) {
         return;
       }
     }
+
+    // 选中即显示：指针移到点/交点、曲线或线段上时立刻进入选中态并展示
+    // 坐标/方程式，不再等一次完整 click。press/click 固定下来的选中不被空白 hover 清掉。
+    if (!pointers.size && updateHoverSelection(event)) return;
 
     // 悬停读数：优先命中点/交点，其次找最近的曲线
     const data = toData(svgPoint(event));
@@ -322,25 +339,82 @@ function initPlot(figure) {
       if (!hasSelection() && readout) readout.textContent = defaultReadout;
     }
   });
-  stage.addEventListener('pointerleave', () => { hideTooltip(); clearLineHover(); });
+  stage.addEventListener('pointerleave', () => {
+    hideTooltip();
+    clearLineHover();
+    if (selectionSource === 'hover') clearSelection();
+  });
 
-  // 选中一个点/交点：微微放大并固定显示它的坐标；点别处取消选中。
-  // 选中动作在 pointerup 上就完成（按下位置+松开位置判定），不再单等 click：
-  // 真实浏览器里 click 可能因指针捕获、重绘换节点或系统合成时序而丢失/落错目标，
-  // 只靠 click 会出现「悬停只看到原生『交点』提示、坐标标签和读数都不出来」。
-  const selectAt = (event) => {
+  // 选中即显示：点/交点被选中时固定显示坐标，曲线/线段被选中时显示方程式。
+  // “选中”不再只靠 click 完成：指针移上去（hover）、手指/鼠标按下去（press）
+  // 都会立刻进入选中态；click 与 pointerup 只作为兜底，避免真实浏览器里
+  // click 丢失时只剩 SVG 原生「交点」提示、坐标与方程永远不出现。
+  const clearSelection = () => {
+    selectedPointInfo = null;
+    selectedPointKey = null;
+    selectedLineKey = null;
+    selectedLineInfo = null;
+    selectionSource = '';
+    draw();
+    hideTooltip();
+    updateSelectedReadout();
+  };
+  const infoForLine = (lineTarget) => lineTarget.dataset.kind === 'function'
+    ? { kind: 'function', equation: `y = ${spec.functions[Number(lineTarget.dataset.functionIndex)]?.expr || ''}` }
+    : { kind: 'segment', equation: lineEquation([Number(lineTarget.dataset.x1), Number(lineTarget.dataset.y1)], [Number(lineTarget.dataset.x2), Number(lineTarget.dataset.y2)]) };
+  const activateSelection = (target, lineTarget, event, source) => {
+    const nextPointKey = target ? pointKey(target) : null;
+    const nextLineKey = lineTarget ? lineKey(lineTarget) : null;
+    if ((nextPointKey && nextPointKey === selectedPointKey) || (nextLineKey && nextLineKey === selectedLineKey)) {
+      selectionSource = source;
+      if (target) {
+        clearLineHover();
+        if (state.coords) showDisplay(event, `(${number(target.dataset.x)}, ${number(target.dataset.y)})`);
+        else { hideTooltip(); updateSelectedReadout(); }
+      } else if (lineTarget && selectedLineInfo?.equation) showDisplay(event, selectedLineInfo.equation);
+      else { hideTooltip(); updateSelectedReadout(); }
+      return;
+    }
+    if (target) {
+      selectedLineKey = null;
+      selectedLineInfo = null;
+      selectedPointInfo = {
+        kind: target.dataset.kind,
+        x: target.dataset.x,
+        y: target.dataset.y,
+        label: target.dataset.kind === 'intersection' ? '交点' : '点',
+      };
+      selectedPointKey = pointKey(target);
+      selectionSource = source;
+      clearLineHover();
+      draw();
+      if (state.coords) showDisplay(event, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
+      else { hideTooltip(); updateSelectedReadout(); }
+    } else if (lineTarget) {
+      selectedPointInfo = null;
+      selectedPointKey = null;
+      selectedLineKey = lineKey(lineTarget);
+      selectedLineInfo = infoForLine(lineTarget);
+      selectionSource = source;
+      clearLineHover();
+      draw();
+      if (selectedLineInfo.equation) showDisplay(event, selectedLineInfo.equation);
+      else { hideTooltip(); updateSelectedReadout(); }
+    }
+  };
+  const resolveSelection = (event) => {
     let target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
     let lineTarget = event.target?.closest?.('[data-kind="function"], [data-kind="segment"]');
     if (target && !stage.contains(target)) target = null;
     if (lineTarget && !stage.contains(lineTarget)) lineTarget = null;
-    // click 因指针捕获/重绘落到 stage（或别的非图形元素）上时，
+    // 事件因指针捕获/重绘落到 stage（或别的非图形元素）上时，
     // 用按下时命中的目标兜底；按、松两点距离必须仍在点击阈值内。
     if (!target && !lineTarget && pressTarget && pressClient
       && Math.hypot(event.clientX - pressClient.clientX, event.clientY - pressClient.clientY) <= CLICK_DRAG_THRESHOLD) {
       if (pressTarget.dataset.kind === 'point' || pressTarget.dataset.kind === 'intersection') target = pressTarget;
       else lineTarget = pressTarget;
     }
-    // 再兜底一层几何命中：点/线只有几像素宽，点在附近（未正中命中 SVG 元素）
+    // 再兜底一层几何命中：点/线只有几像素宽，落在附近（未正中命中 SVG 元素）
     // 时按坐标找最近的点/交点/线，避免「看着选上了却不显示坐标/方程」。
     if (!target && !lineTarget) {
       const eventPoint = svgPoint(event);
@@ -381,42 +455,28 @@ function initPlot(figure) {
         }
       }
     }
-    pressTarget = null;
-    pressClient = null;
-    if (target) {
-      selectedLineKey = null;
-      selectedLineInfo = null;
-      selectedPointInfo = {
-        kind: target.dataset.kind,
-        x: target.dataset.x,
-        y: target.dataset.y,
-        label: target.dataset.kind === 'intersection' ? '交点' : '点',
-      };
-      selectedPointKey = pointKey(target);
-      clearLineHover();
-      draw();
-      if (state.coords) showDisplay(event, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
-      else { hideTooltip(); updateSelectedReadout(); }
-    } else if (lineTarget) {
-      selectedPointInfo = null;
-      selectedPointKey = null;
-      selectedLineKey = lineKey(lineTarget);
-      selectedLineInfo = lineTarget.dataset.kind === 'function'
-        ? { kind: 'function', equation: `y = ${spec.functions[Number(lineTarget.dataset.functionIndex)]?.expr || ''}` }
-        : { kind: 'segment', equation: lineEquation([Number(lineTarget.dataset.x1), Number(lineTarget.dataset.y1)], [Number(lineTarget.dataset.x2), Number(lineTarget.dataset.y2)]) };
-      clearLineHover();
-      draw();
-      if (selectedLineInfo.equation) showDisplay(event, selectedLineInfo.equation);
-      else { hideTooltip(); updateSelectedReadout(); }
-    } else {
-      selectedPointInfo = null;
-      selectedPointKey = null;
-      selectedLineKey = null;
-      selectedLineInfo = null;
-      draw();
-      hideTooltip();
-      updateSelectedReadout();
+    return { target, lineTarget };
+  };
+  const selectAt = (event, source = 'click', options = {}) => {
+    const { target, lineTarget } = resolveSelection(event);
+    if (!options.preservePress) {
+      pressTarget = null;
+      pressClient = null;
     }
+    if (target || lineTarget) activateSelection(target, lineTarget, event, source);
+    else clearSelection();
+  };
+  const updateHoverSelection = (event) => {
+    const { target, lineTarget } = resolveSelection(event);
+    if (target || lineTarget) {
+      activateSelection(target, lineTarget, event, 'hover');
+      return true;
+    }
+    if (selectionSource === 'hover') {
+      clearSelection();
+      return true;
+    }
+    return false;
   };
   stage.addEventListener('click', (event) => {
     if (moved) { moved = false; pressTarget = null; pressClient = null; return; }
@@ -427,7 +487,7 @@ function initPlot(figure) {
       handledSelection = null;
       return;
     }
-    selectAt(event);
+    selectAt(event, 'click');
   });
 
   const finishPointer = (event) => {
@@ -440,7 +500,7 @@ function initPlot(figure) {
       pinchStart = null;
       stage.classList.remove('is-dragging');
       if (shouldSelect) {
-        selectAt(event);
+        selectAt(event, 'press');
         handledSelection = { time: Date.now(), x: event.clientX, y: event.clientY };
       }
     }

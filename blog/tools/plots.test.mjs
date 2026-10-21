@@ -314,8 +314,10 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     assert.match(figure.querySelector('.plot-readout').textContent, /选中点或交点看坐标，选中直线看方程式/, '初始读数只给操作提示');
     const initialDot = stage.querySelector('.plot-point');
     pointer(page, initialDot, 'pointermove', 408, 148);
-    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停描点也不显示坐标');
-    assert.ok(!figure.querySelector('.plot-readout').textContent.includes('(1, 1)'), '悬停描点时读数不泄露坐标');
+    assert.equal(stage.querySelector('.plot-point').classList.contains('is-selected'), true, '指针移到描点上立即选中，不等点击');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '选中描点立即显示坐标框');
+    assert.ok(figure.querySelector('.plot-readout').textContent.includes('(1, 1)'), '选中描点立即在读数中显示坐标');
+    assert.ok(stage.querySelector('.plot-coord')?.textContent.includes('(1, 1)'), '选中描点立即显示图内坐标标签');
 
     figure.querySelector('[data-plot-action="zoom-in"]').click();
     await waitFrame();
@@ -340,13 +342,12 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     figure.querySelector('[data-plot-toggle="coords"]').click();
     await waitFrame();
 
-    // 悬停到直线上：只微微加粗，不显示方程、名称或当前点坐标。
+    // 移到直线上即选中：立即显示方程式，不等点击。
     const curve = stage.querySelector('.plot-curve');
     pointer(page, curve, 'pointermove', 340, 210);
-    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), true, '悬停直线时对应直线高亮');
-    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停直线不显示方程框');
-    assert.ok(!figure.querySelector('.plot-readout').textContent.includes('y = x'), '读数不显示方程');
-    assert.ok(!figure.querySelector('.plot-readout').textContent.includes('(0, 0)'), '读数也不显示悬停坐标');
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '指针移到直线上立即选中');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '选中直线立即显示方程框');
+    assert.equal(figure.querySelector('.plot-readout').textContent, 'y = x', '选中直线立即在读数中显示方程式');
 
     // 第一次 click 是拖动结束的那次（应被吞掉），第二次才真正选中。
     const dot = stage.querySelector('.plot-point');
@@ -364,15 +365,16 @@ test('interactive plot zooms, pans, toggles coordinates and resets', async () =>
     assert.equal(stage.querySelector('.plot-point.is-selected'), null, '点击空白取消选中');
     assert.equal(stage.querySelector('.plot-coord'), null, '取消选中后不显示坐标');
 
-    // 交点默认只有命中区：悬停时不突出直线、不显示坐标；选中后只显示交点坐标。
+    // 交点默认只有命中区：移上去即选中，不突出直线，立即只显示交点坐标。
     const intersection = stage.querySelector('.plot-intersection');
     pointer(page, intersection, 'pointermove', 340, 210);
-    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), false, '悬停交点不突出直线');
-    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), false, '悬停交点不显示坐标');
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-hovered'), false, '选中交点不突出直线');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '选中交点立即显示坐标框');
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '移到交点上立即选中');
+    assert.equal(stage.querySelector('.plot-curve.is-selected'), null, '选中交点不突出关联直线');
+    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '选中交点立即显示它的坐标');
     pointer(page, intersection, 'click', 340, 210);
-    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '点击选中交点');
-    assert.equal(stage.querySelector('.plot-curve.is-hovered'), null, '选中交点不突出关联直线');
-    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '选中交点后才显示它的坐标');
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '点击仍可固定选中交点');
     pointer(page, stage, 'click', 620, 380);
     assert.equal(stage.querySelector('.plot-coord-tag'), null, '取消交点选中后坐标消失');
   } finally { page.window.close(); }
@@ -483,7 +485,7 @@ test('named graph edges still show their weight', async () => {
   } finally { page.window.close(); }
 });
 
-test('plot selection completes on pointerup even if the following click is lost', async () => {
+test('plot selection starts on pointerdown and remains after pointerup without a click', async () => {
   const page = await interactiveDom(render(`${FENCE}plot\nf: x\nf: -x + 2\nx: -5, 5\ny: -5, 5\n${FENCE}`));
   try {
     const figure = page.window.document.querySelector('.md-plot');
@@ -494,11 +496,13 @@ test('plot selection completes on pointerup even if the following click is lost'
       Object.defineProperty(event, 'pointerId', { value: 1 });
       target.dispatchEvent(event);
     };
-    // 只发 pointerdown/pointerup，不发 click（模拟 click 丢失/落错目标的真实浏览器）。
+    // 只发 pointerdown/pointerup，不发 click：一按到交点就显示，松手后仍保持。
     const intersection = stage.querySelector('.plot-intersection');
     press(intersection, 'pointerdown', 340, 210);
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '按到交点立即选中，不等 click');
+    assert.equal(readout.textContent, '(0, 0)', '按到交点立即显示坐标读数');
     press(intersection, 'pointerup', 341, 211);
-    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '松手即选中交点，不等 click');
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '松手后仍选中交点');
     assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '松手后交点坐标标签出现');
     assert.equal(readout.textContent, '(0, 0)', '松手后底部读数显示交点坐标');
     assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '松手后坐标标签框出现');
@@ -509,11 +513,39 @@ test('plot selection completes on pointerup even if the following click is lost'
 
     const curve = stage.querySelector('.plot-curve');
     press(curve, 'pointerdown', 340, 100);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '按到曲线立即选中并显示方程式');
+    assert.equal(readout.textContent, 'y = x', '按到曲线立即显示方程式');
     press(curve, 'pointerup', 341, 101);
-    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '松手即选中曲线');
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '松手后仍选中曲线');
     assert.equal(readout.textContent, 'y = x', '松手后底部读数显示方程式');
     press(stage, 'click', 341, 101);
     assert.equal(readout.textContent, 'y = x', '迟到的 click 后仍显示方程式');
+  } finally { page.window.close(); }
+});
+
+
+test('plot shows coordinates and equations as soon as hover selects a target, with no click at all', async () => {
+  const page = await interactiveDom(render(`${FENCE}plot\nf: x\nf: -x + 2\npoints: (1,1)\nx: -5, 5\ny: -5, 5\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    const readout = figure.querySelector('.plot-readout');
+
+    pointer(page, stage.querySelector('.plot-intersection'), 'pointermove', 340, 210);
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '只移动到交点上就选中');
+    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '只移动到交点上就显示坐标标签');
+    assert.equal(readout.textContent, '(0, 0)', '只移动到交点上就显示底部坐标');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '只移动到交点上就显示坐标框');
+
+    pointer(page, stage.querySelector('.plot-curve'), 'pointermove', 340, 100);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '只移动到曲线上就选中');
+    assert.equal(readout.textContent, 'y = x', '只移动到曲线上就显示方程式');
+    assert.equal(stage.querySelector('.plot-intersection-label'), null, '选中曲线后交点坐标隐藏');
+
+    pointer(page, stage, 'pointermove', 620, 380);
+    assert.equal(stage.querySelector('.is-selected'), null, '移回空白处取消 hover 选中');
+    assert.equal(stage.querySelector('.plot-coord'), null, '移回空白处后坐标隐藏');
+    assert.match(readout.textContent, /选中点或交点看坐标/, '移回空白处恢复默认读数');
   } finally { page.window.close(); }
 });
 
