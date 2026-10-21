@@ -1202,9 +1202,20 @@
   // 滚动位置按比例记，不只记像素：正文变长/变短后重渲染仍停在相对位置，
   // 不会因为内容高度变了被顶回头部。
   let previewScrollRatio = { top: 0, left: 0 };
-  let scrollSyncLock = false;
   let lastScrollSource = "preview";
   const previewFrame = $("#post-preview");
+  // 双向滚动同步（参考行锚点同步法）：预览块带源码行号，编辑区用隐藏镜像层
+  // 量出每一行的像素位置，两边按锚点插值对齐内容，而不是按总高度百分比硬拉；
+  // 同步只由滚动驱动（rAF 合并一帧一次），给另一侧赋值时记下目标位置，
+  // 它回弹的 scroll 事件按位置识别为回声直接忽略，避免左右来回拉扯发抖。
+  let scrollAnchors = [];
+  let scrollAnchorsDirty = true;
+  let lineMirror = null;
+  let syncRaf = 0;
+  let pendingSyncSource = "";
+  let syncGuard = { side: "", until: 0, top: 0, left: 0 };
+  const syncNow = () => (window.performance?.now ? window.performance.now() : Date.now());
+  const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
   const scrollRatioFor = (element, axis) => {
     if (!element) return 0;
     const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
@@ -1229,47 +1240,144 @@
       left: Number.isFinite(leftMax) && leftMax > 0 ? scrollRatioFor(scroll, "left") : previewScrollRatio.left,
     };
   };
-  const restorePreviewScroll = (scroll) => {
-    if (!scroll) return;
-    scrollSyncLock = true;
-    applyScrollRatio(scroll, "top", previewScrollRatio.top);
-    applyScrollRatio(scroll, "left", previewScrollRatio.left);
-    // 刚刚是编辑区在滚：让预览对齐到编辑区的相对位置，而不是旧位置。
-    if (lastScrollSource === "editor") {
-      applyScrollRatio(scroll, "top", scrollRatioFor(el.f.body, "top"));
-      applyScrollRatio(scroll, "left", scrollRatioFor(el.f.body, "left"));
-    }
-    rememberPreviewScroll(scroll);
-    setTimeout(() => { scrollSyncLock = false; }, 60);
+  const ensureLineMirror = () => {
+    if (lineMirror) return lineMirror;
+    const mirror = document.createElement("div");
+    mirror.setAttribute("aria-hidden", "true");
+    mirror.style.cssText = "position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;";
+    document.body.append(mirror);
+    lineMirror = mirror;
+    return mirror;
   };
+  const rebuildLineMirror = () => {
+    const ta = el.f.body;
+    const mirror = ensureLineMirror();
+    const style = window.getComputedStyle(ta);
+    mirror.style.width = `${ta.clientWidth}px`;
+    mirror.style.font = style.font;
+    mirror.style.lineHeight = style.lineHeight;
+    mirror.style.letterSpacing = style.letterSpacing;
+    mirror.style.padding = style.padding;
+    mirror.style.border = "0";
+    mirror.style.boxSizing = "border-box";
+    mirror.style.whiteSpace = style.whiteSpace || "pre-wrap";
+    mirror.style.overflowWrap = style.overflowWrap || "break-word";
+    mirror.style.wordBreak = style.wordBreak || "normal";
+    mirror.textContent = "";
+    for (const line of ta.value.split("\n")) {
+      const div = document.createElement("div");
+      div.textContent = line || "\u200b";
+      mirror.append(div);
+    }
+  };
+  const buildScrollAnchors = () => {
+    const doc = previewFrame.contentDocument;
+    const scroll = doc?.scrollingElement;
+    scrollAnchors = [];
+    if (!doc || !scroll) { scrollAnchorsDirty = false; return; }
+    rebuildLineMirror();
+    const anchors = [];
+    for (const el of doc.querySelectorAll(".article-content > [data-source-line]")) {
+      const line = Number(el.dataset.sourceLine);
+      const lineEl = lineMirror?.children[line - 1];
+      if (!Number.isInteger(line) || line < 1 || !lineEl) continue;
+      const taY = lineEl.offsetTop;
+      const pvY = el.getBoundingClientRect().top + (scroll.scrollTop || 0);
+      const prev = anchors[anchors.length - 1];
+      if (prev && (taY <= prev.ta || pvY <= prev.pv)) continue;
+      anchors.push({ ta: taY, pv: pvY });
+    }
+    scrollAnchors = anchors;
+    scrollAnchorsDirty = false;
+  };
+  const interpolateScroll = (value, fromKey, toKey, fromMax, toMax) => {
+    const ratioTarget = fromMax > 0 && toMax > 0 ? (value / fromMax) * toMax : 0;
+    const usable = scrollAnchors.filter((anchor) => anchor[fromKey] < fromMax - 0.5);
+    if (!usable.length || fromMax <= 0 || toMax <= 0) return ratioTarget;
+    if (value <= usable[0][fromKey]) {
+      return usable[0][fromKey] > 0 ? (value / usable[0][fromKey]) * usable[0][toKey] : usable[0][toKey];
+    }
+    const last = usable[usable.length - 1];
+    if (value >= last[fromKey]) {
+      const span = fromMax - last[fromKey];
+      return span < 1 ? (value >= fromMax - 0.5 ? toMax : last[toKey])
+        : last[toKey] + ((value - last[fromKey]) / span) * (toMax - last[toKey]);
+    }
+    let lo = 0; let hi = usable.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (usable[mid][fromKey] <= value) lo = mid; else hi = mid;
+    }
+    const a = usable[lo]; const b = usable[hi];
+    return a[toKey] + ((value - a[fromKey]) / (b[fromKey] - a[fromKey])) * (b[toKey] - a[toKey]);
+  };
+  const setSyncedScroll = (side, element, top, left) => {
+    if (!element) return;
+    const targetTop = Math.max(0, top || 0);
+    const targetLeft = Math.max(0, left || 0);
+    if (Math.abs((element.scrollTop || 0) - targetTop) < 1 && Math.abs((element.scrollLeft || 0) - targetLeft) < 1) return;
+    syncGuard = { side, until: syncNow() + 250, top: targetTop, left: targetLeft };
+    element.scrollTop = targetTop;
+    element.scrollLeft = targetLeft;
+    if (side === "preview") rememberPreviewScroll(element);
+  };
+  const isSyncEcho = (side, element) => Boolean(element)
+    && syncGuard.side === side && syncNow() <= syncGuard.until
+    && Math.abs((element.scrollTop || 0) - syncGuard.top) <= 2
+    && Math.abs((element.scrollLeft || 0) - syncGuard.left) <= 2;
   const syncPreviewToEditor = () => {
-    if (scrollSyncLock) return;
     const scroll = previewFrame.contentDocument?.scrollingElement;
     if (!scroll) return;
     lastScrollSource = "editor";
-    scrollSyncLock = true;
-    applyScrollRatio(scroll, "top", scrollRatioFor(el.f.body, "top"));
-    applyScrollRatio(scroll, "left", scrollRatioFor(el.f.body, "left"));
-    rememberPreviewScroll(scroll);
-    setTimeout(() => { scrollSyncLock = false; }, 60);
+    if (scrollAnchorsDirty) buildScrollAnchors();
+    const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
+    const maxPv = scroll.scrollHeight - scroll.clientHeight;
+    const top = scrollAnchors.length
+      ? interpolateScroll(el.f.body.scrollTop || 0, "ta", "pv", maxTa, maxPv)
+      : (maxTa > 0 ? ((el.f.body.scrollTop || 0) / maxTa) * maxPv : 0);
+    setSyncedScroll("preview", scroll, top, (scrollRatioFor(el.f.body, "left") || 0) * Math.max(0, scroll.scrollWidth - scroll.clientWidth));
   };
   const syncEditorToPreview = () => {
-    if (scrollSyncLock) return;
     const scroll = previewFrame.contentDocument?.scrollingElement;
     if (!scroll) return;
     lastScrollSource = "preview";
     rememberPreviewScroll(scroll);
-    scrollSyncLock = true;
-    applyScrollRatio(el.f.body, "top", previewScrollRatio.top);
-    applyScrollRatio(el.f.body, "left", previewScrollRatio.left);
-    setTimeout(() => { scrollSyncLock = false; }, 60);
+    if (scrollAnchorsDirty) buildScrollAnchors();
+    const maxPv = scroll.scrollHeight - scroll.clientHeight;
+    const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
+    const top = scrollAnchors.length
+      ? interpolateScroll(scroll.scrollTop || 0, "pv", "ta", maxPv, maxTa)
+      : (maxPv > 0 ? ((scroll.scrollTop || 0) / maxPv) * maxTa : 0);
+    setSyncedScroll("editor", el.f.body, top, previewScrollRatio.left * Math.max(0, el.f.body.scrollWidth - el.f.body.clientWidth));
+  };
+  const queueScrollSync = (source) => {
+    pendingSyncSource = source;
+    if (syncRaf) return;
+    syncRaf = scheduleFrame(() => {
+      syncRaf = 0;
+      const sourceNow = pendingSyncSource;
+      pendingSyncSource = "";
+      if (sourceNow === "editor") syncPreviewToEditor();
+      else if (sourceNow === "preview") syncEditorToPreview();
+    });
+  };
+  const restorePreviewScroll = (scroll) => {
+    if (!scroll) return;
+    // 刚刚是编辑区在滚：重渲染后也按锚点对齐到编辑区，而不是旧像素位置。
+    if (lastScrollSource === "editor") { syncPreviewToEditor(); return; }
+    const topMax = scroll.scrollHeight - scroll.clientHeight;
+    const leftMax = scroll.scrollWidth - scroll.clientWidth;
+    setSyncedScroll("preview", scroll,
+      Number.isFinite(topMax) && topMax > 0 ? previewScrollRatio.top * topMax : 0,
+      Number.isFinite(leftMax) && leftMax > 0 ? previewScrollRatio.left * leftMax : 0);
   };
   const handlePreviewScroll = () => {
     const scroll = previewFrame.contentDocument?.scrollingElement;
     rememberPreviewScroll(scroll);
-    if (!scrollSyncLock) syncEditorToPreview();
+    if (!isSyncEcho("preview", scroll)) queueScrollSync("preview");
   };
-  el.f.body.addEventListener("scroll", () => { if (!scrollSyncLock) syncPreviewToEditor(); });
+  el.f.body.addEventListener("scroll", () => { if (!isSyncEcho("editor", el.f.body)) queueScrollSync("editor"); });
+  window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
   previewFrame.addEventListener("load", () => {
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
@@ -1279,6 +1387,7 @@
     restorePreviewScroll(scroll);
     // 工具栏/图注是 enhance 时才插入的，布局稳定后再恢复一次，避免位置被顶动。
     setTimeout(() => restorePreviewScroll(scroll), 0);
+    scrollAnchorsDirty = true;
     try { previewFrame.contentWindow?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
   });
   function renderPostPreview() {
@@ -1327,6 +1436,7 @@
   }
   [el.f.body, el.f.title, el.f.description].forEach((field) => {
     field.addEventListener("input", () => {
+      scrollAnchorsDirty = true;
       clearTimeout(previewTimer);
       previewTimer = setTimeout(renderPostPreview, 180);
     });
