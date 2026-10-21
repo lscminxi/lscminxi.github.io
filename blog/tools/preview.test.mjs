@@ -215,6 +215,72 @@ test('live preview preserves fold states with stable keys, including duplicate a
   assert.equal(fresh.querySelectorAll('details[open]').length, 0, 'New articles start folded');
 });
 
+test('editor and preview stay aligned and synced without jumping back to the top', async () => {
+  const css = await readFile('source/admin/admin.css', 'utf8');
+  assert.match(css, /\.writing-workspace \{[^}]*align-items: stretch/, '编辑区和预览区两端对齐');
+  assert.match(css, /\.writing-workspace \{[^}]*height: 65vh/, '分屏工作区有统一高度');
+  assert.match(css, /\.writing-workspace \.code-area \{[^}]*height: 100%/, '编辑区撑满对齐高度');
+  assert.match(css, /#post-preview \{[^}]*height: 100%/, '预览区撑满对齐高度');
+
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  // 先完成首次渲染，后续编辑属于同一篇文章的增量更新，不应再重置滚动。
+  field.value = '初始正文';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  const previewDoc = frame.contentDocument;
+  if (!previewDoc.scrollingElement) {
+    Object.defineProperty(previewDoc, 'scrollingElement', { configurable: true, get: () => previewDoc.documentElement });
+  }
+  const previewScroll = previewDoc.scrollingElement;
+  assert.ok(previewScroll, '预览有可滚动根元素');
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 400;
+  let previewTop = 0;
+  metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  metric(previewScroll, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+
+  field.dispatchEvent(new w.Event('scroll'));
+  assert.equal(previewTop, 700, '编辑区滚到一半时预览按比例对齐到一半');
+
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  previewTop = 1050;
+  frame.contentWindow.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  assert.equal(editorTop, 600, '预览滚动时编辑区也按比例对齐');
+
+  // 重新渲染后按比例恢复预览位置，不回到头。
+  previewTop = 1050;
+  field.value = '改了一点正文，触发重新渲染';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const renderedDoc = frame.contentDocument;
+  if (!renderedDoc.scrollingElement) {
+    Object.defineProperty(renderedDoc, 'scrollingElement', { configurable: true, get: () => renderedDoc.documentElement });
+  }
+  metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  frame.dispatchEvent(new w.Event('load'));
+  assert.equal(previewTop, 1050, '重新渲染后预览停在原来的相对位置，不回头');
+  editor.window.close();
+});
+
 test('view mode changes do not reload an unchanged live preview', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',

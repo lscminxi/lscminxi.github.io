@@ -2067,7 +2067,6 @@ body.search-open {
 .article-content .plot-axis { stroke: var(--plot-axis); stroke-width: 1.7; opacity: 0.92; }
 .article-content .plot-frame { fill: none; stroke: var(--plot-grid); stroke-width: 1.2; opacity: 0.95; }
 .article-content .plot-tick { fill: var(--plot-text); font-size: 10px; }
-.article-content .plot-label { font-size: 12px; font-weight: 600; }
 .article-content .plot-curve { stroke-linejoin: round; stroke-linecap: round; }
 .article-content .graph-edge { stroke: var(--text); opacity: 0.55; }
 .article-content .graph-arrow { fill: var(--text); opacity: 0.55; }
@@ -2102,13 +2101,13 @@ body.search-open {
 .article-content .plot-stage { touch-action: none; cursor: grab; border-radius: 6px; }
 .article-content .plot-stage.is-dragging { cursor: grabbing; }
 .article-content .plot-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.article-content .plot-readout { min-height: 1.7em; margin: 8px 2px 2px; color: var(--muted); font-size: 12.5px; }
-.article-content .plot-equations { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
-.article-content .plot-equations h3 { font-size: 13px; margin: 0 0 6px; }
-.article-content .plot-equations ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.article-content .plot-equations li { display: flex; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
-.article-content .plot-equation-swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; transform: translateY(1px); }
-.article-content .plot-equation-range { color: var(--muted); font-size: 11px; }
+.article-content .plot-readout {
+  display: flex; align-items: center; min-height: 38px; margin: 9px 1px 2px;
+  padding: 7px 11px; border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 9px; background: color-mix(in srgb, var(--panel-raised) 78%, transparent);
+  color: var(--text); font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+  overflow-wrap: anywhere;
+}
 .article-content .plot-coord,
 .article-content .plot-intersection-label { paint-order: stroke; stroke: var(--panel); stroke-width: 3px; }
 .article-content .plot-point,
@@ -2116,12 +2115,106 @@ body.search-open {
 .article-content .plot-curve,
 .article-content .plot-segment { cursor: pointer; }
 .article-content .graph-node-group { cursor: pointer; }
+/* 跟随鼠标的坐标显示框 */
+.article-content .plot-stage { position: relative; }
+.article-content .plot-tooltip {
+  position: absolute; z-index: 6; min-width: 96px; max-width: 250px;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px;
+  background: color-mix(in srgb, var(--panel-raised) 94%, transparent);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.26); backdrop-filter: blur(8px);
+  color: var(--text); font-family: var(--mono); font-size: 11.5px; line-height: 1.45;
+  pointer-events: none; opacity: 0; visibility: hidden;
+  transform: translate(-50%, calc(-100% - 14px)) scale(0.97);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+}
+.article-content .plot-tooltip.is-below { transform: translate(-50%, 16px) scale(0.97); }
+.article-content .plot-tooltip.is-visible { opacity: 1; visibility: visible; transform: translate(-50%, calc(-100% - 14px)) scale(1); }
+.article-content .plot-tooltip.is-below.is-visible { transform: translate(-50%, 16px) scale(1); }
+.article-content .plot-tooltip strong,
+.article-content .plot-tooltip span { display: block; overflow-wrap: anywhere; }
+.article-content .plot-tooltip strong { font-size: 12px; }
+.article-content .plot-tooltip span { color: var(--muted); margin-top: 1px; }
+/* 坐标标签框 */
+.article-content .plot-coord-box { fill: var(--panel-raised); stroke: var(--line); opacity: 0.96; }
+.article-content .plot-coord-tag text { paint-order: stroke; stroke: var(--panel); stroke-width: 2px; }
+/* 交点不直接显现：只有一个透明命中区，悬停或选中时才出现圆点；
+   选中交点只突出圆点本身，不给下面的直线加高亮。 */
+.article-content .plot-intersection-hit { pointer-events: all; }
+.article-content .plot-intersection-dot { opacity: 0; }
+.article-content .plot-intersection:hover .plot-intersection-dot,
+.article-content .plot-intersection.is-selected .plot-intersection-dot { opacity: 1; }
+/* 鼠标落在线上：对应直线微微加粗 */
+.article-content .plot-curve,
+.article-content .plot-segment,
+.article-content .graph-edge-line { transition: stroke-width 0.16s ease, opacity 0.16s ease; }
+.article-content .plot-curve:hover,
+.article-content .plot-curve.is-hovered,
+.article-content .plot-segment:hover,
+.article-content .plot-segment.is-hovered { stroke-width: 4.4; }
+.article-content .plot-curve.is-selected,
+.article-content .plot-segment.is-selected { stroke-width: 4.8; }
+.article-content .graph-edge-hit { pointer-events: stroke; }
+.article-content .graph-edge-group:hover .graph-edge-line,
+.article-content .graph-edge-group.is-hovered .graph-edge-line,
+.article-content .graph-edge-group.is-selected .graph-edge-line { stroke-width: 4.4; opacity: 1; }
+.article-content .graph-edge-group:hover .graph-arrow,
+.article-content .graph-edge-group.is-hovered .graph-arrow,
+.article-content .graph-edge-group.is-selected .graph-arrow { opacity: 1; }
+.article-content .graph-algorithm-fixed {
+  display: inline-flex; align-items: center; border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; line-height: 1.5;
+}
+/* 图算法高亮（连通分量 / 桥与割点 / 最小生成树 / 二分图） */
+.article-content .graph-edge-group.is-algo-active .graph-edge-line,
+.article-content .graph-edge-group.is-algo-bridge .graph-edge-line,
+.article-content .graph-edge-group.is-algo-conflict .graph-edge-line {
+  stroke: var(--algo-edge-color, var(--accent)) !important;
+  stroke-width: 4.6;
+  opacity: 1 !important;
+}
+.article-content .graph-edge-group.is-algo-active .graph-arrow,
+.article-content .graph-edge-group.is-algo-bridge .graph-arrow,
+.article-content .graph-edge-group.is-algo-conflict .graph-arrow {
+  fill: var(--algo-edge-color, var(--accent)) !important;
+  opacity: 1 !important;
+}
+.article-content .graph-edge-group.is-algo-back .graph-edge-line {
+  stroke: var(--algo-edge-color, #ffa94d) !important;
+  stroke-width: 4.6;
+  stroke-dasharray: 7 5;
+  opacity: 1 !important;
+}
+.article-content .graph-edge-group.is-algo-back .graph-arrow {
+  fill: var(--algo-edge-color, #ffa94d) !important;
+  opacity: 1 !important;
+}
+.article-content .graph-node-group.is-dfs-root .graph-node-ring {
+  opacity: 0.95;
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.article-content .graph-edge-group.is-algo-dim .graph-edge-line { opacity: 0.13 !important; }
+.article-content .graph-edge-group.is-algo-dim .graph-arrow { opacity: 0.13 !important; }
+.article-content .graph-node-group.is-algo-node .graph-node-ring,
+.article-content .graph-node-group.is-cut-vertex .graph-node-ring { opacity: 0.95; }
+.article-content .graph-node-group.is-cut-vertex .graph-node-ring {
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 5px rgb(255 146 43 / 0.65));
+}
+/* 参考图编辑器：顶点悬停/选中时出现深色外圈 */
+.article-content .graph-node-ring {
+  opacity: 0; transform-box: fill-box; transform-origin: center;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.article-content .graph-node-group:hover .graph-node-ring,
+.article-content .graph-node-group.is-selected .graph-node-ring { opacity: 0.92; transform: scale(1.04); }
 /* 圆点选中微放大：只缩放圆点本身，坐标文字与位置不跟着动 */
 .article-content .plot-dot,
 .article-content .graph-node {
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 0.16s ease;
+  transition: transform 0.16s ease, opacity 0.16s ease;
 }
 .article-content .plot-point:hover .plot-dot,
 .article-content .plot-point.is-selected .plot-dot,
@@ -3268,6 +3361,10 @@ html[data-theme="light"] .article-content .fold-box--success {
 /* 染色点上的文字在浅色下同样用白色（点本身的颜色不变） */
 html[data-theme="light"] .article-content .graph-node-label.on-color {
   fill: #ffffff;
+}
+/* 坐标显示框在浅色下用更柔和的阴影 */
+html[data-theme="light"] .article-content .plot-tooltip {
+  box-shadow: 0 10px 28px rgb(31 41 55 / 0.16);
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   html[data-theme="light"][data-wallpaper="on"] .site-header {

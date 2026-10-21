@@ -37,7 +37,7 @@ window.MinxiPreview = {
       fold.dataset.previewFoldKey = key;
       if (opened.has(key)) fold.open = true;
     });
-    // 把上次预览里每张函数图的视图（范围 + 坐标/交点/方程开关）写回去，
+    // 把上次预览里每张函数图的视图（范围 + 坐标/交点开关）写回去，
     // 使实时重渲染后平移/缩放状态不丢失；第几张图对第几个视图，按出现顺序。
     fragment.querySelectorAll('.md-plot').forEach((figure, index) => {
       const view = plotViews[index];
@@ -46,7 +46,6 @@ window.MinxiPreview = {
       set('data-view-x-min', view.xMin); set('data-view-x-max', view.xMax);
       set('data-view-y-min', view.yMin); set('data-view-y-max', view.yMax);
       set('data-view-coords', view.coords); set('data-view-intersections', view.intersections);
-      set('data-view-equations', view.equations);
     });
     fragment.querySelectorAll('.md-graph > svg, .md-graph svg').forEach((svg, index) => {
       if (graphViews[index]) svg.setAttribute('data-preview-viewbox', graphViews[index]);
@@ -60,7 +59,7 @@ window.MinxiPreview = {
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src https: data:;">
       <base href="${escape(location.origin)}/">
-      <link rel="stylesheet" href="/css/main.css?v=nav-6">
+      <link rel="stylesheet" href="/css/main.css?v=nav-7">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
       <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:28px;line-height:1.4;margin:0 0 12px}.article-content{min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>文章预览</title></head><body>
