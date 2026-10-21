@@ -416,6 +416,73 @@ test('interactive plot shows equation only for a selected line and coordinates o
   } finally { page.window.close(); }
 });
 
+test('plot selection survives real pointer jitter and a click retargeted to the stage', async () => {
+  const page = await interactiveDom(render(`${FENCE}plot\nf: x\nf: -x + 2\nx: -5, 5\ny: -5, 5\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    const readout = figure.querySelector('.plot-readout');
+    const press = (target, type, x, y) => {
+      const event = new page.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+      Object.defineProperties(event, { pointerId: { value: 1 }, movementX: { value: 1 }, movementY: { value: 1 } });
+      target.dispatchEvent(event);
+    };
+    const clickAtStage = (target, x, y) => {
+      // 真实浏览器：按下→几像素抖动→松开，click 可能因指针捕获/重绘落到 stage 上。
+      press(target, 'pointerdown', x, y);
+      press(target, 'pointermove', x + 2, y + 1);
+      press(target, 'pointerup', x + 2, y + 1);
+      press(stage, 'click', x + 2, y + 1);
+    };
+
+    const beforeX = Number(stage.querySelector('svg').dataset.xMin);
+    clickAtStage(stage.querySelector('.plot-intersection'), 340, 210);
+    assert.equal(Number(stage.querySelector('svg').dataset.xMin), beforeX, '几像素抖动不算拖动平移');
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '抖动后松开仍选中交点');
+    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '选中交点显示坐标标签');
+    assert.equal(readout.textContent, '(0, 0)', '选中交点在读数框显示坐标');
+
+    clickAtStage(stage.querySelector('.plot-curve'), 340, 100);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '抖动后松开仍选中曲线');
+    assert.equal(readout.textContent, 'y = x', '选中曲线在读数框显示方程式');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '选中曲线显示方程浮框');
+    assert.equal(stage.querySelector('.plot-intersection-label'), null, '选中曲线后交点坐标隐藏');
+  } finally { page.window.close(); }
+});
+
+test('plot selection also works when the click lands near (not exactly on) a point or line', async () => {
+  const page = await interactiveDom(render(`${FENCE}plot\nf: x\nf: -x + 2\nx: -5, 5\ny: -5, 5\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    const readout = figure.querySelector('.plot-readout');
+    // (0,0) 的屏幕位置约为 (357,199)；点在它右下 11px 处的空白上，应命中交点。
+    pointer(page, stage, 'click', 365, 207);
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '点在交点附近也能选中交点');
+    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '几何命中选中交点后显示坐标标签');
+    assert.equal(readout.textContent, '(0, 0)', '几何命中选中交点后底部读数显示坐标');
+    // 点在曲线 y=x 附近（下方约 12px）的空白上，应命中曲线并显示方程。
+    pointer(page, stage, 'click', 300, 245);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '点在曲线附近也能选中曲线');
+    assert.equal(readout.textContent, 'y = x', '几何命中选中曲线后显示方程式');
+  } finally { page.window.close(); }
+});
+
+test('named graph edges still show their weight', async () => {
+  const svg = plots.renderGraphSvg(plots.parseGraphSpec('node: A\nnode: B\nedge: A - B ; label=路径 ; weight=3'));
+  assert.ok(svg.includes('路径 · 边权 3'), '图上标注同时显示名称与边权');
+  assert.ok(svg.includes('data-label="路径"') && svg.includes('data-weight="3"'), '边组保留名称与边权供交互读数');
+  const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B ; label=路径 ; weight=3\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-graph');
+    const hit = figure.querySelector('.graph-edge-hit');
+    pointer(page, hit, 'pointermove', 200, 100);
+    assert.match(figure.querySelector('.plot-readout').textContent, /路径 · 边权 3/, '悬停有名称的边时读数带边权');
+    pointer(page, hit, 'click', 200, 100);
+    assert.match(figure.querySelector('.plot-readout').textContent, /边权 3/, '点击有名称的边时读数带边权');
+  } finally { page.window.close(); }
+});
+
 test('interactive graph zooms and reports node coordinates', async () => {
   const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
   try {

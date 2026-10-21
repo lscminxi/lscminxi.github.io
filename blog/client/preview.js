@@ -24,6 +24,21 @@ window.MinxiPreview = {
       ADD_TAGS: ['annotation'], FORBID_TAGS: ['style', 'iframe', 'form', 'input'],
       FORBID_ATTR: ['id', 'name'],
     });
+    // 给每个顶层块标上它在 Markdown 源码里的起始行号，供后台编辑器做
+    // 「源码行 ↔ 预览块」的锚点滚动同步（参考行锚点同步法：两边按内容对齐，
+    // 而不是按总高度百分比硬拉，所以长图/表格/代码块也不会错位抖动）。
+    try {
+      const sourceLines = [];
+      let line = 1;
+      for (const token of markdown.lexer(body)) {
+        const raw = token.raw || '';
+        if (token.type !== 'space' && token.type !== 'def') sourceLines.push(line);
+        line += (raw.match(/\n/g) || []).length;
+      }
+      [...fragment.children].forEach((el, index) => {
+        if (sourceLines[index]) el.dataset.sourceLine = String(sourceLines[index]);
+      });
+    } catch { /* 行号只是同步辅助，标不上不影响预览本身 */ }
     // Native <details> remains clickable in the script-free iframe. Give each
     // fold a stable key so the editor can preserve its state across live updates.
     const opened = new Set(openFolds);

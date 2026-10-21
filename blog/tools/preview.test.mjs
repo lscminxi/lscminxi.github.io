@@ -256,8 +256,15 @@ test('editor and preview stay aligned and synced without jumping back to the top
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
   metric(previewScroll, 1600, 200, () => previewTop, (value) => { previewTop = value; });
 
+  // 预览块带源码行号，编辑区按行锚点同步（无锚点时才退回比例）。
+  const stamped = preview('# 标题\n\n第一段\n\n第二段');
+  assert.deepEqual([...stamped.querySelectorAll('.article-content > [data-source-line]')].map((el) => el.dataset.sourceLine), ['1', '3', '5'], '预览顶层块标有源码起始行');
+  const adminJs = await readFile('source/admin/admin.js', 'utf8');
+  assert.ok(adminJs.includes('buildScrollAnchors') && adminJs.includes('isSyncEcho'), '同步走行锚点并忽略程序赋值的回声滚动');
+
   field.dispatchEvent(new w.Event('scroll'));
-  assert.equal(previewTop, 700, '编辑区滚到一半时预览按比例对齐到一半');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(previewTop, 700, '编辑区滚到一半时预览按比例对齐到一半（同步经 rAF 合并）');
 
   frame.dispatchEvent(new w.Event('load'));
   await new Promise((resolve) => setTimeout(resolve, 90));
