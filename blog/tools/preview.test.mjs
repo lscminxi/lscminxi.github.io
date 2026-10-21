@@ -311,3 +311,78 @@ test('view mode changes do not reload an unchanged live preview', async () => {
   assert.equal(renders, baseline + 1, 'Opening a new article resets the preview even with identical inputs');
   editor.window.close();
 });
+
+test('zen (pure) editor mode hides the chrome, keeps the draft and exits with Esc', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Zen mode must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  field.value = '纯净模式里写的草稿';
+  w.document.querySelector('[data-editor-mode="zen"]').click();
+  assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'zen');
+  assert.ok(w.document.body.classList.contains('zen-editing'), '纯净模式给 body 打上 zen-editing 标记');
+  assert.equal(field.value, '纯净模式里写的草稿', '切换模式不丢未保存内容');
+  const css = await readFile('source/admin/admin.css', 'utf8');
+  assert.match(css, /body\.zen-editing \.admin-topbar/, '纯净模式隐藏后台顶栏');
+  assert.match(css, /\.writing-workspace\[data-mode="zen"\] #post-preview \{[^}]*display: none/, '纯净模式隐藏预览区');
+  w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
+  assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'split', 'Esc 退回分屏');
+  assert.ok(!w.document.body.classList.contains('zen-editing'));
+  assert.equal(field.value, '纯净模式里写的草稿', '退出纯净模式也不丢内容');
+  editor.window.close();
+});
+
+test('scrolling the preview (compile side) drives the editor and re-render keeps the place', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  const doc = frame.contentDocument;
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  // 在预览（编译）区滚到 75%：编辑区必须被带动到对应位置。
+  previewTop = 1050;
+  frame.contentWindow.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(editorTop, 600, '预览区滚动应带动编辑区同步');
+  // 触发重新渲染后，预览仍停在原来的相对位置，不得跳回最前端。
+  field.value = '第一段改了一点\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const renderedDoc = frame.contentDocument;
+  if (!renderedDoc.scrollingElement) {
+    Object.defineProperty(renderedDoc, 'scrollingElement', { configurable: true, get: () => renderedDoc.documentElement });
+  }
+  metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(previewTop, 1050, '重新渲染后预览不跳回顶部');
+  editor.window.close();
+});

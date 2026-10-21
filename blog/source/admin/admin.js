@@ -1211,6 +1211,11 @@
   // 不会因为内容高度变了被顶回头部。
   let previewScrollRatio = { top: 0, left: 0 };
   let lastScrollSource = "preview";
+  // 用户最后一次亲手滚动的时间与所在侧：重渲染的延迟恢复不能跟用户抢滚动。
+  let lastManualScrollAt = 0;
+  // 预览顶部当前停在哪个源码行块上（行号 + 块内偏移像素）。只记比例时正文一变长
+  // 就会飘到别的内容上；按源码行锚点恢复，重渲染后停的还是同一段内容。
+  let previewAnchor = null;
   const previewFrame = $("#post-preview");
   // 双向滚动同步（参考行锚点同步法）：预览块带源码行号，编辑区用隐藏镜像层
   // 量出每一行的像素位置，两边按锚点插值对齐内容，而不是按总高度百分比硬拉；
@@ -1236,6 +1241,21 @@
     if (!Number.isFinite(max) || max <= 0) return;
     const value = Math.min(1, Math.max(0, ratio || 0)) * max;
     if (axis === "top") element.scrollTop = value; else element.scrollLeft = value;
+  };
+  const capturePreviewAnchor = () => {
+    const doc = previewFrame.contentDocument;
+    const scroll = doc?.scrollingElement;
+    if (!doc || !scroll || !doc.querySelector('.article-content')) return;
+    for (const block of doc.querySelectorAll('.article-content > [data-source-line]')) {
+      const rect = block.getBoundingClientRect();
+      if (rect.bottom > 2) {
+        const line = Number(block.dataset.sourceLine);
+        if (Number.isInteger(line) && line >= 1) {
+          previewAnchor = { line, offset: Math.max(0, -rect.top) };
+        }
+        return;
+      }
+    }
   };
   const rememberPreviewScroll = (scroll) => {
     if (!scroll) return;
@@ -1384,6 +1404,18 @@
     if (!scroll) return;
     // 刚刚是编辑区在滚：重渲染后也按锚点对齐到编辑区，而不是旧像素位置。
     if (lastScrollSource === "editor") { syncPreviewToEditor(); return; }
+    // 预览自己是主导侧：先按源码行锚点找回同一段内容，正文增删后也不飘。
+    const doc = previewFrame.contentDocument;
+    if (previewAnchor && doc) {
+      const block = doc.querySelector(`.article-content > [data-source-line="${previewAnchor.line}"]`);
+      if (block) {
+        const top = block.getBoundingClientRect().top + (scroll.scrollTop || 0) + previewAnchor.offset;
+        const leftMax = scroll.scrollWidth - scroll.clientWidth;
+        setSyncedScroll("preview", scroll, top,
+          Number.isFinite(leftMax) && leftMax > 0 ? previewScrollRatio.left * leftMax : 0);
+        return;
+      }
+    }
     const topMax = scroll.scrollHeight - scroll.clientHeight;
     const leftMax = scroll.scrollWidth - scroll.clientWidth;
     setSyncedScroll("preview", scroll,
@@ -1393,9 +1425,18 @@
   const handlePreviewScroll = () => {
     const scroll = previewFrame.contentDocument?.scrollingElement;
     rememberPreviewScroll(scroll);
-    if (!isSyncEcho("preview", scroll)) queueScrollSync("preview");
+    capturePreviewAnchor();
+    if (isSyncEcho("preview", scroll)) return;
+    lastScrollSource = "preview";
+    lastManualScrollAt = syncNow();
+    queueScrollSync("preview");
   };
-  el.f.body.addEventListener("scroll", () => { if (!isSyncEcho("editor", el.f.body)) queueScrollSync("editor"); });
+  el.f.body.addEventListener("scroll", () => {
+    if (isSyncEcho("editor", el.f.body)) return;
+    lastScrollSource = "editor";
+    lastManualScrollAt = syncNow();
+    queueScrollSync("editor");
+  });
   // 滚轮先于 scroll 事件到达，先排一次同步，位置在帧回调里按最新 scrollTop 读。
   el.f.body.addEventListener("wheel", () => queueScrollSync("editor"), { passive: true });
   window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
@@ -1403,14 +1444,25 @@
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
     // (same-origin), so the sandboxed iframe itself still runs no scripts.
+    const loadedAt = syncNow();
     const scroll = previewFrame.contentDocument?.scrollingElement;
+    // 先把锚点标记为过期：恢复与同步都要按新文档的块位置重算，不能拿旧文档的锚点。
+    scrollAnchorsDirty = true;
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
     restorePreviewScroll(scroll);
-    // 工具栏/图注是 enhance 时才插入的，布局稳定后再恢复一次，避免位置被顶动。
-    setTimeout(() => restorePreviewScroll(scroll), 0);
-    scrollAnchorsDirty = true;
-    try { previewFrame.contentWindow?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
-    try { previewFrame.contentWindow?.addEventListener("wheel", () => queueScrollSync("preview"), { passive: true }); } catch { /* 预览未就绪时忽略 */ }
+    // 工具栏/图注/公式字体是渲染后才稳定下来的，布局稳定后再恢复两次；
+    // 但用户在本次加载之后已经亲手滚过，就不再抢他的位置。
+    const settleRestore = () => {
+      if (lastManualScrollAt > loadedAt) return;
+      restorePreviewScroll(previewFrame.contentDocument?.scrollingElement);
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(settleRestore);
+    setTimeout(settleRestore, 120);
+    const previewWin = previewFrame.contentWindow;
+    try { previewWin?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
+    // 某些浏览器里 iframe 内部滚动只在 document 上冒泡，window 监听收不到，这里两处都挂。
+    try { previewFrame.contentDocument?.addEventListener("scroll", handlePreviewScroll, { passive: true, capture: true }); } catch { /* 预览未就绪时忽略 */ }
+    try { previewWin?.addEventListener("wheel", () => { lastScrollSource = "preview"; lastManualScrollAt = syncNow(); queueScrollSync("preview"); }, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
   });
   function renderPostPreview() {
     clearTimeout(previewTimer);
@@ -1446,6 +1498,7 @@
           previewGraphViews = [...doc.querySelectorAll('.md-graph svg')]
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
           rememberPreviewScroll(doc.scrollingElement);
+          capturePreviewAnchor();
         }
       }
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
@@ -1463,14 +1516,24 @@
       previewTimer = setTimeout(renderPostPreview, 180);
     });
   });
-  $$('[data-editor-mode]').forEach((button) => {
-    button.addEventListener("click", () => {
-      $("#writing-workspace").dataset.mode = button.dataset.editorMode;
-      $$('[data-editor-mode]').forEach((item) => {
-        item.setAttribute("aria-pressed", String(item === button));
-      });
-      renderPostPreview();
+  const setEditorMode = (mode) => {
+    $("#writing-workspace").dataset.mode = mode;
+    // 纯净（专注）模式：只留正文编辑区，其余后台面板靠 body.zen-editing 的样式隐藏。
+    // 编辑区还是同一个 textarea，所以切换模式不会丢未保存内容，也不会触发重渲染。
+    document.body.classList.toggle("zen-editing", mode === "zen");
+    $$('[data-editor-mode]').forEach((item) => {
+      item.setAttribute("aria-pressed", String(item.dataset.editorMode === mode));
     });
+    renderPostPreview();
+    if (mode === "zen") el.f.body.focus();
+  };
+  $$('[data-editor-mode]').forEach((button) => {
+    button.addEventListener("click", () => setEditorMode(button.dataset.editorMode));
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("zen-editing")) {
+      setEditorMode("split");
+    }
   });
   $("#insert-math").addEventListener("click", () => {
     insertAtCursor(el.f.body, "\n\n$$\nf(n) = \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n");

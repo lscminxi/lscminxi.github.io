@@ -33,31 +33,77 @@
     p.textContent = message;
     results.replaceChildren(p);
   };
+  // LaTeX 模糊搜索：公式与查询都先「归一化」——去掉反斜杠、花括号、上下标符号、
+  // $ 定界符与空白并统一小写，于是 \frac{n}{2}、frac n 2、$n\over2$ 这类写法差异
+  // 都能对上；再允许子序列命中（字符按顺序出现即可），输一半命令也能找到。
+  const normalizeLatex = (text) =>
+    String(text || "")
+      .toLocaleLowerCase()
+      .replace(/[\s\\{}$^_~]/g, "");
+  const isSubsequence = (needle, haystack) => {
+    if (!needle) return true;
+    let i = 0;
+    for (const ch of haystack) {
+      if (ch === needle[i]) i += 1;
+      if (i >= needle.length) return true;
+    }
+    return false;
+  };
+  // 连续子串命中分高，子序列模糊命中分低一些；越短的公式里命中越靠前越相关。
+  const fuzzyScore = (termInfo, value, exactScore, fuzzyScoreValue) => {
+    const raw = String(value || "").toLocaleLowerCase();
+    if (raw.includes(termInfo.raw)) return exactScore;
+    const normalized = normalizeLatex(raw);
+    if (termInfo.normalized && normalized.includes(termInfo.normalized))
+      return exactScore * 0.9;
+    if (termInfo.normalized && isSubsequence(termInfo.normalized, normalized))
+      return fuzzyScoreValue;
+    return 0;
+  };
+  const scorePost = (post, terms) => {
+    let total = 0;
+    let bestLatex = "";
+    let bestLatexScore = 0;
+    for (const term of terms) {
+      let termScore = 0;
+      termScore = Math.max(termScore, fuzzyScore(term, post.title, 120, 40));
+      for (const tag of post.tags || [])
+        termScore = Math.max(termScore, fuzzyScore(term, tag, 100, 35));
+      termScore = Math.max(termScore, fuzzyScore(term, post.description, 60, 20));
+      termScore = Math.max(termScore, fuzzyScore(term, post.content, 30, 8));
+      for (const tex of post.latex || []) {
+        const score = fuzzyScore(term, tex, 110, 55);
+        if (score > bestLatexScore) {
+          bestLatexScore = score;
+          bestLatex = tex;
+        }
+        termScore = Math.max(termScore, score);
+      }
+      if (termScore <= 0) return null; // 每个词都要命中（标题/标签/正文/公式任一处）
+      total += termScore;
+    }
+    return { post, score: total, bestLatex, bestLatexScore };
+  };
   const search = async () => {
     const version = ++searchVersion;
     const query = input.value.trim().toLocaleLowerCase();
-    if (!query) return hint("输入关键词以搜索");
+    if (!query) return hint("输入关键词，或 LaTeX 片段如 \\sum、\\frac{n}{2}");
     hint("正在查找笔记…");
     try {
       const data = await loadSearch();
       if (version !== searchVersion) return;
-      const terms = query.split(/\s+/);
+      const terms = query
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((raw) => ({ raw, normalized: normalizeLatex(raw) }));
       const matches = data
-        .filter((post) => {
-          const haystack = [
-            post.title,
-            post.description,
-            ...post.tags,
-            post.content,
-          ]
-            .join(" ")
-            .toLocaleLowerCase();
-          return terms.every((term) => haystack.includes(term));
-        })
+        .map((post) => scorePost(post, terms))
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
         .slice(0, 30);
       if (!matches.length)
-        return hint("没有找到相关笔记，试试「二分」或「C++」？");
-      const nodes = matches.map((post) => {
+        return hint("没有找到相关笔记，试试「二分」、\\sum 或 \\frac？");
+      const nodes = matches.map(({ post, bestLatex, bestLatexScore }) => {
         const link = document.createElement("a");
         link.className = "search-result";
         link.href = post.url;
@@ -67,6 +113,14 @@
         description.textContent =
           post.description || post.content.slice(0, 100);
         link.append(title, description);
+        // 命中公式时直接亮出那条公式，省得点进去再翻。
+        if (bestLatex && bestLatexScore > 0) {
+          const code = document.createElement("code");
+          code.className = "search-latex";
+          code.textContent =
+            bestLatex.length > 120 ? `${bestLatex.slice(0, 120)}…` : bestLatex;
+          link.append(code);
+        }
         return link;
       });
       results.replaceChildren(...nodes);

@@ -9,14 +9,14 @@
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css?v=card-link-1">
-  <link rel="stylesheet" href="./admin.css?v=theme-3">
+  <link rel="stylesheet" href="./admin.css?v=zen-1">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
        不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=plots-6" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=visibility-1" defer></script>
+  <script src="./admin.js?v=zen-sync-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -287,6 +287,7 @@
             <button class="btn ghost small" type="button" data-editor-mode="edit" aria-pressed="false">编辑</button>
             <button class="btn ghost small" type="button" data-editor-mode="split" aria-pressed="true">分屏</button>
             <button class="btn ghost small" type="button" data-editor-mode="preview" aria-pressed="false">预览</button>
+            <button class="btn ghost small" type="button" data-editor-mode="zen" aria-pressed="false" title="只留正文编辑区，隐藏其余后台面板（Esc 退出）">纯净</button>
           </div>
           <button class="btn ghost small" id="insert-math" type="button">插入公式</button>
           <select id="insert-fold" class="small-select" aria-label="插入折叠框">

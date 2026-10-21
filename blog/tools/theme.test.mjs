@@ -666,3 +666,13 @@ test("the checked-in appearance.json keeps a valid theme and survives cleaning",
   assert(appearance.THEME_MODES.includes(configured.theme), `Invalid theme: ${configured.theme}`);
   assert.deepEqual(appearance.resolveAppearance(configured), configured);
 });
+
+test("the search index carries structured latex extracted from rendered formulas", async () => {
+  const searchIndex = JSON.parse(await readFile("public/search.json", "utf8"));
+  assert.ok(Array.isArray(searchIndex) && searchIndex.length > 0, "搜索索引应有文章");
+  for (const post of searchIndex) {
+    assert.ok(Array.isArray(post.latex), "每篇文章都带 latex 公式数组字段");
+  }
+  const formulas = searchIndex.flatMap((post) => post.latex);
+  assert.ok(formulas.some((tex) => tex.includes("\\")), "至少一篇示例文章的公式命令被抽进索引");
+});

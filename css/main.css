@@ -1527,6 +1527,20 @@ html.header-open .header-hint {
   color: var(--muted);
   margin-top: 5px;
 }
+.search-result .search-latex {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(127, 182, 255, 0.08);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
 .search-footer {
   display: flex;
   justify-content: space-between;
@@ -2978,6 +2992,9 @@ html[data-theme="light"] .wallpaper-custom-row {
 }
 html[data-theme="light"] .search-result:hover {
   background: #eef4f2;
+}
+html[data-theme="light"] .search-result .search-latex {
+  background: #e8f0fe;
 }
 html[data-theme="light"] .article-content .highlight,
 html[data-theme="light"] .article-content pre {
