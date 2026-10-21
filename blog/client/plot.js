@@ -213,9 +213,10 @@ function initPlot(figure) {
   // 真实点击在按下与松开之间几乎总有几像素的指针抖动，不能一动就算拖动；
   // 记住按下时命中的点/线，松开后的 click 即使因指针捕获或重绘落到 stage 上，
   // 也能按按下时的目标完成选中（显示坐标/方程式）。
-  const CLICK_DRAG_THRESHOLD = 6;
+  const CLICK_DRAG_THRESHOLD = 10;
   let pressTarget = null;
   let pressClient = null;
+  let handledSelection = null;
 
   stage.addEventListener('pointerdown', (event) => {
     if (event.button !== undefined && event.button > 0) return;
@@ -323,10 +324,11 @@ function initPlot(figure) {
   });
   stage.addEventListener('pointerleave', () => { hideTooltip(); clearLineHover(); });
 
-  // 点击（未拖动）选中一个点/交点：微微放大并固定显示它的坐标；
-  // 点别处取消选中。拖动后的 click 会被 moved 标志吞掉，不会误选。
-  stage.addEventListener('click', (event) => {
-    if (moved) { moved = false; pressTarget = null; pressClient = null; return; }
+  // 选中一个点/交点：微微放大并固定显示它的坐标；点别处取消选中。
+  // 选中动作在 pointerup 上就完成（按下位置+松开位置判定），不再单等 click：
+  // 真实浏览器里 click 可能因指针捕获、重绘换节点或系统合成时序而丢失/落错目标，
+  // 只靠 click 会出现「悬停只看到原生『交点』提示、坐标标签和读数都不出来」。
+  const selectAt = (event) => {
     let target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
     let lineTarget = event.target?.closest?.('[data-kind="function"], [data-kind="segment"]');
     if (target && !stage.contains(target)) target = null;
@@ -415,14 +417,32 @@ function initPlot(figure) {
       hideTooltip();
       updateSelectedReadout();
     }
+  };
+  stage.addEventListener('click', (event) => {
+    if (moved) { moved = false; pressTarget = null; pressClient = null; return; }
+    // pointerup 已经处理过这次点选时，随后的 click 直接忽略，避免它落到
+    // stage 上又把刚选好的点/线清掉。
+    if (handledSelection && Date.now() - handledSelection.time < 700
+      && Math.hypot(event.clientX - handledSelection.x, event.clientY - handledSelection.y) <= CLICK_DRAG_THRESHOLD) {
+      handledSelection = null;
+      return;
+    }
+    selectAt(event);
   });
 
   const finishPointer = (event) => {
+    const wasSinglePointer = pointers.size === 1;
+    const shouldSelect = event.type === 'pointerup' && wasSinglePointer && !moved && pressClient
+      && Math.hypot(event.clientX - pressClient.clientX, event.clientY - pressClient.clientY) <= CLICK_DRAG_THRESHOLD;
     pointers.delete(event.pointerId);
     if (!pointers.size) {
       dragStart = null;
       pinchStart = null;
       stage.classList.remove('is-dragging');
+      if (shouldSelect) {
+        selectAt(event);
+        handledSelection = { time: Date.now(), x: event.clientX, y: event.clientY };
+      }
     }
   };
   stage.addEventListener('pointerup', finishPointer);

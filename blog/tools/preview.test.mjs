@@ -261,6 +261,7 @@ test('editor and preview stay aligned and synced without jumping back to the top
   assert.deepEqual([...stamped.querySelectorAll('.article-content > [data-source-line]')].map((el) => el.dataset.sourceLine), ['1', '3', '5'], '预览顶层块标有源码起始行');
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
   assert.ok(adminJs.includes('buildScrollAnchors') && adminJs.includes('isSyncEcho'), '同步走行锚点并忽略程序赋值的回声滚动');
+  assert.ok(adminJs.includes('runQueuedSync') && adminJs.includes('syncFallback'), '编辑侧同步有 rAF + 定时兜底队列，不会丢帧');
 
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 50));

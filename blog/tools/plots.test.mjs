@@ -483,6 +483,40 @@ test('named graph edges still show their weight', async () => {
   } finally { page.window.close(); }
 });
 
+test('plot selection completes on pointerup even if the following click is lost', async () => {
+  const page = await interactiveDom(render(`${FENCE}plot\nf: x\nf: -x + 2\nx: -5, 5\ny: -5, 5\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-plot');
+    const stage = figure.querySelector('.plot-stage');
+    const readout = figure.querySelector('.plot-readout');
+    const press = (target, type, x, y) => {
+      const event = new page.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      target.dispatchEvent(event);
+    };
+    // 只发 pointerdown/pointerup，不发 click（模拟 click 丢失/落错目标的真实浏览器）。
+    const intersection = stage.querySelector('.plot-intersection');
+    press(intersection, 'pointerdown', 340, 210);
+    press(intersection, 'pointerup', 341, 211);
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '松手即选中交点，不等 click');
+    assert.ok(stage.querySelector('.plot-intersection-label')?.textContent.includes('(0, 0)'), '松手后交点坐标标签出现');
+    assert.equal(readout.textContent, '(0, 0)', '松手后底部读数显示交点坐标');
+    assert.equal(figure.querySelector('.plot-tooltip').classList.contains('is-visible'), true, '松手后坐标标签框出现');
+    // 随后姗姗来迟且落到 stage 上的 click 不能把刚选好的交点清掉。
+    press(stage, 'click', 341, 211);
+    assert.equal(stage.querySelector('.plot-intersection').classList.contains('is-selected'), true, '迟到的 click 不清除已选中交点');
+    assert.equal(readout.textContent, '(0, 0)', '迟到的 click 后读数仍是交点坐标');
+
+    const curve = stage.querySelector('.plot-curve');
+    press(curve, 'pointerdown', 340, 100);
+    press(curve, 'pointerup', 341, 101);
+    assert.equal(stage.querySelector('.plot-curve').classList.contains('is-selected'), true, '松手即选中曲线');
+    assert.equal(readout.textContent, 'y = x', '松手后底部读数显示方程式');
+    press(stage, 'click', 341, 101);
+    assert.equal(readout.textContent, 'y = x', '迟到的 click 后仍显示方程式');
+  } finally { page.window.close(); }
+});
+
 test('interactive graph zooms and reports node coordinates', async () => {
   const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
   try {

@@ -1283,6 +1283,7 @@
       if (!Number.isInteger(line) || line < 1 || !lineEl) continue;
       const taY = lineEl.offsetTop;
       const pvY = el.getBoundingClientRect().top + (scroll.scrollTop || 0);
+      if (!Number.isFinite(taY) || !Number.isFinite(pvY)) continue;
       const prev = anchors[anchors.length - 1];
       if (prev && (taY <= prev.ta || pvY <= prev.pv)) continue;
       anchors.push({ ta: taY, pv: pvY });
@@ -1311,8 +1312,12 @@
     const a = usable[lo]; const b = usable[hi];
     return a[toKey] + ((value - a[fromKey]) / (b[fromKey] - a[fromKey])) * (b[toKey] - a[toKey]);
   };
+  const ensureScrollAnchors = () => {
+    if (!scrollAnchorsDirty) return;
+    try { buildScrollAnchors(); } catch { scrollAnchors = []; scrollAnchorsDirty = false; }
+  };
   const setSyncedScroll = (side, element, top, left) => {
-    if (!element) return;
+    if (!element || !Number.isFinite(top) || !Number.isFinite(left)) return;
     const targetTop = Math.max(0, top || 0);
     const targetLeft = Math.max(0, left || 0);
     if (Math.abs((element.scrollTop || 0) - targetTop) < 1 && Math.abs((element.scrollLeft || 0) - targetLeft) < 1) return;
@@ -1329,7 +1334,7 @@
     const scroll = previewFrame.contentDocument?.scrollingElement;
     if (!scroll) return;
     lastScrollSource = "editor";
-    if (scrollAnchorsDirty) buildScrollAnchors();
+    ensureScrollAnchors();
     const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
     const top = scrollAnchors.length
@@ -1342,7 +1347,7 @@
     if (!scroll) return;
     lastScrollSource = "preview";
     rememberPreviewScroll(scroll);
-    if (scrollAnchorsDirty) buildScrollAnchors();
+    ensureScrollAnchors();
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
     const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
     const top = scrollAnchors.length
@@ -1350,16 +1355,22 @@
       : (maxPv > 0 ? ((scroll.scrollTop || 0) / maxPv) * maxTa : 0);
     setSyncedScroll("editor", el.f.body, top, previewScrollRatio.left * Math.max(0, el.f.body.scrollWidth - el.f.body.clientWidth));
   };
+  let syncFallback = 0;
+  const runQueuedSync = () => {
+    if (syncFallback) { clearTimeout(syncFallback); syncFallback = 0; }
+    syncRaf = 0;
+    const sourceNow = pendingSyncSource;
+    pendingSyncSource = "";
+    if (sourceNow === "editor") syncPreviewToEditor();
+    else if (sourceNow === "preview") syncEditorToPreview();
+  };
   const queueScrollSync = (source) => {
     pendingSyncSource = source;
     if (syncRaf) return;
-    syncRaf = scheduleFrame(() => {
-      syncRaf = 0;
-      const sourceNow = pendingSyncSource;
-      pendingSyncSource = "";
-      if (sourceNow === "editor") syncPreviewToEditor();
-      else if (sourceNow === "preview") syncEditorToPreview();
-    });
+    // rAF 之外再加一个定时兜底：编辑区滚动时若这一帧没被调度到，
+    // 预览也不会纹丝不动（此前编辑侧偶发「滑了没反应」就是队列丢帧）。
+    syncRaf = scheduleFrame(runQueuedSync);
+    syncFallback = setTimeout(runQueuedSync, 90);
   };
   const restorePreviewScroll = (scroll) => {
     if (!scroll) return;
@@ -1377,6 +1388,8 @@
     if (!isSyncEcho("preview", scroll)) queueScrollSync("preview");
   };
   el.f.body.addEventListener("scroll", () => { if (!isSyncEcho("editor", el.f.body)) queueScrollSync("editor"); });
+  // 滚轮先于 scroll 事件到达，先排一次同步，位置在帧回调里按最新 scrollTop 读。
+  el.f.body.addEventListener("wheel", () => queueScrollSync("editor"), { passive: true });
   window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
   previewFrame.addEventListener("load", () => {
     // Controlled by the parent: keep the iframe script-free. The plot/graph
@@ -1389,6 +1402,7 @@
     setTimeout(() => restorePreviewScroll(scroll), 0);
     scrollAnchorsDirty = true;
     try { previewFrame.contentWindow?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
+    try { previewFrame.contentWindow?.addEventListener("wheel", () => queueScrollSync("preview"), { passive: true }); } catch { /* 预览未就绪时忽略 */ }
   });
   function renderPostPreview() {
     clearTimeout(previewTimer);
