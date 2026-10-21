@@ -1,6 +1,6 @@
 {
   "avatar": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
-  "wallpaper": "https://cdn.luogu.com.cn/upload/image_hosting/b6e3lyp1.png",
+  "wallpaper": "/images/ad97fd7e192fee4a08396bd92b55f230.jpeg",
   "favicon": "https://cdn.luogu.com.cn/upload/usericon/1549479.png",
   "wallpaperDim": 48,
   "wallpaperBlur": 0,
@@ -49,6 +49,11 @@
       "id": "72blrxav-1o4ufo7",
       "url": "https://cdn.luogu.com.cn/upload/image_hosting/72blrxav.webp",
       "label": "72blrxav"
+    },
+    {
+      "id": "ad97fd7e192fee4a08396bd9-1hyjpdl",
+      "url": "/images/ad97fd7e192fee4a08396bd92b55f230.jpeg",
+      "label": "ad97fd7e192fee4a08396bd92b55f230"
     }
   ],
   "theme": "auto"
