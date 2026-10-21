@@ -293,12 +293,20 @@
             <option value="success">success · 绿色成功</option>
           </select>
           <button class="btn ghost small" id="insert-plot" type="button">插入函数图像</button>
-          <button class="btn ghost small" id="insert-graph" type="button">插入可视化图</button>
+          <select id="insert-graph" class="small-select" aria-label="插入可视化图并设置算法">
+            <option value="">插入可视化图…</option>
+            <option value="reader">读者自选算法</option>
+            <option value="none">不显示算法</option>
+            <option value="components">作者指定：连通分量</option>
+            <option value="bridges">作者指定：桥与割点</option>
+            <option value="mst">作者指定：最小生成树</option>
+            <option value="bipartite">作者指定：二分图</option>
+          </select>
           <select id="insert-image" class="small-select"><option value="">插入图片…</option></select>
           <button class="btn ghost small" id="insert-more" type="button">插入 &lt;!-- more --&gt;</button>
         </div>
       </div>
-      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>；可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）。</p>
+      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>；可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）；用 <code>algo: mst</code> 之类的一行可预设图算法，<code>algo: reader</code> 让读者自选，<code>algo: none</code> 不显示算法（「插入可视化图」下拉会帮你写好这一行，已有图改这一行即可）。</p>
       <div class="writing-workspace" id="writing-workspace" data-mode="split">
       <textarea aria-label="正文 Markdown" id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
       <iframe id="post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>

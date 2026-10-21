@@ -412,7 +412,14 @@ function initGraph(figure) {
   const toolbar = doc.createElement('div');
   toolbar.className = 'plot-toolbar graph-toolbar';
   toolbar.setAttribute('aria-label', '可视化图工具');
-  toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div><div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>';
+  const algorithmMode = ['reader', 'none', 'components', 'bridges', 'mst', 'bipartite'].includes(figure.dataset.graphAlgorithm)
+    ? figure.dataset.graphAlgorithm
+    : 'reader';
+  const algorithmLabels = { components: '连通分量', bridges: '桥与割点', mst: '最小生成树', bipartite: '二分图' };
+  const algorithmToolbar = algorithmMode === 'reader'
+    ? '<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>'
+    : (algorithmMode === 'none' ? '' : `<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><span class="graph-algorithm-fixed">${algorithmLabels[algorithmMode]} · 作者指定</span></div>`);
+  toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div>' + algorithmToolbar;
   figure.insertBefore(toolbar, stage);
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
@@ -590,6 +597,9 @@ function initGraph(figure) {
       else applyAlgorithm(button.dataset.graphAlgo);
     });
   });
+  // 作者在图源码里指定了固定算法时，进页面就直接展示该算法，读者只能缩放/平移，不能改算法；
+  // algo: reader（缺省）才把算法按钮交给读者自己选，algo: none 则完全不显示算法。
+  if (algorithmMode !== 'reader' && algorithmMode !== 'none') applyAlgorithm(algorithmMode);
 
   toolbar.querySelectorAll('[data-graph-action]').forEach((button) => {
     button.addEventListener('click', () => {

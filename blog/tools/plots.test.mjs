@@ -134,6 +134,16 @@ test('graph algorithms find components, bridges, cut vertices, MST and bipartite
   assert.ok(svg.includes('data-edge-index="0"') && svg.includes('data-weight="5"'), '边组带编号和权重供前端算法定位');
 });
 
+test('graph algorithm can be preset by the author or left to readers', () => {
+  assert.equal(plots.parseGraphSpec('node: A').algorithm, 'reader', '不写 algo 时默认读者自选');
+  assert.equal(plots.parseGraphSpec('algo: mst\nnode: A').algorithm, 'mst', '作者预设最小生成树');
+  assert.equal(plots.parseGraphSpec('算法：桥与割点\nnode: A').algorithm, 'bridges', '中文算法名也能预设');
+  assert.equal(plots.parseGraphSpec('algo: none\nnode: A').algorithm, 'none', '作者可关闭算法显示');
+  assert.equal(plots.parseGraphSpec('algo: 随便写\nnode: A').algorithm, 'reader', '写错的算法名回落到读者自选');
+  const fixed = plots.renderGraphSvg(plots.parseGraphSpec('algo: bipartite\nnode: A\nnode: B\nedge: A - B'));
+  assert.ok(fixed.includes('data-graph-algorithm="bipartite"'), '预设模式写进图容器供前端读取');
+});
+
 test('graph honours explicit coordinates ordering', () => {
   const svg = plots.renderGraphSvg(plots.parseGraphSpec('node: L ; x=0 ; y=0\nnode: R ; x=100 ; y=0'));
   const circles = [...svg.matchAll(/<circle class="graph-node"[^>]*cx="([\d.]+)"/g)].map((m) => Number(m[1]));
@@ -190,7 +200,9 @@ test('editor offers one-click plot/graph templates', async () => {
   const adminHtml = await readFile('source/admin/index.html', 'utf8');
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
   assert.ok(adminHtml.includes('id="insert-plot"') && adminHtml.includes('id="insert-graph"'));
+  assert.ok(adminHtml.includes('value="reader"') && adminHtml.includes('value="mst"') && adminHtml.includes('value="none"'), '后台插入可视化图时可选择算法显示方式');
   assert.ok(adminJs.includes('```plot') && adminJs.includes('```graph'));
+  assert.ok(adminJs.includes('algo: " + mode'), '后台会把所选算法写进图源码');
 });
 
 
@@ -430,6 +442,32 @@ test('interactive graph algorithms highlight components, bridges, MST and bipart
 });
 
 
+test('interactive graph honours author-preset and disabled algorithm modes', async () => {
+  const fixedPage = await interactiveDom(render(`${FENCE}graph\nalgo: mst\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nnode: C ; x=200 ; y=0\nedge: A - B ; weight=5\nedge: B - C ; weight=1\nedge: A - C ; weight=3\n${FENCE}`));
+  try {
+    const figure = fixedPage.window.document.querySelector('.md-graph');
+    assert.equal(figure.querySelector('[data-graph-algo]'), null, '作者指定算法时不给读者算法按钮');
+    assert.match(figure.querySelector('.graph-algorithm-fixed').textContent, /最小生成树/, '显示作者指定的算法名');
+    assert.match(figure.querySelector('.plot-readout').textContent, /总权重 4/, '进页面直接显示预设算法结论');
+    assert.ok(figure.querySelector('.graph-edge-group.is-algo-active'), '进页面直接高亮预设算法');
+  } finally { fixedPage.window.close(); }
+
+  const nonePage = await interactiveDom(render(`${FENCE}graph\nalgo: none\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+  try {
+    const figure = nonePage.window.document.querySelector('.md-graph');
+    assert.equal(figure.querySelector('[data-graph-algo]'), null, 'algo: none 时没有算法按钮');
+    assert.equal(figure.querySelector('.graph-algorithm-fixed'), null, 'algo: none 时没有作者指定标记');
+    assert.equal(figure.querySelector('.is-algo-active'), null, 'algo: none 时不高亮任何算法');
+  } finally { nonePage.window.close(); }
+
+  const readerPage = await interactiveDom(render(`${FENCE}graph\nalgo: reader\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+  try {
+    const figure = readerPage.window.document.querySelector('.md-graph');
+    assert.ok(figure.querySelector('[data-graph-algo="components"]'), 'algo: reader 时读者可自选算法');
+    assert.equal(figure.querySelector('.is-algo-active'), null, '读者自选时默认不高亮算法');
+  } finally { readerPage.window.close(); }
+});
+
 test('editor preview gets the same plot interactions via parent enhancement (iframe stays script-free)', async () => {
   const md = `${FENCE}plot\nf: x\nf: -x + 2\npoints: (1,1) ; connect=true\nx: -5, 5\ny: -5, 5\n${FENCE}`;
   const srcdoc = dom.window.MinxiPreview.document({ body: md });
@@ -495,6 +533,15 @@ test('editor preview graph is interactive via parent enhancement', async () => {
     assert.ok(figure.querySelector('[data-graph-algo="mst"]'), '预览里也有图算法工具栏');
     figure.querySelector('[data-graph-algo="mst"]').click();
     assert.match(figure.querySelector('.plot-readout').textContent, /总权重 7/, '预览里最小生成树能读到边权');
+
+    const fixedSrcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nalgo: bridges\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nnode: C ; x=200 ; y=0\nedge: A - B\nedge: B - C\n${FENCE}` });
+    const fixedPage = new JSDOM(fixedSrcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
+    try {
+      dom.window.MinxiPreview.enhance(fixedPage.window.document);
+      const fixedFigure = fixedPage.window.document.querySelector('.md-graph');
+      assert.equal(fixedFigure.querySelector('[data-graph-algo]'), null, '预览里作者指定算法时没有读者按钮');
+      assert.match(fixedFigure.querySelector('.plot-readout').textContent, /桥与割点/, '预览里进图直接显示作者预设算法');
+    } finally { fixedPage.window.close(); }
   } finally { page.window.close(); }
 });
 
@@ -559,4 +606,5 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.plot-curve.is-selected'), '选中函数曲线加粗样式');
   assert.ok(css.includes('.plot-segment.is-selected'), '选中线段加粗样式');
   assert.ok(css.includes('.graph-node-group.is-cut-vertex .graph-node-ring'), '割点外圈样式');
+  assert.ok(css.includes('.graph-algorithm-fixed'), '作者指定算法标记样式');
 });

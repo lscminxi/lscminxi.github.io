@@ -228,6 +228,7 @@ function parsePlotSpec(source) {
     if (!line || line.startsWith('#') || line.startsWith('//')) continue;
     let match;
     if ((match = /^title\s*[:：]\s*(.+)$/i.exec(line))) { spec.title = labelText(match[1]); continue; }
+    if ((match = /^(?:algo|algorithm|算法)\s*[:：]\s*(.+)$/i.exec(line))) { spec.algorithm = parseGraphAlgorithm(match[1]); continue; }
     if ((match = /^grid\s*[:：]\s*(.+)$/i.exec(line))) { spec.grid = truthy(match[1], true); continue; }
     if ((match = /^(?:coords?|coordinates|坐标)\s*[:：]\s*(.+)$/i.exec(line))) { spec.coords = truthy(match[1], true); continue; }
     if ((match = /^(?:intersections?|交点)\s*[:：]\s*(.+)$/i.exec(line))) { spec.intersections = truthy(match[1], true); continue; }
@@ -675,8 +676,21 @@ function renderPlotSvg(spec, options = {}) {
 
 const NODE_ID = /^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/;
 
+const GRAPH_ALGORITHM_ALIASES = {
+  reader: 'reader', auto: 'reader', '读者': 'reader', '读者自选': 'reader', '自选': 'reader',
+  none: 'none', off: 'none', no: 'none', '无': 'none', '不显示': 'none', '关闭': 'none',
+  components: 'components', component: 'components', '连通分量': 'components',
+  bridges: 'bridges', bridge: 'bridges', '桥与割点': 'bridges', '桥': 'bridges', '割点': 'bridges',
+  mst: 'mst', '最小生成树': 'mst', '最小生成森林': 'mst',
+  bipartite: 'bipartite', '二分图': 'bipartite', '二分图判定': 'bipartite',
+};
+function parseGraphAlgorithm(value) {
+  const key = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  return GRAPH_ALGORITHM_ALIASES[key] || 'reader';
+}
+
 function parseGraphSpec(source) {
-  const spec = { directed: false, nodes: new Map(), edges: [], title: '' };
+  const spec = { directed: false, algorithm: 'reader', nodes: new Map(), edges: [], title: '' };
   const ensureNode = (id) => {
     if (!spec.nodes.has(id)) spec.nodes.set(id, { id, label: '', x: null, y: null, color: '', size: 20 });
     return spec.nodes.get(id);
@@ -702,6 +716,7 @@ function parseGraphSpec(source) {
     if (!line || line.startsWith('#') || line.startsWith('//')) continue;
     let match;
     if ((match = /^title\s*[:：]\s*(.+)$/i.exec(line))) { spec.title = labelText(match[1]); continue; }
+    if ((match = /^(?:algo|algorithm|算法)\s*[:：]\s*(.+)$/i.exec(line))) { spec.algorithm = parseGraphAlgorithm(match[1]); continue; }
     if ((match = /^(?:directed|type|有向)\s*[:：]\s*(.+)$/i.exec(line))) {
       spec.directed = /directed|true|on|yes|有向/i.test(match[1]);
       continue;
@@ -876,7 +891,7 @@ function analyzeGraph(spec) {
 
 function renderGraphSvg(spec) {
   const nodes = layoutGraph(spec);
-  if (!nodes.length) return `<figure class="md-graph"><svg class="md-graph-svg" viewBox="0 0 200 60" role="img" aria-label="空图"></svg></figure>\n`;
+  if (!nodes.length) return `<figure class="md-graph" data-graph-algorithm="${spec.algorithm || 'reader'}"><svg class="md-graph-svg" viewBox="0 0 200 60" role="img" aria-label="空图"></svg></figure>\n`;
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const pad = 52;
   let minX = Math.min(...nodes.map((n) => n.x)); let maxX = Math.max(...nodes.map((n) => n.x));
@@ -963,7 +978,7 @@ function renderGraphSvg(spec) {
 
   out.push('</svg>');
   const caption = spec.title ? `<figcaption>${escape(spec.title)}</figcaption>` : '';
-  return `<figure class="md-graph">${out.join('')}${caption}</figure>\n`;
+  return `<figure class="md-graph" data-graph-algorithm="${spec.algorithm || 'reader'}">${out.join('')}${caption}</figure>\n`;
 }
 
 /* ---------------- Marked 扩展：```plot / ```graph 围栏 ---------------- */
@@ -1074,6 +1089,7 @@ module.exports.PLOT_GEOMETRY = { width: PLOT_W, height: PLOT_H, pad: PLOT_PAD };
 module.exports.convertPlotFences = convertPlotFences;
 module.exports.parseGraphSpec = parseGraphSpec;
 module.exports.renderGraphSvg = renderGraphSvg;
+module.exports.parseGraphAlgorithm = parseGraphAlgorithm;
 module.exports.analyzeGraph = analyzeGraph;
 module.exports.analyzeGraphData = analyzeGraphData;
 module.exports.parseColor = parseColor;

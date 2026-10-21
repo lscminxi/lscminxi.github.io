@@ -2160,6 +2160,11 @@ body.search-open {
 .article-content .graph-edge-group:hover .graph-arrow,
 .article-content .graph-edge-group.is-hovered .graph-arrow,
 .article-content .graph-edge-group.is-selected .graph-arrow { opacity: 1; }
+.article-content .graph-algorithm-fixed {
+  display: inline-flex; align-items: center; border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; line-height: 1.5;
+}
 /* 图算法高亮（连通分量 / 桥与割点 / 最小生成树 / 二分图） */
 .article-content .graph-edge-group.is-algo-active .graph-edge-line,
 .article-content .graph-edge-group.is-algo-bridge .graph-edge-line,

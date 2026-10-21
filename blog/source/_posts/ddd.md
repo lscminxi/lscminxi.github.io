@@ -18,6 +18,7 @@ intersections: on
 
 ```graph
 title: 示例图
+algo: reader
 directed: true
 node: A ; label=起点 ; color=red
 node: B

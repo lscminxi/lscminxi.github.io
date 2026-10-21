@@ -1284,8 +1284,11 @@
     insertAtCursor(el.f.body, "\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red\nf: -x + 3 ; color=green\npoints: (1, 0), (3, 2) ; connect=true ; color=blue\nx: -3, 5\ncoords: on\nintersections: on\n```\n\n");
   });
 
-  $("#insert-graph").addEventListener("click", () => {
-    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -- A ; weight=5\n```\n\n");
+  $("#insert-graph").addEventListener("change", (event) => {
+    const mode = ["reader", "none", "components", "bridges", "mst", "bipartite"].includes(event.target.value) ? event.target.value : "";
+    if (!mode) return;
+    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -- A ; weight=5\n```\n\n");
+    event.target.value = "";
   });
 
   function showEditor() {
