@@ -29,3 +29,18 @@ edge: C -- A
 ```
 
 
+
+
+```graph
+title: 示例图
+algo: mst
+directed: true
+node: A ; label=起点 ; color=red
+node: B
+node: C
+edge: A -> B ; weight=1
+edge: B -> C ; weight=2
+edge: C -- A ; weight=5
+```
+
+
