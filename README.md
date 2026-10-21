@@ -327,18 +327,19 @@ $$
 
 ### 每篇文章的评论与点赞
 
-- 每篇文章底部都有 **点赞** 按钮和 **评论区**：登录后可点赞（再点一次取消，只有自己点过的才算数）、发表评论（纯文本、最多 500 字，始终按纯文本渲染，不会执行 HTML）、删除自己的评论；站长的评论带「站长」标记。
-- **未登录时点点赞、点评论框或提交评论，会弹出「请先登录」提醒**，点「去登录」直接打开上面的 GitHub 登录；登录成功后可继续评论。
-- 当前默认是 **本地模式**：评论与点赞保存在访客自己的浏览器（`localStorage` 键名 `minxi.comments.v1`，按文章地址分开），仅本机可见、不上传、不产生 GitHub 提交——这是静态站点零配置下能做到的范围，页面上也会如实标注。
+- 每篇文章底部都有 **Giscus 评论区**：评论与 reaction 保存在 GitHub Discussions，所有访客互相可见；访客在 Giscus 评论框内使用 GitHub 账号登录后即可评论。本站顶部的 GitHub OAuth 登录与 Giscus 框内的登录是两套独立会话，前者仍用于本站账号面板与后台入口判断。
+- 主题仍保留 **本地模式** 作为配置不完整时的回落：评论与点赞只保存在访客自己的浏览器（`localStorage` 键名 `minxi.comments.v1`，按文章地址分开），仅本机可见。此前本地模式留下的评论与点赞不会迁移到 Giscus。
 
-### 想要全站共享评论时：启用 Giscus（可选）
+### Giscus（已启用）
 
-评论要让所有访客互相看见，需要一个外部托管。推荐 Giscus（基于 GitHub Discussions，访客在 Giscus 里用 GitHub 账号登录评论，点赞即 GitHub 的 reaction）：
+本站已开启仓库 Discussions、创建专用的 `Comments` 分类（Open-ended discussion），并把 giscus GitHub App 安装到 `lscminxi/lscminxi.github.io`。主题配置 `blog/themes/minxi/_config.yml` 已设为 `comments.provider: giscus`，并填入仓库与 `Comments` 分类的公开 ID；文章按 `pathname` 映射到对应 Discussion。
 
-1. 仓库 **Settings → General → Features** 勾选 **Discussions**；
-2. 打开 https://github.com/apps/giscus 安装到 `lscminxi/lscminxi.github.io`；
-3. 打开 https://giscus.app 按页面提示选好仓库与分类，取得 `data-repo-id` 与 `data-category-id`；
-4. 把 `blog/themes/minxi/_config.yml` 的 `comments.provider` 改成 `giscus`，并填好 `comments.giscus.repo_id` / `category_id`（`repo` 已预填本站仓库）；
+以后维护或迁移时按这几步复核：
+
+1. 仓库 **Settings → General → Features** 保持勾选 **Discussions**；
+2. https://github.com/apps/giscus 保持安装到 `lscminxi/lscminxi.github.io`，且仓库访问范围包含本站仓库；
+3. 打开 https://giscus.app 按页面提示选择仓库与分类，可重新取得 `data-repo-id` 与 `data-category-id`；
+4. `blog/themes/minxi/_config.yml` 的 `comments.provider` 保持 `giscus`，`repo_id` / `category` / `category_id` 与仓库、分类一致；
 5. 重新构建发布（`npm run publish:prepare`）。没填全时主题会自动回落到本地模式，不会显示坏掉的评论区。
 
 回归测试：`cd blog && npm run test:auth`（OAuth 授权地址与防伪造 state、回调换令牌全流程、验证码/用户名弱登录已被移除、无配置时不给备用登录、未登录弹窗拦截、登录后评论/点赞与防注入渲染、非站长在前台与 `/admin/` 的无权限提示、站长令牌后门不受访客会话影响）。`npm run build && npm run check` 还会校验每页都有登录按钮与三个弹窗、文章页有评论区、后台有无权限页，并断言构建产物里不存在验证码登录的标记。
