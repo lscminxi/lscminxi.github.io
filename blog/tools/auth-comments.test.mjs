@@ -45,8 +45,11 @@ const pageHtml = `<!DOCTYPE html><html lang="zh-CN"><head><title>t</title></head
 <dialog id="auth-noaccess-dialog"><p id="auth-noaccess-text"></p><button id="auth-noaccess-close" type="button">知道了</button></dialog>
 </body></html>`;
 
-async function setup({ storedUser = null } = {}) {
-  const dom = new JSDOM(pageHtml, { url: "https://preview.example/2026/01/01/demo/", runScripts: "outside-only" });
+async function setup({ storedUser = null, commentsProvider = "local" } = {}) {
+  const html = commentsProvider === "giscus"
+    ? pageHtml.replace('data-comments-provider="local"', 'data-comments-provider="giscus" data-giscus-repo="lscminxi/lscminxi.github.io" data-giscus-repo-id="R_kgDOUO_jEg" data-giscus-category="Comments" data-giscus-category-id="DIC_kwDOUO_jEs4DJNoN"')
+    : pageHtml;
+  const dom = new JSDOM(html, { url: "https://preview.example/2026/01/01/demo/", runScripts: "outside-only" });
   const w = dom.window;
   if (storedUser) w.localStorage.setItem(auth.AUTH_STORAGE_KEY, JSON.stringify(storedUser));
   w.fetch = async (url) => {
@@ -127,6 +130,25 @@ test("there is no captcha or username-only fallback login", async () => {
     assert.match($("#auth-error").textContent, /还没有配置好/);
     assert.equal(w.MinxiAuth.getUser(), null);
     assert.equal(w.localStorage.getItem(auth.AUTH_STORAGE_KEY), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("giscus mode loads the shared discussion widget and hides local-only controls", async () => {
+  const { dom, $ } = await setup({ commentsProvider: "giscus" });
+  try {
+    const script = $("[data-giscus-target] script");
+    assert.ok(script, "Giscus 模式要注入 giscus client.js");
+    assert.equal(script.getAttribute("src"), "https://giscus.app/client.js");
+    assert.equal(script.getAttribute("data-repo"), "lscminxi/lscminxi.github.io");
+    assert.equal(script.getAttribute("data-repo-id"), "R_kgDOUO_jEg");
+    assert.equal(script.getAttribute("data-category"), "Comments");
+    assert.equal(script.getAttribute("data-category-id"), "DIC_kwDOUO_jEs4DJNoN");
+    assert.equal(script.getAttribute("data-mapping"), "pathname");
+    assert.equal($("[data-local-comments]").hasAttribute("hidden"), true, "Giscus 模式隐藏本地评论表单");
+    assert.equal($("[data-like-button]").hasAttribute("hidden"), true, "Giscus 模式隐藏本地点赞按钮");
+    assert.equal($("[data-comment-count]").hasAttribute("hidden"), true, "Giscus 模式隐藏本地评论计数");
   } finally {
     dom.window.close();
   }

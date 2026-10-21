@@ -446,6 +446,9 @@ function wireGiscus(section) {
   const target = section.querySelector('[data-giscus-target]');
   if (target) target.replaceChildren(script);
   section.querySelector('[data-local-comments]')?.setAttribute('hidden', '');
+  // 评论数与 reaction 都由 Giscus 自己展示，本地模式的计数/点赞按钮在共享模式下隐藏。
+  section.querySelector('[data-comment-count]')?.setAttribute('hidden', '');
+  section.querySelector('[data-like-button]')?.setAttribute('hidden', '');
   return true;
 }
 

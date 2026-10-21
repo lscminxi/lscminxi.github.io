@@ -8,12 +8,12 @@ github: https://github.com/lscminxi
 #                    启用前需按 README「评论与点赞」一节在仓库开启 Discussions、安装 giscus app，
 #                    再到 https://giscus.app 取得下面三项 ID 填进来；没填全时会自动回落到 local。
 comments:
-  provider: local
+  provider: giscus
   giscus:
     repo: lscminxi/lscminxi.github.io
-    repo_id: ""
-    category: Announcements
-    category_id: ""
+    repo_id: "R_kgDOUO_jEg"
+    category: Comments
+    category_id: "DIC_kwDOUO_jEs4DJNoN"
 
 # 访客登录
 # 唯一的访客登录方式：GitHub OAuth。provider 须为 oauth，且 client_id 与 worker_url
