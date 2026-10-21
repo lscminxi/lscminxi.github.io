@@ -299,6 +299,25 @@ test("post-card hover keeps a same-structure gradient so it cannot flash (issue 
   }
 });
 
+test("the whole post card is inside the article link hit area", () => {
+  // 整卡可点用标题链接的 stretched-link 伪元素实现：卡片提供定位上下文，
+  // 伪元素铺满整卡；标签链接单独抬高，保证点标签不会误进文章。
+  assert.match(css, /\.post-card \{[^}]*position:\s*relative;/, "卡片要成为整卡链接的定位上下文");
+  assert.match(
+    css,
+    /\.post-card h3 > a::after \{[^}]*position:\s*absolute;[^}]*inset:\s*0;/,
+    "标题链接的伪元素要铺满整张卡片",
+  );
+  assert.match(
+    css,
+    /\.post-card \.post-tags \{[^}]*position:\s*relative;[^}]*z-index:\s*2;/,
+    "卡片内标签链接要压在整卡覆盖层之上",
+  );
+  const card = /<article class="post-card"[\s\S]*?<\/article>/.exec(builtPage)?.[0] || "";
+  assert.match(card, /<h3><a href="[^"]+">/, "卡片仍以标题作为真实文章链接");
+  assert.match(card, /class="post-tags"/, "卡片内的标签链接仍保留");
+});
+
 test("no dark-only color escapes into the light overrides", () => {
   // 覆盖块里不允许出现深色底（#0b0e14、#121924 之类的面板色）
   const forbidden = ["#0b0e14", "#0d151e", "#11151d", "#111822", "#111925", "#121720", "#121924", "#14251f", "#1b2430", "#121820"];

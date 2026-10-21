@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css?v=nav-7">
+  <link rel="stylesheet" href="/css/main.css?v=card-link-1">
   <link rel="stylesheet" href="./admin.css?v=theme-3">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
@@ -16,7 +16,7 @@
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=plots-6" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=plots-2" defer></script>
+  <script src="./admin.js?v=visibility-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -270,7 +270,9 @@
           </select>
         </label>
         <div class="field pin-field"><span>置顶</span><div class="preview-modes" role="group" aria-label="置顶设置"><button class="btn ghost small" type="button" data-pin="off" aria-pressed="true">不置顶</button><button class="btn ghost small" type="button" data-pin="on" aria-pressed="false">置顶</button></div><p class="pin-hint" id="pin-hint" aria-live="polite"></p></div>
+        <label class="field"><span>可见性</span><select id="f-visibility"><option value="public">公开（发布到站点）</option><option value="private">私密（仅后台可见）</option></select></label>
         <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
+        <p class="muted small wide">私密文章保存为 <code>published: false</code>，不会生成公开文章页，也不会出现在首页、归档、分类、标签和搜索中；这不是密码保护，源码仍保存在 GitHub 仓库中。</p>
         <label class="checkline wide"><input id="f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
       </div>
       <p class="muted small">

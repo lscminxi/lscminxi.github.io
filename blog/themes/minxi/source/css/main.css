@@ -607,6 +607,7 @@ html.header-open .header-hint {
   color: var(--accent);
 }
 .post-card {
+  position: relative;
   background: linear-gradient(120deg, #121720, #10141c);
   border: 1px solid #252c37;
   border-radius: 9px;
@@ -678,6 +679,24 @@ html.header-open .header-hint {
 }
 .post-card h3 > a:hover {
   color: var(--accent);
+}
+
+/* 整张卡片都是文章链接的生效范围：标题链接的伪元素铺满卡片。
+   这样不用把 <article> 改成 <a>，也不会产生链接套链接；卡片内真正的
+   标签链接单独抬高层级，点标签仍去标签页而不是进文章。 */
+.post-card h3 > a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.post-card h3 > a:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.post-card .post-tags {
+  position: relative;
+  z-index: 2;
 }
 .card-arrow {
   font-size: 19px;

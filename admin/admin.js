@@ -143,6 +143,7 @@
       tags: $("#f-tags"),
       accent: $("#f-accent"),
       description: $("#f-description"),
+      visibility: $("#f-visibility"),
       sample: $("#f-sample"),
       body: $("#f-body"),
     },
@@ -498,6 +499,7 @@
     if (fields.accent) lines.push(`accent: ${fields.accent}`);
     if (fields.sample) lines.push("sample: true");
     if (fields.pinned) lines.push("sticky: 1");
+    if (fields.visibility === "private") lines.push("published: false");
     lines.push("---", "");
     return `${lines.join("\n")}${fields.body.replace(/^\s+/, "")}\n`;
   }
@@ -797,6 +799,7 @@
           description: String(data.description || ""),
           sample: String(data.sample || "") === "true",
           sticky: Number(data.sticky) > 0,
+          published: String(data.published || "") !== "false",
         });
       } catch (error) {
         if (error.status === 404) return; // File removed while the tree was loading.
@@ -810,6 +813,7 @@
           description: `读取失败：${describeError(error)}`,
           sample: false,
           sticky: false,
+          published: true,
         });
       }
     });
@@ -834,7 +838,8 @@
       title.textContent = post.title;
       const meta = document.createElement("div");
       meta.className = "row-meta";
-      const url = post.date ? postUrl(post.date, fileName(path)) : "";
+      const isPrivate = post.published === false;
+      const url = !isPrivate && post.date ? postUrl(post.date, fileName(path)) : "";
       meta.textContent = [
         path.replace(`${CONFIG.postsDir}/`, ""),
         post.date,
@@ -842,6 +847,7 @@
         post.tags.map((tag) => `#${tag}`).join(" "),
         post.sample ? "示例文章" : "",
         post.sticky ? "置顶" : "",
+        isPrivate ? "私密（仅后台可见）" : "",
         url ? `→ ${url}` : "",
       ]
         .filter(Boolean)
@@ -1179,7 +1185,9 @@
     const slug = el.f.slug.value.trim();
     const dateValue = fromDateInput(el.f.date.value);
     const valid = /^[a-z0-9][a-z0-9-]*$/.test(slug);
-    el.urlPreview.textContent = dateValue && valid ? postUrl(dateValue, slug) : "/…";
+    el.urlPreview.textContent = el.f.visibility.value === "private"
+      ? "私密文章（不会生成公开页面）"
+      : dateValue && valid ? postUrl(dateValue, slug) : "/…";
     const taken = [...postIndex.entries()].some(
       ([path]) => fileName(path) === slug && path !== editing?.path,
     );
@@ -1524,6 +1532,7 @@
       el.f.description.value = String(data.description || "");
       el.f.accent.value = String(data.accent || "");
       el.f.sample.checked = String(data.sample || "") === "true";
+      el.f.visibility.value = String(data.published || "") === "false" ? "private" : "public";
       setPinned(Number(data.sticky) > 0);
       el.f.body.value = body.replace(/^\n+/, "");
       snapshots.editor = editorSnapshotValue();
@@ -1548,6 +1557,7 @@
     el.f.description.value = "";
     el.f.accent.value = "";
     el.f.sample.checked = false;
+    el.f.visibility.value = "public";
     setPinned(false);
     el.f.body.value = "";
     delete el.f.slug.dataset.touched;
@@ -1581,6 +1591,7 @@
       description: el.f.description.value.trim(),
       accent: el.f.accent.value,
       sample: el.f.sample.checked,
+      visibility: el.f.visibility.value === "private" ? "private" : "public",
       pinned,
       body: el.f.body.value,
       path: `${CONFIG.postsDir}/${slug}.md`,
@@ -1638,9 +1649,11 @@
       }
       el.editorTitle.textContent = `编辑：${fields.title}`;
       el.deletePost.hidden = false;
-      el.editorStatus.textContent = `已提交。发布地址 ${postUrl(fields.date, fields.slug)}，静态页面约 1–2 分钟后更新。`;
+      el.editorStatus.textContent = fields.visibility === "private"
+        ? "已提交为私密文章。公开站点不会生成这篇文章，之后可在后台继续编辑。"
+        : `已提交。发布地址 ${postUrl(fields.date, fields.slug)}，静态页面约 1–2 分钟后更新。`;
       toast("已提交，GitHub Actions 正在重新生成站点");
-      postIndex.set(fields.path, { ...fields, sha: editing.sha, size: markdown.length });
+      postIndex.set(fields.path, { ...fields, published: fields.visibility !== "private", sha: editing.sha, size: markdown.length });
       await refreshPosts().catch(() => {});
       if (editing?.path) editing.sha = postIndex.get(editing.path)?.sha || editing.sha;
       watchBuild(submittedSha);
@@ -1672,6 +1685,7 @@
   }
   el.cancelEdit.addEventListener("click", leaveEditor);
   el.f.date.addEventListener("input", updatePreview);
+  el.f.visibility.addEventListener("change", updatePreview);
   el.f.title.addEventListener("input", () => {
     if (editing?.isNew && !el.f.slug.dataset.touched) {
       el.f.slug.value = slugify(el.f.title.value);
@@ -1726,6 +1740,7 @@
       accent: el.f.accent.value,
       description: el.f.description.value,
       sample: el.f.sample.checked,
+      visibility: el.f.visibility.value,
       pinned,
       body: el.f.body.value,
     });
