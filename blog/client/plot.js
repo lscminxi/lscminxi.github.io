@@ -210,6 +210,12 @@ function initPlot(figure) {
   let dragStart = null;
   let pinchStart = null;
   let moved = false;
+  // 真实点击在按下与松开之间几乎总有几像素的指针抖动，不能一动就算拖动；
+  // 记住按下时命中的点/线，松开后的 click 即使因指针捕获或重绘落到 stage 上，
+  // 也能按按下时的目标完成选中（显示坐标/方程式）。
+  const CLICK_DRAG_THRESHOLD = 6;
+  let pressTarget = null;
+  let pressClient = null;
 
   stage.addEventListener('pointerdown', (event) => {
     if (event.button !== undefined && event.button > 0) return;
@@ -218,8 +224,11 @@ function initPlot(figure) {
     pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY, point });
     try { stage.setPointerCapture(event.pointerId); } catch { /* 测试环境可能没有指针捕获 */ }
     moved = false;
+    pressTarget = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"], [data-kind="function"], [data-kind="segment"]') || null;
+    if (pressTarget && !stage.contains(pressTarget)) pressTarget = null;
+    pressClient = { clientX: event.clientX, clientY: event.clientY };
     if (pointers.size === 1) {
-      dragStart = { point, x: [...state.x], y: [...state.y] };
+      dragStart = { point, clientX: event.clientX, clientY: event.clientY, x: [...state.x], y: [...state.y] };
       pinchStart = null;
     } else if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -242,10 +251,13 @@ function initPlot(figure) {
       pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY, point });
 
       if (pointers.size === 1 && dragStart) {
+        // 没超过点击阈值时不要平移/重绘：重绘会换掉被按下的 SVG 节点，
+        // 随后 click 的目标丢失，选中（坐标/方程式）就永远触发不了。
+        if (Math.hypot(event.clientX - dragStart.clientX, event.clientY - dragStart.clientY) <= CLICK_DRAG_THRESHOLD) return;
+        moved = true;
         const frame = frameBox();
         const dxData = ((point.x - dragStart.point.x) / frame.width) * (dragStart.x[1] - dragStart.x[0]);
         const dyData = ((point.y - dragStart.point.y) / frame.height) * (dragStart.y[1] - dragStart.y[0]);
-        if (Math.abs(event.movementX || 0) > 0 || Math.abs(point.x - dragStart.point.x) + Math.abs(point.y - dragStart.point.y) > 2) moved = true;
         // 抓着画布拖：内容跟随指针（与 Desmos/GeoGebra 一致）。屏幕 y 向下、
         // 数据 y 向上，所以 y 范围要与拖动同向移动，之前写反了。
         state.x = dragStart.x.map((value) => value - dxData);
@@ -314,10 +326,21 @@ function initPlot(figure) {
   // 点击（未拖动）选中一个点/交点：微微放大并固定显示它的坐标；
   // 点别处取消选中。拖动后的 click 会被 moved 标志吞掉，不会误选。
   stage.addEventListener('click', (event) => {
-    if (moved) { moved = false; return; }
-    const target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
-    const lineTarget = event.target?.closest?.('[data-kind="function"], [data-kind="segment"]');
-    if (target && stage.contains(target)) {
+    if (moved) { moved = false; pressTarget = null; pressClient = null; return; }
+    let target = event.target?.closest?.('[data-kind="point"], [data-kind="intersection"]');
+    let lineTarget = event.target?.closest?.('[data-kind="function"], [data-kind="segment"]');
+    if (target && !stage.contains(target)) target = null;
+    if (lineTarget && !stage.contains(lineTarget)) lineTarget = null;
+    // click 因指针捕获/重绘落到 stage（或别的非图形元素）上时，
+    // 用按下时命中的目标兜底；按、松两点距离必须仍在点击阈值内。
+    if (!target && !lineTarget && pressTarget && pressClient
+      && Math.hypot(event.clientX - pressClient.clientX, event.clientY - pressClient.clientY) <= CLICK_DRAG_THRESHOLD) {
+      if (pressTarget.dataset.kind === 'point' || pressTarget.dataset.kind === 'intersection') target = pressTarget;
+      else lineTarget = pressTarget;
+    }
+    pressTarget = null;
+    pressClient = null;
+    if (target) {
       selectedLineKey = null;
       selectedLineInfo = null;
       selectedPointInfo = {
@@ -331,7 +354,7 @@ function initPlot(figure) {
       draw();
       if (state.coords) showDisplay(event, `(${number(selectedPointInfo.x)}, ${number(selectedPointInfo.y)})`);
       else { hideTooltip(); updateSelectedReadout(); }
-    } else if (lineTarget && stage.contains(lineTarget)) {
+    } else if (lineTarget) {
       selectedPointInfo = null;
       selectedPointKey = null;
       selectedLineKey = lineKey(lineTarget);
