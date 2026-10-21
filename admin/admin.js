@@ -1199,17 +1199,87 @@
   let previewPlotViews = [];
   let previewGraphViews = [];
   let previewScroll = { top: 0, left: 0 };
+  // 滚动位置按比例记，不只记像素：正文变长/变短后重渲染仍停在相对位置，
+  // 不会因为内容高度变了被顶回头部。
+  let previewScrollRatio = { top: 0, left: 0 };
+  let scrollSyncLock = false;
+  let lastScrollSource = "preview";
   const previewFrame = $("#post-preview");
+  const scrollRatioFor = (element, axis) => {
+    if (!element) return 0;
+    const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
+    const value = axis === "top" ? element.scrollTop : element.scrollLeft;
+    return Number.isFinite(max) && max > 0 ? Math.min(1, Math.max(0, (value || 0) / max)) : 0;
+  };
+  const applyScrollRatio = (element, axis, ratio) => {
+    if (!element) return;
+    const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
+    if (!Number.isFinite(max) || max <= 0) return;
+    const value = Math.min(1, Math.max(0, ratio || 0)) * max;
+    if (axis === "top") element.scrollTop = value; else element.scrollLeft = value;
+  };
+  const rememberPreviewScroll = (scroll) => {
+    if (!scroll) return;
+    previewScroll = { top: scroll.scrollTop || 0, left: scroll.scrollLeft || 0 };
+    // 内容还没完成布局时不要把已记住的比例清零，否则随后的恢复会回到头。
+    const topMax = scroll.scrollHeight - scroll.clientHeight;
+    const leftMax = scroll.scrollWidth - scroll.clientWidth;
+    previewScrollRatio = {
+      top: Number.isFinite(topMax) && topMax > 0 ? scrollRatioFor(scroll, "top") : previewScrollRatio.top,
+      left: Number.isFinite(leftMax) && leftMax > 0 ? scrollRatioFor(scroll, "left") : previewScrollRatio.left,
+    };
+  };
+  const restorePreviewScroll = (scroll) => {
+    if (!scroll) return;
+    scrollSyncLock = true;
+    applyScrollRatio(scroll, "top", previewScrollRatio.top);
+    applyScrollRatio(scroll, "left", previewScrollRatio.left);
+    // 刚刚是编辑区在滚：让预览对齐到编辑区的相对位置，而不是旧位置。
+    if (lastScrollSource === "editor") {
+      applyScrollRatio(scroll, "top", scrollRatioFor(el.f.body, "top"));
+      applyScrollRatio(scroll, "left", scrollRatioFor(el.f.body, "left"));
+    }
+    rememberPreviewScroll(scroll);
+    setTimeout(() => { scrollSyncLock = false; }, 60);
+  };
+  const syncPreviewToEditor = () => {
+    if (scrollSyncLock) return;
+    const scroll = previewFrame.contentDocument?.scrollingElement;
+    if (!scroll) return;
+    lastScrollSource = "editor";
+    scrollSyncLock = true;
+    applyScrollRatio(scroll, "top", scrollRatioFor(el.f.body, "top"));
+    applyScrollRatio(scroll, "left", scrollRatioFor(el.f.body, "left"));
+    rememberPreviewScroll(scroll);
+    setTimeout(() => { scrollSyncLock = false; }, 60);
+  };
+  const syncEditorToPreview = () => {
+    if (scrollSyncLock) return;
+    const scroll = previewFrame.contentDocument?.scrollingElement;
+    if (!scroll) return;
+    lastScrollSource = "preview";
+    rememberPreviewScroll(scroll);
+    scrollSyncLock = true;
+    applyScrollRatio(el.f.body, "top", previewScrollRatio.top);
+    applyScrollRatio(el.f.body, "left", previewScrollRatio.left);
+    setTimeout(() => { scrollSyncLock = false; }, 60);
+  };
+  const handlePreviewScroll = () => {
+    const scroll = previewFrame.contentDocument?.scrollingElement;
+    rememberPreviewScroll(scroll);
+    if (!scrollSyncLock) syncEditorToPreview();
+  };
+  el.f.body.addEventListener("scroll", () => { if (!scrollSyncLock) syncPreviewToEditor(); });
   previewFrame.addEventListener("load", () => {
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
     // (same-origin), so the sandboxed iframe itself still runs no scripts.
     const scroll = previewFrame.contentDocument?.scrollingElement;
-    if (scroll) {
-      scroll.scrollTop = previewScroll.top;
-      scroll.scrollLeft = previewScroll.left;
-    }
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
+    restorePreviewScroll(scroll);
+    // 工具栏/图注是 enhance 时才插入的，布局稳定后再恢复一次，避免位置被顶动。
+    setTimeout(() => restorePreviewScroll(scroll), 0);
+    try { previewFrame.contentWindow?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
   });
   function renderPostPreview() {
     clearTimeout(previewTimer);
@@ -1228,6 +1298,8 @@
         previewPlotViews = [];
         previewGraphViews = [];
         previewScroll = { top: 0, left: 0 };
+        previewScrollRatio = { top: 0, left: 0 };
+        lastScrollSource = "preview";
       } else {
         const doc = previewFrame.contentDocument;
         // During an in-flight srcdoc load retain the last valid snapshot.
@@ -1242,8 +1314,7 @@
           }));
           previewGraphViews = [...doc.querySelectorAll('.md-graph svg')]
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
-          const scroll = doc.scrollingElement;
-          previewScroll = { top: scroll?.scrollTop || 0, left: scroll?.scrollLeft || 0 };
+          rememberPreviewScroll(doc.scrollingElement);
         }
       }
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
