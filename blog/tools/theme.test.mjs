@@ -278,6 +278,27 @@ test("light mode is a scoped override: dark stays the untouched default", () => 
   assert(/\.highlight td\s*\{[^}]*vertical-align:\s*top/.test(css), "highlight cells must align at the top");
 });
 
+test("post-card hover keeps a same-structure gradient so it cannot flash (issue #18)", () => {
+  const pick = (selector) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`${escaped} \\{([^}]*)\\}`).exec(css)?.[1] || "";
+  };
+  // 触发闪动的组合：默认态渐变 + 悬停态纯色 + transition: background。
+  // background 里的渐变层不可与“无渐变”平滑插值，只能在过渡中离散翻转，
+  // 鼠标移上去就会闪一下。深浅两套主题的悬停态都必须是与默认态同角度、
+  // 同色标数的渐变，过渡才能平滑插值。
+  for (const [baseSelector, hoverSelector] of [
+    [".post-card", ".post-card:hover"],
+    ['html[data-theme="light"] .post-card', 'html[data-theme="light"] .post-card:hover'],
+  ]) {
+    const base = pick(baseSelector);
+    const hover = pick(hoverSelector);
+    assert.match(base, /background:\s*linear-gradient\(120deg,/, `${baseSelector} 默认态应为渐变`);
+    assert.match(hover, /background:\s*linear-gradient\(120deg,/, `${hoverSelector} 悬停态也必须是同结构渐变，不能写纯色`);
+    assert.doesNotMatch(hover, /background:\s*#[0-9a-f]{6}\s*;/i, `${hoverSelector} 悬停态写纯色会让渐变层离散翻转、产生闪动`);
+  }
+});
+
 test("no dark-only color escapes into the light overrides", () => {
   // 覆盖块里不允许出现深色底（#0b0e14、#121924 之类的面板色）
   const forbidden = ["#0b0e14", "#0d151e", "#11151d", "#111822", "#111925", "#121720", "#121924", "#14251f", "#1b2430", "#121820"];

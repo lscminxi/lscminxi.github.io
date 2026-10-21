@@ -618,7 +618,10 @@ html.header-open .header-hint {
 }
 .post-card:hover {
   border-color: #405461;
-  background: #141b24;
+  /* 悬停背景必须与默认态同为 120deg 双色标渐变：默认态是渐变、悬停态若写纯色，
+     background 过渡里的渐变层只能离散翻转（不可插值），鼠标移上去会“闪”一下；
+     同结构渐变可平滑插值，就不会闪了（issue #18）。 */
+  background: linear-gradient(120deg, #161e29, #12181f);
 }
 .post-card-meta {
   display: flex;
@@ -2921,7 +2924,8 @@ html[data-theme="light"] .post-card {
 }
 html[data-theme="light"] .post-card:hover {
   border-color: #b9cdc6;
-  background: #f4f9f8;
+  /* 同深色：悬停也用同结构渐变，避免渐变→纯色的离散翻转造成闪动（issue #18）。 */
+  background: linear-gradient(120deg, #fdfefd, #eff6f3);
 }
 html[data-theme="light"] .code-window {
   background: linear-gradient(130deg, #ffffff, #f4f7fb);
