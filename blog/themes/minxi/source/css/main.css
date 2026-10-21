@@ -2179,6 +2179,21 @@ body.search-open {
   fill: var(--algo-edge-color, var(--accent)) !important;
   opacity: 1 !important;
 }
+.article-content .graph-edge-group.is-algo-back .graph-edge-line {
+  stroke: var(--algo-edge-color, #ffa94d) !important;
+  stroke-width: 4.6;
+  stroke-dasharray: 7 5;
+  opacity: 1 !important;
+}
+.article-content .graph-edge-group.is-algo-back .graph-arrow {
+  fill: var(--algo-edge-color, #ffa94d) !important;
+  opacity: 1 !important;
+}
+.article-content .graph-node-group.is-dfs-root .graph-node-ring {
+  opacity: 0.95;
+  stroke: var(--accent);
+  stroke-width: 3;
+}
 .article-content .graph-edge-group.is-algo-dim .graph-edge-line { opacity: 0.13 !important; }
 .article-content .graph-edge-group.is-algo-dim .graph-arrow { opacity: 0.13 !important; }
 .article-content .graph-node-group.is-algo-node .graph-node-ring,

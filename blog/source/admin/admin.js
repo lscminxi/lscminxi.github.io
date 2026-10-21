@@ -1356,7 +1356,7 @@
   });
 
   $("#insert-graph").addEventListener("change", (event) => {
-    const mode = ["reader", "none", "components", "bridges", "mst", "bipartite"].includes(event.target.value) ? event.target.value : "";
+    const mode = ["reader", "none", "components", "bridges", "mst", "bipartite", "vbcc", "ebcc", "dfs"].includes(event.target.value) ? event.target.value : "";
     if (!mode) return;
     insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -- A ; weight=5\n```\n\n");
     event.target.value = "";

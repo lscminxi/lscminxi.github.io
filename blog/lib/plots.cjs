@@ -683,6 +683,12 @@ const GRAPH_ALGORITHM_ALIASES = {
   bridges: 'bridges', bridge: 'bridges', '桥与割点': 'bridges', '桥': 'bridges', '割点': 'bridges',
   mst: 'mst', '最小生成树': 'mst', '最小生成森林': 'mst',
   bipartite: 'bipartite', '二分图': 'bipartite', '二分图判定': 'bipartite',
+  vbcc: 'vbcc', vertexbiconnected: 'vbcc', vertexbiconnectedcomponents: 'vbcc',
+  '点双': 'vbcc', '点双连通分量': 'vbcc',
+  ebcc: 'ebcc', edgebiconnected: 'ebcc', edgebiconnectedcomponents: 'ebcc',
+  '边双': 'ebcc', '边双连通分量': 'ebcc',
+  dfs: 'dfs', dfstree: 'dfs', 'dfs树': 'dfs', '深度优先树': 'dfs',
+  '带返祖边的树': 'dfs', '返祖边': 'dfs',
 };
 function parseGraphAlgorithm(value) {
   const key = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
@@ -832,9 +838,31 @@ function analyzeGraphData(nodeIds, edges) {
     if (selfLoop) conflict = selfLoop.index;
   }
 
-  // 桥与割点（Tarjan 低链接值，按边编号排除父边，平行边互为回边）
+  // 桥与割点（Tarjan 低链接值，按边编号排除父边，平行边互为回边）；
+  // 同一遍 DFS 顺便用边栈求点双连通分量：每当 low[子] >= disc[当前点]，
+  // 从栈里弹出的边就构成一个点双分量（割点会同时出现在多个分量里）。
   const disc = new Map(); const low = new Map();
   const bridges = []; const cutVertices = new Set();
+  const vertexBiconnectedComponents = [];
+  const edgeStack = [];
+  const collectVertexBiconnected = (lastEdge) => {
+    const componentEdges = [];
+    while (edgeStack.length) {
+      const edgeIndex = edgeStack.pop();
+      componentEdges.push(edgeIndex);
+      if (edgeIndex === lastEdge) break;
+    }
+    if (!componentEdges.length) return;
+    const member = new Set();
+    for (const edgeIndex of componentEdges) {
+      member.add(normalized[edgeIndex].from);
+      member.add(normalized[edgeIndex].to);
+    }
+    vertexBiconnectedComponents.push({
+      nodes: ids.filter((id) => member.has(id)),
+      edges: componentEdges.sort((a, b) => a - b),
+    });
+  };
   let timer = 0;
   const dfs = (node, parentEdge) => {
     timer += 1;
@@ -843,18 +871,107 @@ function analyzeGraphData(nodeIds, edges) {
     for (const next of adjacency.get(node) || []) {
       if (next.edgeIndex === parentEdge) continue;
       if (!disc.has(next.to)) {
+        edgeStack.push(next.edgeIndex);
         children += 1;
         dfs(next.to, next.edgeIndex);
         low.set(node, Math.min(low.get(node), low.get(next.to)));
         if (low.get(next.to) > disc.get(node)) bridges.push(next.edgeIndex);
-        if (parentEdge !== -1 && low.get(next.to) >= disc.get(node)) cutVertices.add(node);
+        if (low.get(next.to) >= disc.get(node)) {
+          if (parentEdge !== -1) cutVertices.add(node);
+          collectVertexBiconnected(next.edgeIndex);
+        }
       } else {
+        if (disc.get(next.to) < disc.get(node)) edgeStack.push(next.edgeIndex); // 返祖边只入栈一次
         low.set(node, Math.min(low.get(node), disc.get(next.to)));
       }
     }
     if (parentEdge === -1 && children > 1) cutVertices.add(node);
   };
   for (const id of ids) if (!disc.has(id)) dfs(id, -1);
+  // 自环各自是一个点双分量；完全孤立的点也算一个点双分量。
+  for (const edge of normalized) {
+    if (edge.from === edge.to) vertexBiconnectedComponents.push({ nodes: [edge.from], edges: [edge.index] });
+  }
+  const inVertexBiconnected = new Set(vertexBiconnectedComponents.flatMap((component) => component.nodes));
+  for (const id of ids) {
+    if (!inVertexBiconnected.has(id)) vertexBiconnectedComponents.push({ nodes: [id], edges: [] });
+  }
+
+  // 边双连通分量：删掉所有桥以后剩下的连通块（桥本身不属于任何边双分量）。
+  const bridgeSet = new Set(bridges);
+  const edgeBiconnectedComponents = [];
+  const seenEdgeBiconnected = new Set();
+  for (const id of ids) {
+    if (seenEdgeBiconnected.has(id)) continue;
+    const member = [];
+    const queue = [id];
+    seenEdgeBiconnected.add(id);
+    while (queue.length) {
+      const current = queue.shift();
+      member.push(current);
+      for (const next of adjacency.get(current) || []) {
+        if (bridgeSet.has(next.edgeIndex) || seenEdgeBiconnected.has(next.to)) continue;
+        seenEdgeBiconnected.add(next.to);
+        queue.push(next.to);
+      }
+    }
+    const memberSet = new Set(member);
+    edgeBiconnectedComponents.push({
+      nodes: member,
+      edges: normalized
+        .filter((edge) => !bridgeSet.has(edge.index) && memberSet.has(edge.from) && memberSet.has(edge.to))
+        .map((edge) => edge.index),
+    });
+  }
+
+  // DFS 树与返祖边：有向边只沿箭头方向走，无向边双向走；从每个未访问点起一棵树。
+  // 非树边里，连回祖先的（无向图里必然如此）是返祖边；有向图的横/前向边单列。
+  const traversal = new Map(ids.map((id) => [id, []]));
+  for (const edge of normalized) {
+    traversal.get(edge.from).push({ to: edge.to, edgeIndex: edge.index });
+    if (!edge.directed && edge.from !== edge.to) traversal.get(edge.to).push({ to: edge.from, edgeIndex: edge.index });
+  }
+  const dfsDisc = new Map(); const dfsFinish = new Map();
+  const dfsDepth = {}; const dfsParent = {};
+  const dfsRoots = []; const dfsOrder = []; const dfsTreeEdges = [];
+  let dfsTimer = 0;
+  const visit = (node, parentNode, depth) => {
+    dfsTimer += 1;
+    dfsDisc.set(node, dfsTimer);
+    dfsDepth[node] = depth;
+    dfsParent[node] = parentNode;
+    dfsOrder.push(node);
+    for (const next of traversal.get(node) || []) {
+      if (dfsDisc.has(next.to)) continue;
+      dfsTreeEdges.push(next.edgeIndex);
+      visit(next.to, node, depth + 1);
+    }
+    dfsTimer += 1;
+    dfsFinish.set(node, dfsTimer);
+  };
+  for (const id of ids) {
+    if (dfsDisc.has(id)) continue;
+    dfsRoots.push(id);
+    visit(id, null, 0);
+  }
+  const isAncestor = (ancestor, node) => dfsDisc.get(ancestor) <= dfsDisc.get(node) && dfsFinish.get(node) <= dfsFinish.get(ancestor);
+  const dfsTreeEdgeSet = new Set(dfsTreeEdges);
+  const dfsBackEdges = []; const dfsOtherEdges = [];
+  for (const edge of normalized) {
+    if (dfsTreeEdgeSet.has(edge.index)) continue;
+    const back = edge.from === edge.to
+      || (edge.directed ? isAncestor(edge.to, edge.from) : (isAncestor(edge.from, edge.to) || isAncestor(edge.to, edge.from)));
+    (back ? dfsBackEdges : dfsOtherEdges).push(edge.index);
+  }
+  const dfsTree = {
+    roots: dfsRoots,
+    order: dfsOrder,
+    depth: dfsDepth,
+    parent: dfsParent,
+    treeEdges: dfsTreeEdges,
+    backEdges: dfsBackEdges,
+    otherEdges: dfsOtherEdges,
+  };
 
   // 最小生成森林（Kruskal）：按权重升序选边，自环不参与
   const parent = new Map(ids.map((id) => [id, id]));
@@ -880,6 +997,9 @@ function analyzeGraphData(nodeIds, edges) {
     bridges: bridges.sort((a, b) => a - b),
     cutVertices: ids.filter((id) => cutVertices.has(id)),
     bipartite: { ok: conflict === null, colors, conflict },
+    vertexBiconnectedComponents,
+    edgeBiconnectedComponents,
+    dfsTree,
     mst: { edges: mstEdges, totalWeight, complete: mstEdges.length === Math.max(0, ids.length - components.length) },
     directed: normalized.some((edge) => edge.directed),
   };
@@ -968,7 +1088,7 @@ function renderGraphSvg(spec) {
   // 点（画在边上面）；包成一组并带点名，方便交互时提示（不显示坐标）
   for (const node of nodes) {
     const x = sx(node.x); const y = sy(node.y);
-    const fillAttr = node.color ? ` fill="${node.color}" style="stroke:var(--text,#e6eaf0)" stroke-width="2"` : ' style="fill:var(--panel-raised,#151a23);stroke:var(--text,#e6eaf0)" stroke-width="2"';
+    const fillAttr = node.color ? ` fill="${node.color}" style="fill:${node.color};stroke:var(--text,#e6eaf0)" stroke-width="2" data-node-color="${node.color}"` : ' style="fill:var(--panel-raised,#151a23);stroke:var(--text,#e6eaf0)" stroke-width="2"';
     const text = node.label || node.id;
     const sub = node.label && node.label !== node.id && node.id !== text
       ? `<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`

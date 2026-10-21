@@ -412,12 +412,12 @@ function initGraph(figure) {
   const toolbar = doc.createElement('div');
   toolbar.className = 'plot-toolbar graph-toolbar';
   toolbar.setAttribute('aria-label', '可视化图工具');
-  const algorithmMode = ['reader', 'none', 'components', 'bridges', 'mst', 'bipartite'].includes(figure.dataset.graphAlgorithm)
+  const algorithmMode = ['reader', 'none', 'components', 'bridges', 'mst', 'bipartite', 'vbcc', 'ebcc', 'dfs'].includes(figure.dataset.graphAlgorithm)
     ? figure.dataset.graphAlgorithm
     : 'reader';
-  const algorithmLabels = { components: '连通分量', bridges: '桥与割点', mst: '最小生成树', bipartite: '二分图' };
+  const algorithmLabels = { components: '连通分量', bridges: '桥与割点', mst: '最小生成树', bipartite: '二分图', vbcc: '点双连通分量', ebcc: '边双连通分量', dfs: 'DFS 树（返祖边）' };
   const algorithmToolbar = algorithmMode === 'reader'
-    ? '<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>'
+    ? '<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="vbcc" aria-pressed="false">点双</button><button type="button" data-graph-algo="ebcc" aria-pressed="false">边双</button><button type="button" data-graph-algo="dfs" aria-pressed="false">DFS 树（返祖边）</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>'
     : (algorithmMode === 'none' ? '' : `<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><span class="graph-algorithm-fixed">${algorithmLabels[algorithmMode]} · 作者指定</span></div>`);
   toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div>' + algorithmToolbar;
   figure.insertBefore(toolbar, stage);
@@ -523,11 +523,11 @@ function initGraph(figure) {
     activeAlgorithm = '';
     algorithmSummary = '';
     edgeEls.forEach((el) => {
-      el.classList.remove('is-algo-active', 'is-algo-dim', 'is-algo-bridge', 'is-algo-conflict');
+      el.classList.remove('is-algo-active', 'is-algo-dim', 'is-algo-bridge', 'is-algo-conflict', 'is-algo-back');
       el.style.removeProperty('--algo-edge-color');
     });
     nodeEls.forEach((group) => {
-      group.classList.remove('is-algo-node', 'is-cut-vertex');
+      group.classList.remove('is-algo-node', 'is-cut-vertex', 'is-dfs-root');
       const saved = originalPaint.get(group);
       if (!saved) return;
       const circle = group.querySelector('.graph-node');
@@ -588,6 +588,64 @@ function initGraph(figure) {
         const conflictEl = edgeEls[graphAnalysis.bipartite.conflict];
         algorithmSummary = `二分图判定${directedNote}：不是二分图${conflictEl ? ` · 冲突边 ${edgeName(conflictEl)} 连接了同侧点或自环` : ''}`;
       }
+    } else if (mode === 'vbcc') {
+      const componentsOfNode = new Map(); const componentOfEdge = new Map();
+      graphAnalysis.vertexBiconnectedComponents.forEach((component, index) => {
+        component.edges.forEach((edgeIndex) => componentOfEdge.set(edgeIndex, index));
+        component.nodes.forEach((id) => {
+          if (!componentsOfNode.has(id)) componentsOfNode.set(id, []);
+          componentsOfNode.get(id).push(index);
+        });
+      });
+      nodeEls.forEach((group) => {
+        const belonging = componentsOfNode.get(group.dataset.nodeId) || [];
+        if (!belonging.length) return;
+        paintNode(group, componentPalette[belonging[0] % componentPalette.length]);
+        if (belonging.length > 1) {
+          group.classList.add('is-cut-vertex');
+          const ring = group.querySelector('.graph-node-ring');
+          if (ring) ring.style.stroke = '#ff922b';
+        }
+      });
+      edgeEls.forEach((el) => {
+        const index = componentOfEdge.get(Number(el.dataset.edgeIndex));
+        if (index !== undefined) markEdge(el, 'is-algo-active', componentPalette[index % componentPalette.length]);
+      });
+      const shared = [...componentsOfNode.entries()].filter(([, list]) => list.length > 1).map(([id]) => nameOf(id));
+      algorithmSummary = `点双连通分量${directedNote}：共 ${graphAnalysis.vertexBiconnectedComponents.length} 个 · ${graphAnalysis.vertexBiconnectedComponents.map((component, index) => `分量 ${index + 1}：${component.nodes.map(nameOf).join('、')}`).join('；')}${shared.length ? ` · ${shared.join('、')} 同时属于多个分量（橙色外圈）` : ''}`;
+    } else if (mode === 'ebcc') {
+      const componentOf = new Map();
+      graphAnalysis.edgeBiconnectedComponents.forEach((component, index) => component.nodes.forEach((id) => componentOf.set(id, index)));
+      nodeEls.forEach((group) => {
+        const index = componentOf.get(group.dataset.nodeId);
+        if (index !== undefined) paintNode(group, componentPalette[index % componentPalette.length]);
+      });
+      const bridgeSet = new Set(graphAnalysis.bridges);
+      edgeEls.forEach((el) => {
+        const edgeIndex = Number(el.dataset.edgeIndex);
+        if (bridgeSet.has(edgeIndex)) { markEdge(el, 'is-algo-bridge', '#ff6b6b'); return; }
+        const index = componentOf.get(el.dataset.from);
+        markEdge(el, 'is-algo-active', componentPalette[(index || 0) % componentPalette.length]);
+      });
+      const bridgeNames = graphAnalysis.bridges.map((index) => edgeEls[index] && edgeName(edgeEls[index])).filter(Boolean);
+      algorithmSummary = `边双连通分量${directedNote}：共 ${graphAnalysis.edgeBiconnectedComponents.length} 个 · ${graphAnalysis.edgeBiconnectedComponents.map((component, index) => `分量 ${index + 1}：${component.nodes.map(nameOf).join('、')}`).join('；')}${bridgeNames.length ? ` · 桥（不属于任何分量）：${bridgeNames.join('、')}` : ' · 没有桥'}`;
+    } else if (mode === 'dfs') {
+      const treeSet = new Set(graphAnalysis.dfsTree.treeEdges);
+      const backSet = new Set(graphAnalysis.dfsTree.backEdges);
+      edgeEls.forEach((el) => {
+        const edgeIndex = Number(el.dataset.edgeIndex);
+        if (treeSet.has(edgeIndex)) markEdge(el, 'is-algo-active', '#51cf66');
+        else if (backSet.has(edgeIndex)) markEdge(el, 'is-algo-back', '#ffa94d');
+        else markEdge(el, 'is-algo-dim', '');
+      });
+      const rootSet = new Set(graphAnalysis.dfsTree.roots);
+      nodeEls.forEach((group) => { if (rootSet.has(group.dataset.nodeId)) group.classList.add('is-dfs-root'); });
+      const edgeNames = (list) => list.map((index) => edgeEls[index] && edgeName(edgeEls[index])).filter(Boolean);
+      const treeNames = edgeNames(graphAnalysis.dfsTree.treeEdges);
+      const backNames = edgeNames(graphAnalysis.dfsTree.backEdges);
+      const otherNames = edgeNames(graphAnalysis.dfsTree.otherEdges);
+      const forest = graphAnalysis.dfsTree.roots.length > 1;
+      algorithmSummary = `${forest ? 'DFS 森林' : 'DFS 树'}（带返祖边）${graphAnalysis.directed ? '（有向边沿箭头方向搜索）' : ''}：根为 ${graphAnalysis.dfsTree.roots.map(nameOf).join('、')} · 访问顺序 ${graphAnalysis.dfsTree.order.map(nameOf).join(' → ')} · 树边 ${treeNames.length} 条${treeNames.length ? `（${treeNames.join('、')}）` : ''} · 返祖边 ${backNames.length} 条${backNames.length ? `（${backNames.join('、')}，橙色虚线）` : ''}${otherNames.length ? ` · 其余边 ${otherNames.length} 条（${otherNames.join('、')}）` : ''}`;
     }
     readout.textContent = algorithmSummary;
   };

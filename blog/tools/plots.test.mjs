@@ -90,6 +90,7 @@ test('graph draws nodes, directed arrows, colors and labels', () => {
     'edge: B -> C',
   ].join('\n')));
   assert.match(svg, /<circle class="graph-node" fill="#e03131"/, '点染色');
+  assert.match(svg, /<circle class="graph-node"[^>]*style="fill:#e03131;/, '点色写进内联样式，不会被主题 CSS 的默认填充盖掉');
   assert.match(svg, /<circle class="graph-node"[^>]*r="20"/, '图的点默认半径加大到 20');
   assert.ok(svg.includes('起点') && svg.includes('一步'), '点/边标注');
   assert.equal((svg.match(/<polygon/g) || []).length, 2, '两条有向边各有一个箭头，无向边没有');
@@ -134,11 +135,42 @@ test('graph algorithms find components, bridges, cut vertices, MST and bipartite
   assert.ok(svg.includes('data-edge-index="0"') && svg.includes('data-weight="5"'), '边组带编号和权重供前端算法定位');
 });
 
+test('graph algorithms find vertex/edge biconnected components and a DFS tree with back edges', () => {
+  const result = plots.analyzeGraphData(['A', 'B', 'C', 'D', 'E', 'F', 'G'], [
+    { from: 'A', to: 'B' }, { from: 'B', to: 'C' }, { from: 'C', to: 'A' },
+    { from: 'C', to: 'D' },
+    { from: 'D', to: 'E' }, { from: 'E', to: 'F' }, { from: 'F', to: 'D' },
+  ]);
+  const signatures = (components) => components.map((component) => component.nodes.join('')).sort();
+  assert.deepEqual(signatures(result.vertexBiconnectedComponents), ['ABC', 'CD', 'DEF', 'G'], '点双：割点 C、D 同时属于两个分量，孤立点自成一个');
+  assert.deepEqual(signatures(result.edgeBiconnectedComponents), ['ABC', 'DEF', 'G'], '边双：删掉桥 C-D 后的连通块');
+  assert.deepEqual(result.dfsTree.roots, ['A', 'G'], '不连通图得到 DFS 森林');
+  assert.deepEqual(result.dfsTree.order, ['A', 'B', 'C', 'D', 'E', 'F', 'G'], 'DFS 访问顺序');
+  assert.deepEqual(result.dfsTree.treeEdges, [0, 1, 3, 4, 5], 'DFS 树边');
+  assert.deepEqual(result.dfsTree.backEdges, [2, 6], '两个环各留一条返祖边');
+  assert.deepEqual(result.dfsTree.otherEdges, [], '无向图没有横边');
+
+  const parallel = plots.analyzeGraphData(['A', 'B'], [{ from: 'A', to: 'B' }, { from: 'A', to: 'B' }]);
+  assert.deepEqual(parallel.vertexBiconnectedComponents.map((component) => component.edges), [[0, 1]], '平行边同属一个点双分量');
+  assert.deepEqual(parallel.dfsTree.backEdges, [1], '第二条平行边是返祖边');
+
+  const directed = plots.analyzeGraphData(['A', 'B', 'C'], [
+    { from: 'A', to: 'B', directed: true }, { from: 'B', to: 'A', directed: true },
+    { from: 'A', to: 'C', directed: true }, { from: 'C', to: 'B', directed: true },
+  ]);
+  assert.deepEqual(directed.dfsTree.treeEdges, [0, 2], '有向图沿箭头方向建 DFS 树');
+  assert.deepEqual(directed.dfsTree.backEdges, [1], '指向祖先的是返祖边');
+  assert.deepEqual(directed.dfsTree.otherEdges, [3], '指向已访问非祖先点的边单独算横边');
+});
+
 test('graph algorithm can be preset by the author or left to readers', () => {
   assert.equal(plots.parseGraphSpec('node: A').algorithm, 'reader', '不写 algo 时默认读者自选');
   assert.equal(plots.parseGraphSpec('algo: mst\nnode: A').algorithm, 'mst', '作者预设最小生成树');
   assert.equal(plots.parseGraphSpec('算法：桥与割点\nnode: A').algorithm, 'bridges', '中文算法名也能预设');
   assert.equal(plots.parseGraphSpec('algo: none\nnode: A').algorithm, 'none', '作者可关闭算法显示');
+  assert.equal(plots.parseGraphSpec('algo: 点双\nnode: A').algorithm, 'vbcc', '作者可预设点双连通分量');
+  assert.equal(plots.parseGraphSpec('algo: 边双连通分量\nnode: A').algorithm, 'ebcc', '作者可预设边双连通分量');
+  assert.equal(plots.parseGraphSpec('algo: 带返祖边的树\nnode: A').algorithm, 'dfs', '作者可预设带返祖边的 DFS 树');
   assert.equal(plots.parseGraphSpec('algo: 随便写\nnode: A').algorithm, 'reader', '写错的算法名回落到读者自选');
   const fixed = plots.renderGraphSvg(plots.parseGraphSpec('algo: bipartite\nnode: A\nnode: B\nedge: A - B'));
   assert.ok(fixed.includes('data-graph-algorithm="bipartite"'), '预设模式写进图容器供前端读取');
@@ -201,6 +233,7 @@ test('editor offers one-click plot/graph templates', async () => {
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
   assert.ok(adminHtml.includes('id="insert-plot"') && adminHtml.includes('id="insert-graph"'));
   assert.ok(adminHtml.includes('value="reader"') && adminHtml.includes('value="mst"') && adminHtml.includes('value="none"'), '后台插入可视化图时可选择算法显示方式');
+  assert.ok(adminHtml.includes('value="vbcc"') && adminHtml.includes('value="ebcc"') && adminHtml.includes('value="dfs"'), '后台可预设点双、边双和 DFS 树');
   assert.ok(adminJs.includes('```plot') && adminJs.includes('```graph'));
   assert.ok(adminJs.includes('algo: " + mode'), '后台会把所选算法写进图源码');
 });
@@ -435,8 +468,25 @@ test('interactive graph algorithms highlight components, bridges, MST and bipart
     assert.match(readout.textContent, /不是二分图/, '三角形被判定为非二分图');
     assert.ok(svg.querySelector('.graph-edge-group.is-algo-conflict'), '冲突边被标红');
 
+    figure.querySelector('[data-graph-algo="vbcc"]').click();
+    assert.match(readout.textContent, /点双连通分量/, '点双给出结论');
+    assert.ok([...svg.querySelectorAll('.graph-node-group')].find((group) => group.dataset.nodeId === 'C').classList.contains('is-cut-vertex'), '点双下割点同时属于多个分量，加橙色外圈');
+    assert.equal(edgeByIndex(3).classList.contains('is-algo-active'), true, '桥自成点双分量也被涂色');
+
+    figure.querySelector('[data-graph-algo="ebcc"]').click();
+    assert.match(readout.textContent, /边双连通分量/, '边双给出结论');
+    assert.equal(edgeByIndex(3).classList.contains('is-algo-bridge'), true, '边双下桥标红且不属于任何分量');
+    assert.equal(svg.querySelectorAll('.graph-node-group.is-algo-node').length, 4, '边双按分量给顶点染色');
+
+    figure.querySelector('[data-graph-algo="dfs"]').click();
+    assert.match(readout.textContent, /DFS 树（带返祖边）/, 'DFS 树给出结论');
+    assert.match(readout.textContent, /访问顺序 A/, 'DFS 树列出访问顺序');
+    assert.equal(edgeByIndex(2).classList.contains('is-algo-back'), true, '返祖边被标出');
+    assert.equal(edgeByIndex(0).classList.contains('is-algo-active'), true, '树边被高亮');
+    assert.ok(svg.querySelector('.graph-node-group.is-dfs-root'), 'DFS 根被标出');
+
     figure.querySelector('[data-graph-algo="clear"]').click();
-    assert.equal(svg.querySelector('.is-algo-active, .is-algo-bridge, .is-algo-conflict, .is-algo-node'), null, '清除算法恢复原图');
+    assert.equal(svg.querySelector('.is-algo-active, .is-algo-bridge, .is-algo-conflict, .is-algo-node, .is-algo-back, .is-dfs-root'), null, '清除算法恢复原图');
     assert.equal(figure.querySelector('[data-graph-algo="mst"]').getAttribute('aria-pressed'), 'false', '清除后按钮恢复未选中');
   } finally { page.window.close(); }
 });
@@ -607,4 +657,6 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.plot-segment.is-selected'), '选中线段加粗样式');
   assert.ok(css.includes('.graph-node-group.is-cut-vertex .graph-node-ring'), '割点外圈样式');
   assert.ok(css.includes('.graph-algorithm-fixed'), '作者指定算法标记样式');
+  assert.ok(css.includes('.graph-edge-group.is-algo-back .graph-edge-line'), '返祖边样式');
+  assert.ok(css.includes('.graph-node-group.is-dfs-root .graph-node-ring'), 'DFS 根外圈样式');
 });
