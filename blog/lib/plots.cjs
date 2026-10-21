@@ -713,6 +713,10 @@ function parseGraphSpec(source) {
       directed: spec.directed && arrow,
       color: parseColor(options.color) || '',
       label: rawLabel || (Number.isFinite(explicitWeight) ? String(explicitWeight) : ''),
+      // 有名称又写了边权时，图上的标注同时显示名称与边权，别把权重藏掉。
+      displayLabel: rawLabel && Number.isFinite(explicitWeight) && !Number.isFinite(numericLabel)
+        ? `${rawLabel} · 边权 ${explicitWeight}`
+        : (rawLabel || (Number.isFinite(explicitWeight) ? String(explicitWeight) : '')),
       weight,
       dash: truthy(options.dash, false),
     });
@@ -1050,7 +1054,7 @@ function renderGraphSvg(spec) {
       out.push(`<circle class="graph-edge-hit" cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none" stroke="transparent" stroke-width="13"/>`);
       out.push(`<circle class="graph-edge-line" cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none"${edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge-line graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.72"'} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(x1 + (r - 4) * 0.72, y1 - a.size - r + 6 - (r - 4) * 0.72, Math.PI / 4, color));
-      if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(x1)}" y="${fmt(y1 - a.size - 2 * r - 2)}" text-anchor="middle">${escape(edge.label)}</text>`);
+      if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(x1)}" y="${fmt(y1 - a.size - 2 * r - 2)}" text-anchor="middle">${escape(edge.displayLabel || edge.label)}</text>`);
       closeEdge();
       continue;
     }
@@ -1081,7 +1085,7 @@ function renderGraphSvg(spec) {
       if (edge.directed) out.push(arrow(endX, endY, Math.atan2(ty, tx), color));
       labelX = 0.25 * startX + 0.5 * cxp + 0.25 * endX; labelY = 0.25 * startY + 0.5 * cyp + 0.25 * endY - 5;
     }
-    if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="middle">${escape(edge.label)}</text>`);
+    if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="middle">${escape(edge.displayLabel || edge.label)}</text>`);
     closeEdge();
   }
 

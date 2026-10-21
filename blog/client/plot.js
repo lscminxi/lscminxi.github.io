@@ -338,6 +338,47 @@ function initPlot(figure) {
       if (pressTarget.dataset.kind === 'point' || pressTarget.dataset.kind === 'intersection') target = pressTarget;
       else lineTarget = pressTarget;
     }
+    // 再兜底一层几何命中：点/线只有几像素宽，点在附近（未正中命中 SVG 元素）
+    // 时按坐标找最近的点/交点/线，避免「看着选上了却不显示坐标/方程」。
+    if (!target && !lineTarget) {
+      const eventPoint = svgPoint(event);
+      const dataPoint = toData(eventPoint);
+      if (eventPoint && dataPoint?.inside) {
+        const frame = frameBox();
+        const toScreen = (x, y) => ({
+          x: frame.x + ((x - state.x[0]) / (state.x[1] - state.x[0])) * frame.width,
+          y: frame.y + ((state.y[1] - y) / (state.y[1] - state.y[0])) * frame.height,
+        });
+        let bestPoint = null;
+        stage.querySelectorAll('[data-kind="point"], [data-kind="intersection"]').forEach((el) => {
+          const screen = toScreen(Number(el.dataset.x), Number(el.dataset.y));
+          const distance = Math.hypot(screen.x - eventPoint.x, screen.y - eventPoint.y);
+          if (distance <= 16 && (!bestPoint || distance < bestPoint.distance)) bestPoint = { el, distance };
+        });
+        if (bestPoint) target = bestPoint.el;
+        else {
+          let bestLine = null;
+          const consider = (el, distance) => {
+            if (distance <= 14 && (!bestLine || distance < bestLine.distance)) bestLine = { el, distance };
+          };
+          stage.querySelectorAll('[data-kind="segment"]').forEach((el) => {
+            const a = toScreen(Number(el.dataset.x1), Number(el.dataset.y1));
+            const b = toScreen(Number(el.dataset.x2), Number(el.dataset.y2));
+            const lengthSq = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+            const t = lengthSq ? Math.min(1, Math.max(0, ((eventPoint.x - a.x) * (b.x - a.x) + (eventPoint.y - a.y) * (b.y - a.y)) / lengthSq)) : 0;
+            consider(el, Math.hypot(eventPoint.x - (a.x + t * (b.x - a.x)), eventPoint.y - (a.y + t * (b.y - a.y))));
+          });
+          spec.functions.forEach((item, index) => {
+            let y;
+            try { y = item.fn(dataPoint.x); } catch { y = NaN; }
+            if (!Number.isFinite(y)) return;
+            const el = stage.querySelectorAll('.plot-curve')[index];
+            if (el) consider(el, Math.abs(toScreen(dataPoint.x, y).y - eventPoint.y));
+          });
+          if (bestLine) lineTarget = bestLine.el;
+        }
+      }
+    }
     pressTarget = null;
     pressClient = null;
     if (target) {
@@ -566,6 +607,16 @@ function initGraph(figure) {
     if (restoreReadout) readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   };
   const edgeName = (el) => `${nameOf(el.dataset.from)} — ${nameOf(el.dataset.to)}`;
+  const edgeDetail = (el) => {
+    const label = el.dataset.label || '';
+    const weight = Number(el.dataset.weight || 1);
+    const parts = [];
+    if (label) parts.push(label);
+    // 有名称的边也要能看到边权；名称本身就是纯数字（即权重）时不重复。
+    if (Number.isFinite(weight) && !/^-?(?:\d+\.?\d*|\.\d+)$/.test(label)) parts.push(`边权 ${Number(weight.toFixed(4))}`);
+    if (!parts.length) parts.push(el.dataset.directed === 'true' ? '有向边' : '无向边');
+    return parts.join(' · ');
+  };
   const applyAlgorithm = (mode) => {
     if (activeAlgorithm === mode) { clearAlgorithm(); return; }
     clearAlgorithm(false);
@@ -732,7 +783,7 @@ function initGraph(figure) {
     if (edge && stage.contains(edge)) {
       edge.classList.add('is-hovered');
       const arrow = edge.dataset.directed === 'true' ? ' → ' : ' — ';
-      showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edge.dataset.label || (edge.dataset.directed === 'true' ? '有向边' : '无向边'));
+      showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edgeDetail(edge));
       return;
     }
     const group = event.target?.closest?.('.graph-node-group');
@@ -754,7 +805,7 @@ function initGraph(figure) {
     if (edge && stage.contains(edge)) {
       edge.classList.add('is-selected');
       const arrow = edge.dataset.directed === 'true' ? ' → ' : ' — ';
-      showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edge.dataset.label || (edge.dataset.directed === 'true' ? '有向边' : '无向边'));
+      showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edgeDetail(edge));
     } else if (group && stage.contains(group)) {
       group.classList.add('is-selected');
       showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
