@@ -563,6 +563,33 @@ test('editor-lead scrolling syncs the preview and re-render does not jump to the
   editor.window.close();
 });
 
+test('editor can scroll past the end until the last line reaches the top', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Editor overscroll must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  field.value = '第一行\n最后一行';
+  field.style.fontSize = '10px';
+  field.style.lineHeight = '20px';
+  field.style.paddingTop = '10px';
+  Object.defineProperty(field, 'clientHeight', { configurable: true, get: () => 400 });
+
+  w.dispatchEvent(new w.Event('resize'));
+  assert.equal(field.style.paddingBottom, '370px', '底部只加显示留白：编辑区高 - 顶部内边距 - 一行高');
+  assert.equal(field.value, '第一行\n最后一行', '滑过文末靠留白实现，不往正文里塞空行');
+
+  // 编辑区变矮（切模式/移动端）时留白跟着重算，最后一行始终能到顶部。
+  Object.defineProperty(field, 'clientHeight', { configurable: true, get: () => 220 });
+  w.dispatchEvent(new w.Event('resize'));
+  assert.equal(field.style.paddingBottom, '190px', '高度变化后文末留白同步重算');
+  editor.window.close();
+});
+
 test('editor guide is folded and visibility uses pin-style toggle buttons', async () => {
   const html = await readFile('source/admin/index.html', 'utf8');
   assert.match(html, /<details class="editor-guide">/, '写作介绍应放进折叠框');
