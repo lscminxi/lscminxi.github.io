@@ -20,9 +20,9 @@ intersections: on
 title: 示例图
 algo: reader
 directed: true
-node: A ; label=起点 ; color=red
-node: B
-node: C
+node: A ; label=起点 ; color=red ; x=-16.07 ; y=-42.15
+node: B ; x=31.09 ; y=19.51
+node: C ; x=-95.26 ; y=55
 edge: A -> B ; label=一步
 edge: B -> C
 edge: C -- A
@@ -35,12 +35,13 @@ edge: C -- A
 title: 示例图
 algo: mst
 directed: true
-node: A ; label=起点 ; color=red
-node: B
-node: C
+node: A ; label=起点 ; color=red ; x=-0.58 ; y=-41.85
+node: B ; x=95.26 ; y=55
+node: C ; x=-95.26 ; y=55
 edge: A -> B ; weight=1
 edge: B -> C ; weight=2
 edge: C -- A ; weight=5
 ```
+
 
 
