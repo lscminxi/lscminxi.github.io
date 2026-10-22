@@ -568,6 +568,7 @@ function initGraph(figure) {
   // 正式文章页不生成这个标记，读者仍只能平移、缩放、选点边和看算法。
   const editableGraph = figure.dataset.graphEditable === 'true';
   let adjustButton = null;
+  let savePositionsButton = null;
   let resetPositionButton = null;
   if (editableGraph) {
     const adjustTools = doc.createElement('div');
@@ -579,12 +580,18 @@ function initGraph(figure) {
     adjustButton.dataset.graphAdjust = 'true';
     adjustButton.setAttribute('aria-pressed', 'false');
     adjustButton.textContent = '调整点位';
+    savePositionsButton = doc.createElement('button');
+    savePositionsButton.type = 'button';
+    savePositionsButton.dataset.graphSavePositions = 'true';
+    savePositionsButton.textContent = '保存点位';
+    savePositionsButton.title = '把当前图中所有点位一次性写回 Markdown 源码';
+    savePositionsButton.hidden = true;
     resetPositionButton = doc.createElement('button');
     resetPositionButton.type = 'button';
     resetPositionButton.dataset.graphResetPositions = 'true';
     resetPositionButton.textContent = '重置点位';
     resetPositionButton.hidden = true;
-    adjustTools.append(adjustButton, resetPositionButton);
+    adjustTools.append(adjustButton, savePositionsButton, resetPositionButton);
     toolbar.append(adjustTools);
   }
   figure.insertBefore(toolbar, stage);
@@ -592,7 +599,7 @@ function initGraph(figure) {
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
   const graphReadoutHint = editableGraph
-    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可直接拖动节点，松手自动写回源码。'
+    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可连续拖动多个节点，最后点「保存点位」一次性写回源码。'
     : '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   readout.textContent = graphReadoutHint;
   // 调整点位时暂时关闭下方详细信息：拖动中坐标读数会不断变行数，撑高/压矮
@@ -847,8 +854,9 @@ function initGraph(figure) {
 
   /* ---------------- 后台预览：拖动节点调整点位 ----------------
    * 渲染器把每个点的原始坐标写在 data-node-x/y 上，并把「原始坐标 → SVG 坐标」
-   * 的变换写在 svg 的 data-graph-* 上。拖动时先按当前 SVG 位置实时重画相连边，
-   * 松手后才把换算回原始坐标的全部点位发给后台父页面写回 Markdown 源码。 */
+   * 的变换写在 svg 的 data-graph-* 上。拖动时只更新本地 SVG 并实时重画相连
+   * 的边，不触发源码写入或预览重渲染；作者点「保存点位」后，才把换算回
+   * 原始坐标的全部点位一次性发给后台父页面写回 Markdown 源码。 */
   const graphTransform = {
     pad: Number(svg.getAttribute('data-graph-pad') || 52),
     minX: Number(svg.getAttribute('data-graph-min-x') || 0),
@@ -986,6 +994,24 @@ function initGraph(figure) {
     updateGraphEdgesFor(group.dataset.nodeId);
   };
   const roundGraphCoord = (value) => Number(Number(value).toFixed(2));
+  let graphPositionSnapshot = null;
+  let graphPositionsDirty = false;
+  const captureGraphPositions = () => new Map([...graphNodes].map(([id, state]) => [id, {
+    screen: { ...state.screen }, source: { ...state.source },
+  }]));
+  const restoreGraphPositions = (snapshot) => {
+    if (!snapshot) return;
+    snapshot.forEach((position, id) => {
+      const state = graphNodes.get(id);
+      if (state) setGraphNodeScreen(state.group, position.screen);
+    });
+  };
+  const refreshGraphPositionsDirty = () => {
+    graphPositionsDirty = Boolean(graphPositionSnapshot) && [...graphPositionSnapshot].some(([id, position]) => {
+      const state = graphNodes.get(id);
+      return state && (Math.abs(state.screen.x - position.screen.x) > 0.001 || Math.abs(state.screen.y - position.screen.y) > 0.001);
+    });
+  };
   const commitGraphPositions = (reset = false) => {
     const positions = {};
     graphNodes.forEach((state, id) => {
@@ -1001,15 +1027,43 @@ function initGraph(figure) {
   let graphNodeDrag = null;
   let suppressGraphClick = false;
   const setGraphAdjustMode = (on) => {
+    if (on && !graphAdjustMode) {
+      graphPositionSnapshot = captureGraphPositions();
+      graphPositionsDirty = false;
+    }
+    if (!on && graphAdjustMode) {
+      // 未点「保存点位」就退出调整：丢弃本地暂存，恢复进入调整前的位置，
+      // 不向源码派发任何坐标，也不会触发重新渲染。
+      if (graphPositionsDirty) restoreGraphPositions(graphPositionSnapshot);
+      graphPositionSnapshot = null;
+      graphPositionsDirty = false;
+    }
     graphAdjustMode = on;
     figure.classList.toggle('is-adjusting', on);
-    if (adjustButton) adjustButton.setAttribute('aria-pressed', String(on));
+    if (adjustButton) {
+      adjustButton.setAttribute('aria-pressed', String(on));
+      adjustButton.textContent = on ? '退出调整' : '调整点位';
+    }
+    if (savePositionsButton) savePositionsButton.hidden = !on;
     if (resetPositionButton) resetPositionButton.hidden = !on;
     // 进入调整先隐藏读数且不改其文本，占位高度保持不变，拖动全程零抖动。
     readout.style.visibility = on ? 'hidden' : '';
     if (!on) readout.textContent = graphReadoutHint;
   };
   if (adjustButton) adjustButton.addEventListener('click', () => setGraphAdjustMode(!graphAdjustMode));
+  if (savePositionsButton) {
+    savePositionsButton.addEventListener('click', () => {
+      // 调整完毕的统一提交点：无论之前连续拖了多少个点，只派发一次事件，
+      // 后台据此一次性写回全部坐标并只重新渲染一次。
+      commitGraphPositions(false);
+      graphPositionSnapshot = captureGraphPositions();
+      graphPositionsDirty = false;
+      savePositionsButton.textContent = '已保存';
+      const view = doc.defaultView;
+      const restoreLabel = () => { savePositionsButton.textContent = '保存点位'; };
+      if (view?.setTimeout) view.setTimeout(restoreLabel, 1400); else setTimeout(restoreLabel, 1400);
+    });
+  }
   if (resetPositionButton) {
     resetPositionButton.addEventListener('click', () => {
       commitGraphPositions(true);
@@ -1068,7 +1122,8 @@ function initGraph(figure) {
             y: clamp(graphNodeDrag.screen.y + point.y - graphNodeDrag.start.y, initial[1] + state.size, initial[1] + initial[3] - state.size),
           };
           setGraphNodeScreen(draggedGraphNode, next);
-          updateReadout(`点 ${draggedGraphNode.dataset.nodeLabel || draggedGraphNode.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（松开写回源码）`);
+          refreshGraphPositionsDirty();
+          updateReadout(`点 ${draggedGraphNode.dataset.nodeLabel || draggedGraphNode.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（已暂存，保存点位后统一写回）`);
         }
         return;
       }
@@ -1132,8 +1187,8 @@ function initGraph(figure) {
       graphNodeDrag = null;
       group.classList.remove('is-dragging-node');
       suppressGraphClick = true;
-      commitGraphPositions(false);
-      updateReadout(`点 ${group.dataset.nodeLabel || group.dataset.nodeId} 的位置已写回源码，正在刷新预览…`);
+      refreshGraphPositionsDirty();
+      updateReadout(`点 ${group.dataset.nodeLabel || group.dataset.nodeId} 的位置已暂存，点「保存点位」统一写回源码`);
     }
     pointers.delete(event.pointerId);
     if (!pointers.size) { dragStart = null; pinchStart = null; stage.classList.remove('is-dragging'); }
@@ -1141,6 +1196,7 @@ function initGraph(figure) {
   const cancelDrag = (event) => {
     if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
       setGraphNodeScreen(draggedGraphNode, graphNodeDrag.screen);
+      refreshGraphPositionsDirty();
       draggedGraphNode.classList.remove('is-dragging-node');
       draggedGraphNode = null;
       graphNodeDrag = null;

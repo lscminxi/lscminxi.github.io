@@ -1242,6 +1242,7 @@
   let lineMirror = null;
   let syncRaf = 0;
   let mirrorIdleTimer = 0;
+  let previewLoadPending = false;
   const previewFrame = $("#post-preview");
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
   const ensureLineMirror = () => {
@@ -1333,6 +1334,9 @@
         target = a.pv + ((y - a.ta) / (b.ta - a.ta)) * (b.pv - a.pv);
       }
     }
+    // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放
+    // 一段从旧位置滚到目标位置的物理滚动动画。
+    if (scroll.style) scroll.style.scrollBehavior = "auto";
     scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
   };
   const queuePreviewSync = () => {
@@ -1402,6 +1406,7 @@
       : "图点位已写回源码（记得保存文章）";
   };
   previewFrame.addEventListener("load", () => {
+    previewLoadPending = false;
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
     // (same-origin), so the sandboxed iframe itself still runs no scripts.
@@ -1409,10 +1414,15 @@
     scrollAnchorsDirty = true;
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
     try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
-    // 重新渲染后按编辑区当前位置对齐预览（单向同步的自然结果，不回最前端）。
+    // 新文档先保持隐藏，对齐完成后再显示，避免用户先看到最前端、再被滚到目标位置。
+    // 后续两次校准都已关闭平滑滚动，只会直接落位，不产生物理滚动特效。
     syncPreviewScroll();
-    // 工具栏/公式字体是渲染后才稳定下来的，布局稳定后再对齐两次。
-    if (window.requestAnimationFrame) window.requestAnimationFrame(() => syncPreviewScroll());
+    const revealAlignedPreview = () => {
+      syncPreviewScroll();
+      previewFrame.style.visibility = "";
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(revealAlignedPreview);
+    else revealAlignedPreview();
     setTimeout(() => syncPreviewScroll(), 120);
     try {
       previewFrame.contentDocument?.fonts?.ready?.then(() => {
@@ -1454,6 +1464,8 @@
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
         }
       }
+      previewLoadPending = true;
+      previewFrame.style.visibility = "hidden";
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
       previewSignature = signature;
       previewNeedsReset = false;
@@ -1485,6 +1497,7 @@
       item.setAttribute("aria-pressed", String(item.dataset.editorMode === mode));
     });
     renderPostPreview();
+    if (!previewLoadPending) previewFrame.style.visibility = "";
     // 从纯编辑切回带预览的模式时，按编辑区当前滚动位置把预览对齐过来，
     // 不能让预览从最前端开始；布局刚变，行锚点也要重算。
     scrollAnchorsDirty = true;

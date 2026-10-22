@@ -261,6 +261,8 @@ test('editor and preview stay aligned and synced without jumping back to the top
   assert.deepEqual([...stamped.querySelectorAll('.article-content > [data-source-line]')].map((el) => el.dataset.sourceLine), ['1', '3', '5'], '预览顶层块标有源码起始行');
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
   assert.ok(adminJs.includes('collectScrollAnchors') && adminJs.includes('syncPreviewScroll'), '同步走参考编辑器的行锚点单向对齐');
+  assert.ok(adminJs.includes('scroll.style.scrollBehavior = "auto"'), '程序对齐关闭平滑滚动，直接落位无滚动动画');
+  assert.ok(adminJs.includes('previewFrame.style.visibility = "hidden"') && adminJs.includes('revealAlignedPreview'), '重渲染先隐藏新预览，对齐完成后才显示，不先露最前端');
   assert.ok(!adminJs.includes('syncEditorToPreview') && !adminJs.includes('isSyncEcho'), '单向同步：预览不反写编辑区，没有回声守卫');
 
   field.dispatchEvent(new w.Event('scroll'));
