@@ -1486,6 +1486,26 @@
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
         }
       }
+      // 增量更新：文档已经有正文时只逐块 patch（没变的块保留原 DOM 节点），
+      // 不重灌 srcdoc、不隐藏重显，编辑时预览不再一闪一闪；只有首次打开、
+      // 切换文章或主题变化才整页灌入。主题写在文档根上，增量路径改不了，
+      // 所以主题不一致时回退整页。
+      const liveDoc = previewFrame.contentDocument;
+      const frameTheme = liveDoc?.documentElement?.getAttribute("data-theme") === "light" ? "light" : "dark";
+      const adminTheme = document.documentElement?.dataset?.theme === "light" ? "light" : "dark";
+      if (!previewNeedsReset && liveDoc?.querySelector(".article-content")
+        && frameTheme === adminTheme && window.MinxiPreview.patch) {
+        let patched = false;
+        try { patched = window.MinxiPreview.patch(liveDoc, { ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews }); } catch { patched = false; }
+        if (patched) {
+          try { window.MinxiPreview.enhance(liveDoc); } catch { /* 预览组件未就绪时忽略 */ }
+          previewSignature = signature;
+          scrollAnchorsDirty = true;
+          syncPreviewScroll();
+          $("#preview-status").textContent = "预览已更新 · Markdown / KaTeX / 可点击折叠框 / 函数图可拖动缩放（代码高亮与目录以发布页为准）";
+          return;
+        }
+      }
       previewLoadPending = true;
       previewFrame.style.visibility = "hidden";
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });

@@ -15,8 +15,30 @@ const escape = (text) => String(text).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[c]);
 
+// 增量更新时图块的「源码签名」：交互层（工具栏/读数/缩放状态）会改动 figure
+// 内部 DOM，不能拿 outerHTML 直接比。用 WeakMap 在增强前记下每个 figure 的
+// 原始签名，源码没变就整块保留，连拖到一半的点位、缩放范围都不会被刷新掉。
+const figureSignatures = new WeakMap();
+const figureSignature = (figure) => {
+  const clone = figure.cloneNode(true);
+  [...clone.attributes]
+    .filter((attr) => attr.name.startsWith('data-view-'))
+    .forEach((attr) => clone.removeAttribute(attr.name));
+  clone.querySelectorAll('[data-preview-viewbox]')
+    .forEach((node) => node.removeAttribute('data-preview-viewbox'));
+  return clone.outerHTML;
+};
+const registerFigureSignatures = (root) => {
+  root.querySelectorAll('.md-plot, .md-graph').forEach((figure) => {
+    if (!figureSignatures.has(figure)) {
+      try { figureSignatures.set(figure, figureSignature(figure)); } catch { /* 忽略 */ }
+    }
+  });
+};
+
 window.MinxiPreview = {
-  document({ title = '', description = '', body = '', openFolds = [], plotViews = [], graphViews = [] }) {
+  // 把 Markdown 渲染成可插入的 DOM 片段（document 全页与 patch 增量共用）。
+  buildFragment({ body = '', openFolds = [], plotViews = [], graphViews = [] } = {}) {
     // Sanitize before inserting. The sandboxed iframe also blocks scripts, forms
     // and all active content. Same-origin is allowed only for local CSS/fonts;
     // NEVER add allow-scripts to the iframe sandbox.
@@ -72,6 +94,10 @@ window.MinxiPreview = {
       figure.setAttribute('data-graph-editable', 'true');
       figure.setAttribute('data-graph-index', String(index));
     });
+    return fragment;
+  },
+  document({ title = '', description = '', body = '', openFolds = [], plotViews = [], graphViews = [] }) {
+    const fragment = window.MinxiPreview.buildFragment({ body, openFolds, plotViews, graphViews });
     const wrapper = document.createElement('div');
     wrapper.append(fragment);
     const content = wrapper.innerHTML;
@@ -83,17 +109,67 @@ window.MinxiPreview = {
       <base href="${escape(location.origin)}/">
       <link rel="stylesheet" href="/css/main.css?v=graph-save-1">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-      <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:28px;line-height:1.4;margin:0 0 12px}.article-content{min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
+      <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:33px;line-height:1.55;margin:0 0 12px}.article-content{font-size:16px!important;line-height:2;min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>文章预览</title></head><body>
       <h1>${escape(title || '未命名文章')}</h1>
       <p class="article-description">${escape(description)}</p>
       <div class="article-content">${content || '<p class="preview-empty">在左侧输入正文，即可看到预览。</p>'}</div>
       </body></html>`;
   },
+  // 增量更新（照参考编辑器 React 协调的思路）：不重灌整个 iframe 文档，
+  // 只按顶层块逐块比对——没变的块原样保留 DOM 节点，变了的块只换它自己
+  // 的内容，图块源码没变时整块保留（含交互状态）。这样编辑时预览不闪、
+  // 不重载样式与公式字体、滚动位置也天然保留。
+  patch(doc, { title = '', description = '', body = '', openFolds = [], plotViews = [], graphViews = [] } = {}) {
+    const content = doc?.querySelector?.('.article-content');
+    if (!doc || !content) return false;
+    const heading = doc.querySelector('h1');
+    const nextTitle = title || '未命名文章';
+    if (heading && heading.textContent !== nextTitle) heading.textContent = nextTitle;
+    const desc = doc.querySelector('.article-description');
+    if (desc && desc.textContent !== description) desc.textContent = description;
+    const fragment = window.MinxiPreview.buildFragment({ body, openFolds, plotViews, graphViews });
+    const fresh = [...fragment.children].map((node) => doc.importNode(node, true));
+    if (!fresh.length) {
+      if (!content.querySelector('.preview-empty') || content.children.length !== 1) {
+        content.innerHTML = '<p class="preview-empty">在左侧输入正文，即可看到预览。</p>';
+      }
+      return true;
+    }
+    const morphBlock = (oldEl, newEl) => {
+      for (const attr of [...oldEl.attributes]) {
+        if (!newEl.hasAttribute(attr.name)) oldEl.removeAttribute(attr.name);
+      }
+      for (const attr of newEl.attributes) oldEl.setAttribute(attr.name, attr.value);
+      if (oldEl.innerHTML !== newEl.innerHTML) oldEl.innerHTML = newEl.innerHTML;
+    };
+    const live = [...content.children];
+    const count = Math.max(live.length, fresh.length);
+    for (let i = 0; i < count; i++) {
+      const oldEl = live[i];
+      const newEl = fresh[i];
+      if (!oldEl && newEl) { content.append(newEl); continue; }
+      if (oldEl && !newEl) { oldEl.remove(); continue; }
+      const isFigure = (el) => el.classList?.contains('md-plot') || el.classList?.contains('md-graph');
+      if (isFigure(oldEl) || isFigure(newEl)) {
+        // 图块：源码签名一致就整块保留（交互状态不丢），否则只换这张图。
+        if (isFigure(oldEl) && isFigure(newEl)
+          && figureSignatures.has(oldEl)
+          && figureSignatures.get(oldEl) === figureSignature(newEl)) continue;
+        oldEl.replaceWith(newEl);
+        continue;
+      }
+      if (oldEl.tagName !== newEl.tagName) { oldEl.replaceWith(newEl); continue; }
+      if (oldEl.outerHTML !== newEl.outerHTML) morphBlock(oldEl, newEl);
+    }
+    return true;
+  },
   // 由后台父页面在预览 iframe 每次加载后调用：iframe 内部不执行任何脚本，
   // 拖动/缩放/读数的监听器全部由父页面挂到 iframe 文档上（同源才可访问）。
   enhance(root) {
-    if (root) window.MinxiPlots?.initPlots(root);
+    if (!root) return;
+    registerFigureSignatures(root);
+    window.MinxiPlots?.initPlots(root);
   },
   // 后台 LaTeX 符号选择器用：只渲染内置符号目录里的单个公式片段。
   renderLatex(tex) {

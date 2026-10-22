@@ -215,6 +215,67 @@ test('live preview preserves fold states with stable keys, including duplicate a
   assert.equal(fresh.querySelectorAll('details[open]').length, 0, 'New articles start folded');
 });
 
+test('preview typography matches the published article reading size', () => {
+  const html = dom.window.MinxiPreview.document({ title: '标题', body: '正文' });
+  assert.ok(html.includes('.article-content{font-size:16px!important;line-height:2'), '预览正文强制与前台文章相同的 16px/2 字号行高，不受 iframe 窄宽断点缩小');
+  assert.ok(html.includes('h1{font-size:33px;line-height:1.55'), '预览标题与前台文章标题字号一致');
+});
+
+test('incremental patch only updates changed blocks and keeps figure DOM nodes', () => {
+  const md = '第一段\n\n```graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n```\n\n最后一段';
+  const doc = preview(md);
+  dom.window.MinxiPreview.enhance(doc);
+  const content = doc.querySelector('.article-content');
+  const firstBlock = content.children[0];
+  const figure = content.querySelector('.md-graph');
+  const lastBlock = content.children[2];
+  assert.ok(figure.classList.contains('is-interactive'), '图块已增强成交互状态');
+
+  // 只改第一段文字：图块与最后一段的 DOM 节点必须原样保留（不重渲染、不闪）。
+  const ok = dom.window.MinxiPreview.patch(doc, { title: '新标题', body: '第一段改了一点\n\n```graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n```\n\n最后一段' });
+  assert.equal(ok, true);
+  assert.equal(doc.querySelector('h1').textContent, '新标题', '标题就地更新');
+  assert.equal(content.children[0].textContent, '第一段改了一点', '变化的块更新内容');
+  assert.equal(content.querySelector('.md-graph'), figure, '源码没变的图块保留原 DOM 节点（交互状态不丢）');
+  assert.equal(content.children[2], lastBlock, '没变的块保留原 DOM 节点');
+
+  // 插入新段落、删掉旧段落：逐块增删，不整页替换。
+  dom.window.MinxiPreview.patch(doc, { body: '第一段改了一点\n\n```graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n```\n\n新插入段\n\n最后一段' });
+  assert.equal(content.children.length, 4, '新块被插入');
+  assert.equal(content.children[2].textContent, '新插入段');
+  assert.equal(content.querySelector('.md-graph'), figure, '插入段落后图块仍保留');
+});
+
+test('live editor patches the preview in place instead of reloading srcdoc', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Preview patch must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const srcdocBefore = frame.srcdoc;
+  assert.ok(srcdocBefore.includes('第一段'), '首次仍整页灌入');
+
+  // 模拟 iframe 已加载出正文文档：后续输入应走增量 patch，不再重灌 srcdoc。
+  const doc = frame.contentDocument;
+  doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content"><p>第一段</p></div>';
+  const keptParagraph = doc.querySelector('.article-content p');
+  field.value = '第一段改了';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  assert.equal(frame.srcdoc, srcdocBefore, '编辑时不再重灌 srcdoc（不整页重载、不闪）');
+  assert.equal(doc.querySelector('.article-content p'), keptParagraph, '未变位置的块保留原节点');
+  assert.equal(keptParagraph.textContent, '第一段改了', '变化内容就地更新');
+  editor.window.close();
+});
+
 test('editor and preview stay aligned and synced without jumping back to the top', async () => {
   const css = await readFile('source/admin/admin.css', 'utf8');
   assert.match(css, /\.writing-workspace \{[^}]*align-items: stretch/, '编辑区和预览区两端对齐');
