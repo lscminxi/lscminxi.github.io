@@ -260,22 +260,24 @@ test('editor and preview stay aligned and synced without jumping back to the top
   const stamped = preview('# 标题\n\n第一段\n\n第二段');
   assert.deepEqual([...stamped.querySelectorAll('.article-content > [data-source-line]')].map((el) => el.dataset.sourceLine), ['1', '3', '5'], '预览顶层块标有源码起始行');
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
-  assert.ok(adminJs.includes('buildScrollAnchors') && adminJs.includes('isSyncEcho'), '同步走行锚点并忽略程序赋值的回声滚动');
-  assert.ok(adminJs.includes('runQueuedSync') && adminJs.includes('syncFallback'), '编辑侧同步有 rAF + 定时兜底队列，不会丢帧');
+  assert.ok(adminJs.includes('collectScrollAnchors') && adminJs.includes('syncPreviewScroll'), '同步走参考编辑器的行锚点单向对齐');
+  assert.ok(!adminJs.includes('syncEditorToPreview') && !adminJs.includes('isSyncEcho'), '单向同步：预览不反写编辑区，没有回声守卫');
 
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(previewTop, 700, '编辑区滚到一半时预览按比例对齐到一半（同步经 rAF 合并）');
 
   frame.dispatchEvent(new w.Event('load'));
-  await new Promise((resolve) => setTimeout(resolve, 90));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  assert.equal(previewTop, 700, '重新渲染后按编辑区当前位置重新对齐，不回最前端');
+  // 单向同步（参考编辑器同款）：在预览里滚动不反写编辑区。
   previewTop = 1050;
   frame.contentWindow.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 90));
-  assert.equal(editorTop, 600, '预览滚动时编辑区也按比例对齐');
+  assert.equal(editorTop, 400, '预览滚动不带动编辑区（单向同步）');
+  assert.equal(previewTop, 1050, '预览自己的滚动位置不被编辑区抢回去');
 
-  // 重新渲染后按比例恢复预览位置，不回到头。
-  previewTop = 1050;
+  // 再次编辑触发重新渲染：仍以编辑区为准对齐，不回到头。
   field.value = '改了一点正文，触发重新渲染';
   field.dispatchEvent(new w.Event('input'));
   await new Promise((resolve) => setTimeout(resolve, 260));
@@ -285,7 +287,8 @@ test('editor and preview stay aligned and synced without jumping back to the top
   }
   metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
   frame.dispatchEvent(new w.Event('load'));
-  assert.equal(previewTop, 1050, '重新渲染后预览停在原来的相对位置，不回头');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(previewTop, 700, '重新渲染后预览按编辑区对齐到对应位置，不回头');
   editor.window.close();
 });
 
@@ -338,7 +341,7 @@ test('zen (pure) editor mode hides the chrome, keeps the draft and exits with Es
   editor.window.close();
 });
 
-test('scrolling the preview (compile side) drives the editor and re-render keeps the place', async () => {
+test('preview scrolling stays independent and re-render re-aligns to the editor', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',
   });
@@ -349,7 +352,7 @@ test('scrolling the preview (compile side) drives the editor and re-render keeps
   w.eval(await readFile('source/admin/admin.js', 'utf8'));
   const field = w.document.querySelector('#f-body');
   const frame = w.document.querySelector('#post-preview');
-  field.value = '第一段\n\n第二段\n\n第三段';
+  field.value = '第一段\\n\\n第二段\\n\\n第三段';
   field.dispatchEvent(new w.Event('input'));
   await new Promise((resolve) => setTimeout(resolve, 260));
   frame.dispatchEvent(new w.Event('load'));
@@ -368,13 +371,20 @@ test('scrolling the preview (compile side) drives the editor and re-render keeps
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
   }
   metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
-  // 在预览（编译）区滚到 75%：编辑区必须被带动到对应位置。
+  // 编辑区滚到一半，预览跟随到一半。
+  editorTop = 400;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 700, '编辑区滚动带动预览');
+  // 单向同步：在预览（编译）区滚动，编辑区不被反向带动（参考编辑器同款，
+  // 消除双向回声拉扯）；预览自己的位置保持不变。
   previewTop = 1050;
   frame.contentWindow.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.equal(editorTop, 600, '预览区滚动应带动编辑区同步');
-  // 触发重新渲染后，预览仍停在原来的相对位置，不得跳回最前端。
-  field.value = '第一段改了一点\n\n第二段\n\n第三段';
+  assert.equal(editorTop, 400, '预览区滚动不反写编辑区');
+  assert.equal(previewTop, 1050, '预览滚动位置保持');
+  // 触发重新渲染后，预览按编辑区的位置重新对齐，不得跳回最前端。
+  field.value = '第一段改了一点\\n\\n第二段\\n\\n第三段';
   field.dispatchEvent(new w.Event('input'));
   await new Promise((resolve) => setTimeout(resolve, 260));
   const renderedDoc = frame.contentDocument;
@@ -384,7 +394,7 @@ test('scrolling the preview (compile side) drives the editor and re-render keeps
   metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
   frame.dispatchEvent(new w.Event('load'));
   await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(previewTop, 1050, '重新渲染后预览不跳回顶部');
+  assert.equal(previewTop, 700, '重新渲染后预览按编辑区对齐，不跳回顶部');
   editor.window.close();
 });
 

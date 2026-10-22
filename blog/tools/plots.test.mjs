@@ -821,12 +821,16 @@ test('editor preview graph nodes can be dragged in adjust mode and report source
     page.window.document.addEventListener('minxi:graph-positions', (event) => { committed = event.detail; });
     adjustButton.click();
     assert.equal(figure.classList.contains('is-adjusting'), true, '进入调整模式');
+    const readout = figure.querySelector('.plot-readout');
+    assert.equal(readout.style.visibility, 'hidden', '调整点位时暂时关闭下方详细信息，避免行数变化抖动');
+    const frozenReadout = readout.textContent;
     const stage = figure.querySelector('.graph-stage');
     const circleA = groupA.querySelector('.graph-node');
     // A 的 SVG 位置约 (52, 280)，画布高 560 映射到 420px 显示高。
     pointer(page, groupA, 'pointerdown', 52, 210);
     pointer(page, stage, 'pointermove', 120, 252);
     assert.equal(Number(circleA.getAttribute('cx')), 120, '拖动中节点实时跟随');
+    assert.equal(readout.textContent, frozenReadout, '拖动中详细信息冻结不更新，行数不变不抖动');
     pointer(page, stage, 'pointerup', 120, 252);
     assert.ok(committed, '松手后发出点位写回事件');
     assert.equal(committed.graphIndex, 0);
@@ -837,6 +841,9 @@ test('editor preview graph nodes can be dragged in adjust mode and report source
     assert.equal(committed.positions.B.y, 0, '没拖的点保持原纵坐标');
     const line = svg.querySelector('.graph-edge-group line.graph-edge-line') || svg.querySelectorAll('.graph-edge-group line')[1];
     assert.ok(Math.abs(Number(line.getAttribute('x1')) - (120 + 20)) < 0.01 || Number(line.getAttribute('x1')) > 52, '相连边端点跟随节点更新');
-    assert.match(figure.querySelector('.plot-readout').textContent, /已写回源码/, '松手后提示已写回');
+    assert.equal(readout.textContent, frozenReadout, '松手后调整模式内仍不更新详细信息（写回提示看后台状态栏）');
+    adjustButton.click();
+    assert.equal(readout.style.visibility, '', '退出调整模式后详细信息恢复显示');
+    assert.match(readout.textContent, /拖动平移/, '退出后恢复默认提示');
   } finally { page.window.close(); }
 });

@@ -595,6 +595,12 @@ function initGraph(figure) {
     ? '拖动平移，滚轮或双指缩放；点「调整点位」后可直接拖动节点，松手自动写回源码。'
     : '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   readout.textContent = graphReadoutHint;
+  // 调整点位时暂时关闭下方详细信息：拖动中坐标读数会不断变行数，撑高/压矮
+  // 这行会让整张图跟着抖。调整期间冻结并隐藏读数（占位高度不变），退出恢复。
+  let graphAdjustMode = false;
+  function updateReadout(text) {
+    if (!graphAdjustMode) readout.textContent = text;
+  }
   stage.after(readout);
   const tooltip = doc.createElement('div');
   tooltip.className = 'plot-tooltip';
@@ -605,7 +611,7 @@ function initGraph(figure) {
   const tooltipDetail = tooltip.querySelector('span');
   const hideTooltip = () => tooltip.classList.remove('is-visible');
   const showDisplay = (event, title, detail = '') => {
-    readout.textContent = detail ? `${title}：${detail}` : title;
+    updateReadout(detail ? `${title}：${detail}` : title);
     tooltipTitle.textContent = title;
     tooltipDetail.textContent = detail;
     tooltipDetail.hidden = !detail;
@@ -710,7 +716,7 @@ function initGraph(figure) {
       if (circle) { if (saved.circleFill === null || saved.circleFill === undefined) circle.removeAttribute('fill'); else circle.setAttribute('fill', saved.circleFill); }
     });
     toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => button.setAttribute('aria-pressed', 'false'));
-    if (restoreReadout) readout.textContent = graphReadoutHint;
+    if (restoreReadout) updateReadout(graphReadoutHint);
   };
   const edgeName = (el) => `${nameOf(el.dataset.from)} — ${nameOf(el.dataset.to)}`;
   const edgeDetail = (el) => {
@@ -827,7 +833,7 @@ function initGraph(figure) {
       const forest = graphAnalysis.dfsTree.roots.length > 1;
       algorithmSummary = `${forest ? 'DFS 森林' : 'DFS 树'}（带返祖边）${graphAnalysis.directed ? '（有向边沿箭头方向搜索）' : ''}：根为 ${graphAnalysis.dfsTree.roots.map(nameOf).join('、')} · 访问顺序 ${graphAnalysis.dfsTree.order.map(nameOf).join(' → ')} · 树边 ${treeNames.length} 条${treeNames.length ? `（${treeNames.join('、')}）` : ''} · 返祖边 ${backNames.length} 条${backNames.length ? `（${backNames.join('、')}，橙色虚线）` : ''}${otherNames.length ? ` · 其余边 ${otherNames.length} 条（${otherNames.join('、')}）` : ''}`;
     }
-    readout.textContent = algorithmSummary;
+    updateReadout(algorithmSummary);
   };
   toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -991,7 +997,6 @@ function initGraph(figure) {
       detail: { graphIndex: Number(figure.dataset.graphIndex || 0), reset, positions },
     }));
   };
-  let graphAdjustMode = false;
   let draggedGraphNode = null;
   let graphNodeDrag = null;
   let suppressGraphClick = false;
@@ -1000,15 +1005,15 @@ function initGraph(figure) {
     figure.classList.toggle('is-adjusting', on);
     if (adjustButton) adjustButton.setAttribute('aria-pressed', String(on));
     if (resetPositionButton) resetPositionButton.hidden = !on;
-    readout.textContent = on
-      ? '调整点位：拖动任意节点即可改变位置，松手后自动把坐标写回源码。'
-      : graphReadoutHint;
+    // 进入调整先隐藏读数且不改其文本，占位高度保持不变，拖动全程零抖动。
+    readout.style.visibility = on ? 'hidden' : '';
+    if (!on) readout.textContent = graphReadoutHint;
   };
   if (adjustButton) adjustButton.addEventListener('click', () => setGraphAdjustMode(!graphAdjustMode));
   if (resetPositionButton) {
     resetPositionButton.addEventListener('click', () => {
       commitGraphPositions(true);
-      readout.textContent = '已请求重置点位：恢复自动布局…';
+      updateReadout('已请求重置点位：恢复自动布局…');
     });
   }
 
@@ -1036,7 +1041,7 @@ function initGraph(figure) {
         graphNodeDrag = { pointerId: event.pointerId, start: point, screen: { ...state.screen } };
         stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
         nodeGroup.classList.add('is-selected', 'is-dragging-node');
-        readout.textContent = `点 ${nodeGroup.dataset.nodeLabel || nodeGroup.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（拖动中）`;
+        updateReadout(`点 ${nodeGroup.dataset.nodeLabel || nodeGroup.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（拖动中）`);
         stage.classList.add('is-dragging');
         return;
       }
@@ -1063,7 +1068,7 @@ function initGraph(figure) {
             y: clamp(graphNodeDrag.screen.y + point.y - graphNodeDrag.start.y, initial[1] + state.size, initial[1] + initial[3] - state.size),
           };
           setGraphNodeScreen(draggedGraphNode, next);
-          readout.textContent = `点 ${draggedGraphNode.dataset.nodeLabel || draggedGraphNode.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（松开写回源码）`;
+          updateReadout(`点 ${draggedGraphNode.dataset.nodeLabel || draggedGraphNode.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（松开写回源码）`);
         }
         return;
       }
@@ -1099,12 +1104,12 @@ function initGraph(figure) {
       showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
     } else {
       hideTooltip();
-      if (algorithmSummary) readout.textContent = algorithmSummary;
+      if (algorithmSummary) updateReadout(algorithmSummary);
     }
   });
   stage.addEventListener('pointerleave', () => {
     hideTooltip();
-    if (algorithmSummary) readout.textContent = algorithmSummary;
+    if (algorithmSummary) updateReadout(algorithmSummary);
   });
   stage.addEventListener('click', (event) => {
     if (suppressGraphClick) { suppressGraphClick = false; return; }
@@ -1128,7 +1133,7 @@ function initGraph(figure) {
       group.classList.remove('is-dragging-node');
       suppressGraphClick = true;
       commitGraphPositions(false);
-      readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId} 的位置已写回源码，正在刷新预览…`;
+      updateReadout(`点 ${group.dataset.nodeLabel || group.dataset.nodeId} 的位置已写回源码，正在刷新预览…`);
     }
     pointers.delete(event.pointerId);
     if (!pointers.size) { dragStart = null; pinchStart = null; stage.classList.remove('is-dragging'); }
