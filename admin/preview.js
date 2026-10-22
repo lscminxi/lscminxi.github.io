@@ -335,7 +335,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       <base href="${xi(location.origin)}/">
       <link rel="stylesheet" href="/css/main.css?v=graph-save-1">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-      <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:28px;line-height:1.4;margin:0 0 12px}.article-content{min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
+      <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:33px;line-height:1.55;margin:0 0 12px}.article-content{font-size:16px!important;line-height:2;min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>\u6587\u7AE0\u9884\u89C8</title></head><body>
       <h1>${xi(r||"\u672A\u547D\u540D\u6587\u7AE0")}</h1>
       <p class="article-description">${xi(e)}</p>

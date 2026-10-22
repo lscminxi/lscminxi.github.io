@@ -215,6 +215,12 @@ test('live preview preserves fold states with stable keys, including duplicate a
   assert.equal(fresh.querySelectorAll('details[open]').length, 0, 'New articles start folded');
 });
 
+test('preview typography matches the published article reading size', () => {
+  const html = dom.window.MinxiPreview.document({ title: '标题', body: '正文' });
+  assert.ok(html.includes('.article-content{font-size:16px!important;line-height:2'), '预览正文强制与前台文章相同的 16px/2 字号行高，不受 iframe 窄宽断点缩小');
+  assert.ok(html.includes('h1{font-size:33px;line-height:1.55'), '预览标题与前台文章标题字号一致');
+});
+
 test('incremental patch only updates changed blocks and keeps figure DOM nodes', () => {
   const md = '第一段\n\n```graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n```\n\n最后一段';
   const doc = preview(md);
