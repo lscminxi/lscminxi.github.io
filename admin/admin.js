@@ -1230,99 +1230,20 @@
   let previewOpenFolds = [];
   let previewPlotViews = [];
   let previewGraphViews = [];
-  let previewScroll = { top: 0, left: 0 };
-  // 滚动位置按比例记，不只记像素：正文变长/变短后重渲染仍停在相对位置，
-  // 不会因为内容高度变了被顶回头部。
-  let previewScrollRatio = { top: 0, left: 0 };
-  let lastScrollSource = "preview";
-  // 用户最后一次亲手滚动的时间与所在侧：重渲染的延迟恢复不能跟用户抢滚动。
-  let lastManualScrollAt = 0;
-  // 预览顶部当前停在哪个源码行块上（行号 + 块内偏移像素）。只记比例时正文一变长
-  // 就会飘到别的内容上；按源码行锚点恢复，重渲染后停的还是同一段内容。
-  let previewAnchor = null;
-  let editorScrollRatio = 0;
-  let editorAnchor = null;
-  const previewFrame = $("#post-preview");
-  // 双向滚动同步（参考行锚点同步法）：预览块带源码行号，编辑区用隐藏镜像层
-  // 量出每一行的像素位置，两边按锚点插值对齐内容，而不是按总高度百分比硬拉；
-  // 同步只由滚动驱动（rAF 合并一帧一次），给另一侧赋值时记下目标位置，
-  // 它回弹的 scroll 事件按位置识别为回声直接忽略，避免左右来回拉扯发抖。
-  let scrollAnchors = [];
+  // 滚动同步（照参考编辑器 blog-apa.pages.dev 的单向行锚点法）：只由编辑区
+  // 滚动驱动预览，预览滚动不反写编辑区——程序赋值不会再产生「回声滚动」，
+  // 也就没有左右来回拉扯、被带回最前端的问题。编辑区一侧用隐藏镜像层量出
+  // 每一行的像素位置（自动换行也准），预览块带源码行号 data-source-line，
+  // 两侧按锚点分段插值对齐内容，而不是按总高度百分比硬拉；没有锚点时才
+  // 退回比例。重新渲染后同样按编辑区当前的位置重新对齐，编辑区停在哪一
+  // 段，预览就停在哪一段，不会跳回最前端。锚点只依赖镜像层：内容/尺寸变
+  // 化时标脏，停笔约 200ms 空闲时提前重建，下一次滚动不用现算。
   let scrollAnchorsDirty = true;
   let lineMirror = null;
   let syncRaf = 0;
-  let pendingSyncSource = "";
-  let syncGuard = { side: "", until: 0, top: 0, left: 0 };
-  const syncNow = () => (window.performance?.now ? window.performance.now() : Date.now());
+  let mirrorIdleTimer = 0;
+  const previewFrame = $("#post-preview");
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
-  const scrollRatioFor = (element, axis) => {
-    if (!element) return 0;
-    const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
-    const value = axis === "top" ? element.scrollTop : element.scrollLeft;
-    return Number.isFinite(max) && max > 0 ? Math.min(1, Math.max(0, (value || 0) / max)) : 0;
-  };
-  const applyScrollRatio = (element, axis, ratio) => {
-    if (!element) return;
-    const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
-    if (!Number.isFinite(max) || max <= 0) return;
-    const value = Math.min(1, Math.max(0, ratio || 0)) * max;
-    if (axis === "top") element.scrollTop = value; else element.scrollLeft = value;
-  };
-  const rememberEditorScroll = () => {
-    editorScrollRatio = scrollRatioFor(el.f.body, "top");
-  };
-  const captureEditorAnchor = () => {
-    if (!lineMirror?.children?.length) return;
-    const y = el.f.body.scrollTop || 0;
-    const children = lineMirror.children;
-    let index = 0;
-    for (let i = 0; i < children.length; i++) {
-      if ((children[i].offsetTop || 0) <= y + 1) index = i;
-      else break;
-    }
-    const lineEl = children[index];
-    if (!lineEl) return;
-    const offset = Math.max(0, y - (lineEl.offsetTop || 0));
-    editorAnchor = {
-      line: index + 1,
-      ratio: lineEl.offsetHeight > 0 ? offset / lineEl.offsetHeight : 0,
-    };
-  };
-  const previewTopForEditorAnchor = (scroll) => {
-    if (!editorAnchor || !scroll) return null;
-    const doc = previewFrame.contentDocument;
-    if (!doc) return null;
-    const block = doc.querySelector(`.article-content > [data-source-line="${editorAnchor.line}"]`);
-    if (!block) return null;
-    const rect = block.getBoundingClientRect();
-    return rect.top + (scroll.scrollTop || 0) + editorAnchor.ratio * rect.height;
-  };
-  const capturePreviewAnchor = () => {
-    const doc = previewFrame.contentDocument;
-    const scroll = doc?.scrollingElement;
-    if (!doc || !scroll || !doc.querySelector('.article-content')) return;
-    for (const block of doc.querySelectorAll('.article-content > [data-source-line]')) {
-      const rect = block.getBoundingClientRect();
-      if (rect.bottom > 2) {
-        const line = Number(block.dataset.sourceLine);
-        if (Number.isInteger(line) && line >= 1) {
-          previewAnchor = { line, offset: Math.max(0, -rect.top) };
-        }
-        return;
-      }
-    }
-  };
-  const rememberPreviewScroll = (scroll) => {
-    if (!scroll) return;
-    previewScroll = { top: scroll.scrollTop || 0, left: scroll.scrollLeft || 0 };
-    // 内容还没完成布局时不要把已记住的比例清零，否则随后的恢复会回到头。
-    const topMax = scroll.scrollHeight - scroll.clientHeight;
-    const leftMax = scroll.scrollWidth - scroll.clientWidth;
-    previewScrollRatio = {
-      top: Number.isFinite(topMax) && topMax > 0 ? scrollRatioFor(scroll, "top") : previewScrollRatio.top,
-      left: Number.isFinite(leftMax) && leftMax > 0 ? scrollRatioFor(scroll, "left") : previewScrollRatio.left,
-    };
-  };
   const ensureLineMirror = () => {
     if (lineMirror) return lineMirror;
     const mirror = document.createElement("div");
@@ -1353,158 +1274,72 @@
       mirror.append(div);
     }
   };
-  const buildScrollAnchors = () => {
-    const doc = previewFrame.contentDocument;
-    const scroll = doc?.scrollingElement;
-    scrollAnchors = [];
-    if (!doc || !scroll) { scrollAnchorsDirty = false; return; }
-    rebuildLineMirror();
+  // 每次同步都按当前文档现算锚点：只取最外层标注块，行位置取镜像层 offsetTop，
+  // 预览位置取块相对预览视口的偏移；非单调的锚点（折叠/表格内的嵌套块）跳过。
+  const collectScrollAnchors = (doc, scroll) => {
+    if (scrollAnchorsDirty) {
+      try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
+      scrollAnchorsDirty = false;
+    }
     const anchors = [];
-    for (const el of doc.querySelectorAll(".article-content > [data-source-line]")) {
-      const line = Number(el.dataset.sourceLine);
-      const lineEl = lineMirror?.children[line - 1];
+    if (!lineMirror?.children?.length) return anchors;
+    for (const block of doc.querySelectorAll("[data-source-line]")) {
+      if (block.parentElement?.closest?.("[data-source-line]")) continue;
+      const line = Number(block.dataset.sourceLine);
+      const lineEl = lineMirror.children[line - 1];
       if (!Number.isInteger(line) || line < 1 || !lineEl) continue;
       const taY = lineEl.offsetTop;
-      const pvY = el.getBoundingClientRect().top + (scroll.scrollTop || 0);
+      const pvY = block.getBoundingClientRect().top + (scroll.scrollTop || 0);
       if (!Number.isFinite(taY) || !Number.isFinite(pvY)) continue;
       const prev = anchors[anchors.length - 1];
       if (prev && (taY <= prev.ta || pvY <= prev.pv)) continue;
       anchors.push({ ta: taY, pv: pvY });
     }
-    scrollAnchors = anchors;
-    scrollAnchorsDirty = false;
+    return anchors;
   };
-  const interpolateScroll = (value, fromKey, toKey, fromMax, toMax) => {
-    const ratioTarget = fromMax > 0 && toMax > 0 ? (value / fromMax) * toMax : 0;
-    const usable = scrollAnchors.filter((anchor) => anchor[fromKey] < fromMax - 0.5);
-    if (!usable.length || fromMax <= 0 || toMax <= 0) return ratioTarget;
-    if (value <= usable[0][fromKey]) {
-      return usable[0][fromKey] > 0 ? (value / usable[0][fromKey]) * usable[0][toKey] : usable[0][toKey];
-    }
-    const last = usable[usable.length - 1];
-    if (value >= last[fromKey]) {
-      const span = fromMax - last[fromKey];
-      return span < 1 ? (value >= fromMax - 0.5 ? toMax : last[toKey])
-        : last[toKey] + ((value - last[fromKey]) / span) * (toMax - last[toKey]);
-    }
-    let lo = 0; let hi = usable.length - 1;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (usable[mid][fromKey] <= value) lo = mid; else hi = mid;
-    }
-    const a = usable[lo]; const b = usable[hi];
-    return a[toKey] + ((value - a[fromKey]) / (b[fromKey] - a[fromKey])) * (b[toKey] - a[toKey]);
-  };
-  const ensureScrollAnchors = () => {
-    if (!scrollAnchorsDirty) return;
-    try { buildScrollAnchors(); } catch { scrollAnchors = []; scrollAnchorsDirty = false; }
-  };
-  const setSyncedScroll = (side, element, top, left) => {
-    if (!element || !Number.isFinite(top) || !Number.isFinite(left)) return;
-    const targetTop = Math.max(0, top || 0);
-    const targetLeft = Math.max(0, left || 0);
-    if (Math.abs((element.scrollTop || 0) - targetTop) < 1 && Math.abs((element.scrollLeft || 0) - targetLeft) < 1) return;
-    syncGuard = { side, until: syncNow() + 800, top: targetTop, left: targetLeft };
-    element.scrollTop = targetTop;
-    element.scrollLeft = targetLeft;
-    if (side === "preview") rememberPreviewScroll(element);
-  };
-  const isSyncEcho = (side, element) => Boolean(element)
-    && syncGuard.side === side && syncNow() <= syncGuard.until
-    && Math.abs((element.scrollTop || 0) - syncGuard.top) <= 6
-    && Math.abs((element.scrollLeft || 0) - syncGuard.left) <= 6;
-  const syncPreviewToEditor = () => {
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    if (!scroll) return;
-    lastScrollSource = "editor";
-    rememberEditorScroll();
-    ensureScrollAnchors();
-    captureEditorAnchor();
-    const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
-    const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    // 三级对齐：源码行锚点 → 锚点插值 → 滚动比例。编辑区已经滚下去时，
-    // 前两级万一失效也不能把预览带回最前端，所以比例兜底始终保留。
-    let top = previewTopForEditorAnchor(scroll);
-    if (!Number.isFinite(top)) {
-      top = scrollAnchors.length
-        ? interpolateScroll(el.f.body.scrollTop || 0, "ta", "pv", maxTa, maxPv)
-        : (maxTa > 0 ? ((el.f.body.scrollTop || 0) / maxTa) * maxPv : 0);
-    }
-    if ((!Number.isFinite(top) || top <= 0) && editorScrollRatio > 0 && maxPv > 0) {
-      top = editorScrollRatio * maxPv;
-    }
-    setSyncedScroll("preview", scroll, top, (scrollRatioFor(el.f.body, "left") || 0) * Math.max(0, scroll.scrollWidth - scroll.clientWidth));
-  };
-  const syncEditorToPreview = () => {
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    if (!scroll) return;
-    lastScrollSource = "preview";
-    rememberPreviewScroll(scroll);
-    ensureScrollAnchors();
-    const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
-    const top = scrollAnchors.length
-      ? interpolateScroll(scroll.scrollTop || 0, "pv", "ta", maxPv, maxTa)
-      : (maxPv > 0 ? ((scroll.scrollTop || 0) / maxPv) * maxTa : 0);
-    setSyncedScroll("editor", el.f.body, top, previewScrollRatio.left * Math.max(0, el.f.body.scrollWidth - el.f.body.clientWidth));
-  };
-  let syncFallback = 0;
-  const runQueuedSync = () => {
-    if (syncFallback) { clearTimeout(syncFallback); syncFallback = 0; }
-    syncRaf = 0;
-    const sourceNow = pendingSyncSource;
-    pendingSyncSource = "";
-    if (sourceNow === "editor") syncPreviewToEditor();
-    else if (sourceNow === "preview") syncEditorToPreview();
-  };
-  const queueScrollSync = (source) => {
-    pendingSyncSource = source;
-    if (syncRaf) return;
-    // rAF 之外再加一个定时兜底：编辑区滚动时若这一帧没被调度到，
-    // 预览也不会纹丝不动（此前编辑侧偶发「滑了没反应」就是队列丢帧）。
-    syncRaf = scheduleFrame(runQueuedSync);
-    syncFallback = setTimeout(runQueuedSync, 90);
-  };
-  const restorePreviewScroll = (scroll) => {
-    if (!scroll) return;
-    // 刚刚是编辑区在滚：重渲染后也按锚点对齐到编辑区，而不是旧像素位置。
-    if (lastScrollSource === "editor") { syncPreviewToEditor(); return; }
-    // 预览自己是主导侧：先按源码行锚点找回同一段内容，正文增删后也不飘。
+  const syncPreviewScroll = () => {
+    const ta = el.f.body;
     const doc = previewFrame.contentDocument;
-    if (previewAnchor && doc) {
-      const block = doc.querySelector(`.article-content > [data-source-line="${previewAnchor.line}"]`);
-      if (block) {
-        const top = block.getBoundingClientRect().top + (scroll.scrollTop || 0) + previewAnchor.offset;
-        const leftMax = scroll.scrollWidth - scroll.clientWidth;
-        setSyncedScroll("preview", scroll, top,
-          Number.isFinite(leftMax) && leftMax > 0 ? previewScrollRatio.left * leftMax : 0);
-        return;
+    const scroll = doc?.scrollingElement;
+    if (!doc || !scroll) return;
+    if ($("#writing-workspace")?.dataset.mode === "edit") return;
+    const maxTa = ta.scrollHeight - ta.clientHeight;
+    const maxPv = scroll.scrollHeight - scroll.clientHeight;
+    if (!(maxTa > 0) || !(maxPv > 0)) return;
+    const anchors = collectScrollAnchors(doc, scroll);
+    const y = ta.scrollTop || 0;
+    // 只保留编辑区实际能滚到的锚点；更靠下的锚点只可能出现在视口下部。
+    const usable = anchors.filter((anchor) => anchor.ta < maxTa - 0.5);
+    let target;
+    if (!usable.length) {
+      target = (y / maxTa) * maxPv;
+    } else if (y <= usable[0].ta) {
+      target = usable[0].ta > 0 ? (y / usable[0].ta) * usable[0].pv : usable[0].pv;
+    } else {
+      const last = usable[usable.length - 1];
+      if (y >= last.ta) {
+        // 最后一个可达锚点到末尾：平滑过渡到两侧同时见底。
+        const span = maxTa - last.ta;
+        target = span < 1
+          ? (y >= maxTa - 0.5 ? maxPv : last.pv)
+          : last.pv + ((y - last.ta) / span) * (maxPv - last.pv);
+      } else {
+        let lo = 0; let hi = usable.length - 1;
+        while (hi - lo > 1) {
+          const mid = (lo + hi) >> 1;
+          if (usable[mid].ta <= y) lo = mid; else hi = mid;
+        }
+        const a = usable[lo]; const b = usable[hi];
+        target = a.pv + ((y - a.ta) / (b.ta - a.ta)) * (b.pv - a.pv);
       }
     }
-    const topMax = scroll.scrollHeight - scroll.clientHeight;
-    const leftMax = scroll.scrollWidth - scroll.clientWidth;
-    setSyncedScroll("preview", scroll,
-      Number.isFinite(topMax) && topMax > 0 ? previewScrollRatio.top * topMax : 0,
-      Number.isFinite(leftMax) && leftMax > 0 ? previewScrollRatio.left * leftMax : 0);
+    scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
   };
-  const handlePreviewScroll = () => {
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    rememberPreviewScroll(scroll);
-    capturePreviewAnchor();
-    if (isSyncEcho("preview", scroll)) return;
-    lastScrollSource = "preview";
-    lastManualScrollAt = syncNow();
-    queueScrollSync("preview");
+  const queuePreviewSync = () => {
+    if (syncRaf) return;
+    syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
   };
-  el.f.body.addEventListener("scroll", () => {
-    if (isSyncEcho("editor", el.f.body)) return;
-    lastScrollSource = "editor";
-    lastManualScrollAt = syncNow();
-    rememberEditorScroll();
-    queueScrollSync("editor");
-  });
-  // 滚轮先于 scroll 事件到达，先排一次同步，位置在帧回调里按最新 scrollTop 读。
-  el.f.body.addEventListener("wheel", () => queueScrollSync("editor"), { passive: true });
+  el.f.body.addEventListener("scroll", queuePreviewSync, { passive: true });
   window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
   // 预览里拖动图节点后，把坐标写回第 graphIndex 个 ```graph 块的 node 行：
   // 已有 node 行保留 label/color/size 等其它选项，只替换 x/y；边里隐式出现的点
@@ -1570,26 +1405,21 @@
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
     // (same-origin), so the sandboxed iframe itself still runs no scripts.
-    const loadedAt = syncNow();
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    // 先把锚点标记为过期：恢复与同步都要按新文档的块位置重算，不能拿旧文档的锚点。
+    // 先把锚点标记为过期：同步要按新文档的块位置与新镜像层重算。
     scrollAnchorsDirty = true;
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
     try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
-    restorePreviewScroll(scroll);
-    // 工具栏/图注/公式字体是渲染后才稳定下来的，布局稳定后再恢复两次；
-    // 但用户在本次加载之后已经亲手滚过，就不再抢他的位置。
-    const settleRestore = () => {
-      if (lastManualScrollAt > loadedAt) return;
-      restorePreviewScroll(previewFrame.contentDocument?.scrollingElement);
-    };
-    if (window.requestAnimationFrame) window.requestAnimationFrame(settleRestore);
-    setTimeout(settleRestore, 120);
-    const previewWin = previewFrame.contentWindow;
-    try { previewWin?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
-    // 某些浏览器里 iframe 内部滚动只在 document 上冒泡，window 监听收不到，这里两处都挂。
-    try { previewFrame.contentDocument?.addEventListener("scroll", handlePreviewScroll, { passive: true, capture: true }); } catch { /* 预览未就绪时忽略 */ }
-    try { previewWin?.addEventListener("wheel", () => { lastScrollSource = "preview"; lastManualScrollAt = syncNow(); queueScrollSync("preview"); }, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
+    // 重新渲染后按编辑区当前位置对齐预览（单向同步的自然结果，不回最前端）。
+    syncPreviewScroll();
+    // 工具栏/公式字体是渲染后才稳定下来的，布局稳定后再对齐两次。
+    if (window.requestAnimationFrame) window.requestAnimationFrame(() => syncPreviewScroll());
+    setTimeout(() => syncPreviewScroll(), 120);
+    try {
+      previewFrame.contentDocument?.fonts?.ready?.then(() => {
+        scrollAnchorsDirty = true;
+        syncPreviewScroll();
+      });
+    } catch { /* 字体接口不可用时忽略 */ }
   });
   function renderPostPreview() {
     clearTimeout(previewTimer);
@@ -1607,9 +1437,7 @@
         previewOpenFolds = [];
         previewPlotViews = [];
         previewGraphViews = [];
-        previewScroll = { top: 0, left: 0 };
-        previewScrollRatio = { top: 0, left: 0 };
-        lastScrollSource = "preview";
+        scrollAnchorsDirty = true;
       } else {
         const doc = previewFrame.contentDocument;
         // During an in-flight srcdoc load retain the last valid snapshot.
@@ -1624,11 +1452,6 @@
           }));
           previewGraphViews = [...doc.querySelectorAll('.md-graph svg')]
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
-          rememberPreviewScroll(doc.scrollingElement);
-          capturePreviewAnchor();
-          rememberEditorScroll();
-          ensureScrollAnchors();
-          captureEditorAnchor();
         }
       }
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
@@ -1644,6 +1467,13 @@
       scrollAnchorsDirty = true;
       clearTimeout(previewTimer);
       previewTimer = setTimeout(renderPostPreview, 180);
+      // 停笔约 200ms 后提前重建行镜像，下一次滚动不用现算（参考编辑器同款）。
+      clearTimeout(mirrorIdleTimer);
+      mirrorIdleTimer = setTimeout(() => {
+        if (!scrollAnchorsDirty) return;
+        if ($("#writing-workspace")?.dataset.mode === "edit") return;
+        try { rebuildLineMirror(); scrollAnchorsDirty = false; } catch { /* 镜像不可用时忽略 */ }
+      }, 200);
     });
   });
   const setEditorMode = (mode) => {
@@ -1659,7 +1489,7 @@
     // 不能让预览从最前端开始；布局刚变，行锚点也要重算。
     scrollAnchorsDirty = true;
     if (mode === "split" || mode === "preview" || mode === "zen") {
-      scheduleFrame(() => syncPreviewToEditor());
+      scheduleFrame(() => syncPreviewScroll());
     }
     if (mode === "zen") el.f.body.focus();
   };
