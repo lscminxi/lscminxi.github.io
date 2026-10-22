@@ -2151,6 +2151,9 @@ body.search-open {
 .article-content .plot-curve,
 .article-content .plot-segment { cursor: pointer; }
 .article-content .graph-node-group { cursor: pointer; }
+.article-content .md-graph.is-adjusting .graph-node-group { cursor: grab; }
+.article-content .md-graph.is-adjusting .graph-node-group.is-dragging-node { cursor: grabbing; }
+.article-content .md-graph.is-adjusting .graph-node-group.is-dragging-node .graph-node-ring { stroke: var(--accent); opacity: 1; }
 /* 跟随鼠标的坐标显示框 */
 .article-content .plot-stage { position: relative; }
 .article-content .plot-tooltip {

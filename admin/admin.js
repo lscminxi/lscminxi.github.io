@@ -1440,6 +1440,66 @@
   // 滚轮先于 scroll 事件到达，先排一次同步，位置在帧回调里按最新 scrollTop 读。
   el.f.body.addEventListener("wheel", () => queueScrollSync("editor"), { passive: true });
   window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
+  // 预览里拖动图节点后，把坐标写回第 graphIndex 个 ```graph 块的 node 行：
+  // 已有 node 行保留 label/color/size 等其它选项，只替换 x/y；边里隐式出现的点
+  // 补一行 node: ID ; x=.. ; y=..。positions 为 null 表示重置（删掉所有 x/y）。
+  const formatGraphCoord = (value) => String(Number(Number(value).toFixed(2)));
+  const rewriteGraphBlockPositions = (markdown, graphIndex, positions) => {
+    const lines = String(markdown).split("\n");
+    const graphNodeId = /^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/;
+    let current = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^```graph\s*$/.test(lines[i].trim())) continue;
+      current += 1;
+      let end = i + 1;
+      while (end < lines.length && !/^```\s*$/.test(lines[end].trim())) end += 1;
+      if (current !== graphIndex) { i = end; continue; }
+      if (end >= lines.length) return null;
+      const seen = new Set();
+      const bodyLines = lines.slice(i + 1, end).map((line) => {
+        const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
+        if (!match) return line;
+        const id = match[2].trim();
+        if (!graphNodeId.test(id)) return line;
+        seen.add(id);
+        const options = (match[3] || "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item) => !/^(x|y)\s*=/i.test(item));
+        const pos = positions?.[id];
+        if (pos && Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.y))) {
+          options.push(`x=${formatGraphCoord(pos.x)}`, `y=${formatGraphCoord(pos.y)}`);
+        }
+        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+      });
+      if (positions) {
+        for (const [id, pos] of Object.entries(positions)) {
+          if (seen.has(id) || !graphNodeId.test(id)) continue;
+          if (!pos || !Number.isFinite(Number(pos.x)) || !Number.isFinite(Number(pos.y))) continue;
+          bodyLines.push(`node: ${id} ; x=${formatGraphCoord(pos.x)} ; y=${formatGraphCoord(pos.y)}`);
+        }
+      }
+      return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
+    }
+    return null;
+  };
+  const handleGraphPositions = (event) => {
+    const detail = event.detail || {};
+    const graphIndex = Number(detail.graphIndex || 0);
+    const positions = detail.reset ? null : detail.positions;
+    if (!detail.reset && (!positions || typeof positions !== "object")) return;
+    const next = rewriteGraphBlockPositions(el.f.body.value, graphIndex, positions);
+    if (next === null || next === el.f.body.value) return;
+    const cursor = Math.min(el.f.body.selectionStart ?? next.length, next.length);
+    el.f.body.value = next;
+    el.f.body.selectionStart = el.f.body.selectionEnd = cursor;
+    el.f.body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    updatePreview();
+    $("#preview-status").textContent = detail.reset
+      ? "图点位已重置为自动布局（改动在源码里，记得保存文章）"
+      : "图点位已写回源码（记得保存文章）";
+  };
   previewFrame.addEventListener("load", () => {
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
@@ -1449,6 +1509,7 @@
     // 先把锚点标记为过期：恢复与同步都要按新文档的块位置重算，不能拿旧文档的锚点。
     scrollAnchorsDirty = true;
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
+    try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
     restorePreviewScroll(scroll);
     // 工具栏/图注/公式字体是渲染后才稳定下来的，布局稳定后再恢复两次；
     // 但用户在本次加载之后已经亲手滚过，就不再抢他的位置。

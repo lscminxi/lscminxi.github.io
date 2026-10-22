@@ -564,11 +564,37 @@ function initGraph(figure) {
     ? '<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="vbcc" aria-pressed="false">点双</button><button type="button" data-graph-algo="ebcc" aria-pressed="false">边双</button><button type="button" data-graph-algo="dfs" aria-pressed="false">DFS 树（返祖边）</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>'
     : (algorithmMode === 'none' ? '' : `<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><span class="graph-algorithm-fixed">${algorithmLabels[algorithmMode]} · 作者指定</span></div>`);
   toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div>' + algorithmToolbar;
+  // 只有后台预览的图带 data-graph-editable：作者可在此调整点位并写回源码；
+  // 正式文章页不生成这个标记，读者仍只能平移、缩放、选点边和看算法。
+  const editableGraph = figure.dataset.graphEditable === 'true';
+  let adjustButton = null;
+  let resetPositionButton = null;
+  if (editableGraph) {
+    const adjustTools = doc.createElement('div');
+    adjustTools.className = 'plot-tools graph-adjust-tools';
+    adjustTools.setAttribute('role', 'group');
+    adjustTools.setAttribute('aria-label', '调整图点位置');
+    adjustButton = doc.createElement('button');
+    adjustButton.type = 'button';
+    adjustButton.dataset.graphAdjust = 'true';
+    adjustButton.setAttribute('aria-pressed', 'false');
+    adjustButton.textContent = '调整点位';
+    resetPositionButton = doc.createElement('button');
+    resetPositionButton.type = 'button';
+    resetPositionButton.dataset.graphResetPositions = 'true';
+    resetPositionButton.textContent = '重置点位';
+    resetPositionButton.hidden = true;
+    adjustTools.append(adjustButton, resetPositionButton);
+    toolbar.append(adjustTools);
+  }
   figure.insertBefore(toolbar, stage);
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
-  readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+  const graphReadoutHint = editableGraph
+    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可直接拖动节点，松手自动写回源码。'
+    : '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+  readout.textContent = graphReadoutHint;
   stage.after(readout);
   const tooltip = doc.createElement('div');
   tooltip.className = 'plot-tooltip';
@@ -684,7 +710,7 @@ function initGraph(figure) {
       if (circle) { if (saved.circleFill === null || saved.circleFill === undefined) circle.removeAttribute('fill'); else circle.setAttribute('fill', saved.circleFill); }
     });
     toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => button.setAttribute('aria-pressed', 'false'));
-    if (restoreReadout) readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+    if (restoreReadout) readout.textContent = graphReadoutHint;
   };
   const edgeName = (el) => `${nameOf(el.dataset.from)} — ${nameOf(el.dataset.to)}`;
   const edgeDetail = (el) => {
@@ -813,6 +839,179 @@ function initGraph(figure) {
   // algo: reader（缺省）才把算法按钮交给读者自己选，algo: none 则完全不显示算法。
   if (algorithmMode !== 'reader' && algorithmMode !== 'none') applyAlgorithm(algorithmMode);
 
+  /* ---------------- 后台预览：拖动节点调整点位 ----------------
+   * 渲染器把每个点的原始坐标写在 data-node-x/y 上，并把「原始坐标 → SVG 坐标」
+   * 的变换写在 svg 的 data-graph-* 上。拖动时先按当前 SVG 位置实时重画相连边，
+   * 松手后才把换算回原始坐标的全部点位发给后台父页面写回 Markdown 源码。 */
+  const graphTransform = {
+    pad: Number(svg.getAttribute('data-graph-pad') || 52),
+    minX: Number(svg.getAttribute('data-graph-min-x') || 0),
+    minY: Number(svg.getAttribute('data-graph-min-y') || 0),
+    scaleX: Number(svg.getAttribute('data-graph-scale-x') || 1) || 1,
+    scaleY: Number(svg.getAttribute('data-graph-scale-y') || 1) || 1,
+  };
+  const screenToGraphSource = (point) => ({
+    x: graphTransform.minX + (point.x - graphTransform.pad) / graphTransform.scaleX,
+    y: graphTransform.minY + (point.y - graphTransform.pad) / graphTransform.scaleY,
+  });
+  const graphNodes = new Map();
+  nodeEls.forEach((group) => {
+    const circle = group.querySelector('.graph-node');
+    const size = Number(group.dataset.nodeSize || circle?.getAttribute('r') || 20);
+    const screen = {
+      x: Number(circle?.getAttribute('cx') || 0),
+      y: Number(circle?.getAttribute('cy') || 0),
+    };
+    const source = {
+      x: Number(group.dataset.nodeX),
+      y: Number(group.dataset.nodeY),
+    };
+    graphNodes.set(group.dataset.nodeId, {
+      group,
+      size,
+      screen,
+      source: Number.isFinite(source.x) && Number.isFinite(source.y) ? source : screenToGraphSource(screen),
+    });
+  });
+  const graphArrowPoints = (x, y, angle) => {
+    const size = 9;
+    const a1 = angle + Math.PI * 0.82;
+    const a2 = angle - Math.PI * 0.82;
+    return `${x},${y} ${x + size * Math.cos(a1)},${y + size * Math.sin(a1)} ${x + size * Math.cos(a2)},${y + size * Math.sin(a2)}`;
+  };
+  edgeEls.forEach((group) => {
+    if (group.dataset.from === group.dataset.to) {
+      group.dataset.edgeKind = 'loop';
+      group.dataset.edgeOffset = '0';
+      return;
+    }
+    const path = group.querySelector('path.graph-edge-line');
+    if (!path) {
+      group.dataset.edgeKind = 'line';
+      group.dataset.edgeOffset = '0';
+      return;
+    }
+    group.dataset.edgeKind = 'curve';
+    const nums = (path.getAttribute('d') || '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+    const a = graphNodes.get(group.dataset.from)?.screen;
+    const b = graphNodes.get(group.dataset.to)?.screen;
+    let offset = 0;
+    if (nums.length >= 6 && a && b) {
+      const dx = b.x - a.x; const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const ux = dx / dist; const uy = dy / dist;
+      offset = (((nums[2] - (a.x + b.x) / 2) * -uy) + ((nums[3] - (a.y + b.y) / 2) * ux)) / 2;
+    }
+    group.dataset.edgeOffset = String(offset);
+  });
+  const updateGraphEdge = (group) => {
+    const a = graphNodes.get(group.dataset.from);
+    const b = graphNodes.get(group.dataset.to);
+    if (!a || !b) return;
+    const label = group.querySelector('.graph-edge-label');
+    const arrowEl = group.querySelector('polygon');
+    if (group.dataset.edgeKind === 'loop') {
+      const r = a.size + 8;
+      const cy = a.screen.y - a.size - r + 6;
+      group.querySelectorAll('circle').forEach((circle) => {
+        circle.setAttribute('cx', a.screen.x);
+        circle.setAttribute('cy', cy);
+      });
+      if (arrowEl) arrowEl.setAttribute('points', graphArrowPoints(a.screen.x + (r - 4) * 0.72, cy - (r - 4) * 0.72, Math.PI / 4));
+      if (label) {
+        label.setAttribute('x', a.screen.x);
+        label.setAttribute('y', a.screen.y - a.size - 2 * r - 2);
+      }
+      return;
+    }
+    const dx = b.screen.x - a.screen.x;
+    const dy = b.screen.y - a.screen.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const ux = dx / dist; const uy = dy / dist;
+    const offset = Number(group.dataset.edgeOffset || 0);
+    let labelX; let labelY;
+    if (group.dataset.edgeKind === 'curve') {
+      const cxp = (a.screen.x + b.screen.x) / 2 - uy * offset * 2;
+      const cyp = (a.screen.y + b.screen.y) / 2 + ux * offset * 2;
+      const startX = a.screen.x + ux * a.size;
+      const startY = a.screen.y + uy * a.size;
+      const tx = b.screen.x - cxp; const ty = b.screen.y - cyp;
+      const tl = Math.hypot(tx, ty) || 1;
+      const endX = b.screen.x - (tx / tl) * b.size;
+      const endY = b.screen.y - (ty / tl) * b.size;
+      const d = `M${startX} ${startY} Q${cxp} ${cyp} ${endX} ${endY}`;
+      group.querySelectorAll('path').forEach((path) => path.setAttribute('d', d));
+      if (arrowEl) arrowEl.setAttribute('points', graphArrowPoints(endX, endY, Math.atan2(ty, tx)));
+      labelX = 0.25 * startX + 0.5 * cxp + 0.25 * endX;
+      labelY = 0.25 * startY + 0.5 * cyp + 0.25 * endY - 5;
+    } else {
+      const startX = a.screen.x + ux * a.size;
+      const startY = a.screen.y + uy * a.size;
+      const endX = b.screen.x - ux * b.size;
+      const endY = b.screen.y - uy * b.size;
+      group.querySelectorAll('line').forEach((line) => {
+        line.setAttribute('x1', startX); line.setAttribute('y1', startY);
+        line.setAttribute('x2', endX); line.setAttribute('y2', endY);
+      });
+      if (arrowEl) arrowEl.setAttribute('points', graphArrowPoints(endX, endY, Math.atan2(uy, ux)));
+      labelX = (startX + endX) / 2;
+      labelY = (startY + endY) / 2 - 5;
+    }
+    if (label) { label.setAttribute('x', labelX); label.setAttribute('y', labelY); }
+  };
+  const updateGraphEdgesFor = (nodeId) => {
+    edgeEls.forEach((group) => {
+      if (group.dataset.from === nodeId || group.dataset.to === nodeId) updateGraphEdge(group);
+    });
+  };
+  const setGraphNodeScreen = (group, point) => {
+    const state = graphNodes.get(group.dataset.nodeId);
+    if (!state) return;
+    state.screen = { x: point.x, y: point.y };
+    state.source = screenToGraphSource(point);
+    const circle = group.querySelector('.graph-node');
+    const ring = group.querySelector('.graph-node-ring');
+    const label = group.querySelector('.graph-node-label');
+    const sub = group.querySelector('.graph-node-sub');
+    if (circle) { circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); }
+    if (ring) { ring.setAttribute('cx', point.x); ring.setAttribute('cy', point.y); }
+    if (label) { label.setAttribute('x', point.x); label.setAttribute('y', point.y + 4); }
+    if (sub) { sub.setAttribute('x', point.x); sub.setAttribute('y', point.y + state.size + 15); }
+    updateGraphEdgesFor(group.dataset.nodeId);
+  };
+  const roundGraphCoord = (value) => Number(Number(value).toFixed(2));
+  const commitGraphPositions = (reset = false) => {
+    const positions = {};
+    graphNodes.forEach((state, id) => {
+      positions[id] = { x: roundGraphCoord(state.source.x), y: roundGraphCoord(state.source.y) };
+    });
+    const EventCtor = doc.defaultView?.CustomEvent || CustomEvent;
+    figure.dispatchEvent(new EventCtor('minxi:graph-positions', {
+      bubbles: true,
+      detail: { graphIndex: Number(figure.dataset.graphIndex || 0), reset, positions },
+    }));
+  };
+  let graphAdjustMode = false;
+  let draggedGraphNode = null;
+  let graphNodeDrag = null;
+  let suppressGraphClick = false;
+  const setGraphAdjustMode = (on) => {
+    graphAdjustMode = on;
+    figure.classList.toggle('is-adjusting', on);
+    if (adjustButton) adjustButton.setAttribute('aria-pressed', String(on));
+    if (resetPositionButton) resetPositionButton.hidden = !on;
+    readout.textContent = on
+      ? '调整点位：拖动任意节点即可改变位置，松手后自动把坐标写回源码。'
+      : graphReadoutHint;
+  };
+  if (adjustButton) adjustButton.addEventListener('click', () => setGraphAdjustMode(!graphAdjustMode));
+  if (resetPositionButton) {
+    resetPositionButton.addEventListener('click', () => {
+      commitGraphPositions(true);
+      readout.textContent = '已请求重置点位：恢复自动布局…';
+    });
+  }
+
   toolbar.querySelectorAll('[data-graph-action]').forEach((button) => {
     button.addEventListener('click', () => {
       if (button.dataset.graphAction === 'zoom-in') zoomAt(centerPoint(), 0.75);
@@ -826,6 +1025,22 @@ function initGraph(figure) {
   let pinchStart = null;
   stage.addEventListener('pointerdown', (event) => {
     if (event.button !== undefined && event.button > 0) return;
+    const nodeGroup = editableGraph && graphAdjustMode ? event.target?.closest?.('.graph-node-group') : null;
+    if (nodeGroup && stage.contains(nodeGroup) && !pointers.size) {
+      const point = svgPoint(event);
+      const state = graphNodes.get(nodeGroup.dataset.nodeId);
+      if (point && state) {
+        pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+        try { stage.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
+        draggedGraphNode = nodeGroup;
+        graphNodeDrag = { pointerId: event.pointerId, start: point, screen: { ...state.screen } };
+        stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
+        nodeGroup.classList.add('is-selected', 'is-dragging-node');
+        readout.textContent = `点 ${nodeGroup.dataset.nodeLabel || nodeGroup.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（拖动中）`;
+        stage.classList.add('is-dragging');
+        return;
+      }
+    }
     pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
     try { stage.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
     if (pointers.size === 1) dragStart = { clientX: event.clientX, clientY: event.clientY, view: [...current] };
@@ -839,6 +1054,19 @@ function initGraph(figure) {
   stage.addEventListener('pointermove', (event) => {
     if (pointers.has(event.pointerId)) {
       pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+      if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
+        const point = svgPoint(event);
+        const state = graphNodes.get(draggedGraphNode.dataset.nodeId);
+        if (point && state) {
+          const next = {
+            x: clamp(graphNodeDrag.screen.x + point.x - graphNodeDrag.start.x, initial[0] + state.size, initial[0] + initial[2] - state.size),
+            y: clamp(graphNodeDrag.screen.y + point.y - graphNodeDrag.start.y, initial[1] + state.size, initial[1] + initial[3] - state.size),
+          };
+          setGraphNodeScreen(draggedGraphNode, next);
+          readout.textContent = `点 ${draggedGraphNode.dataset.nodeLabel || draggedGraphNode.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（松开写回源码）`;
+        }
+        return;
+      }
       const rect = svg.getBoundingClientRect();
       if (pointers.size === 1 && dragStart && rect.width) {
         current = [...dragStart.view];
@@ -879,6 +1107,7 @@ function initGraph(figure) {
     if (algorithmSummary) readout.textContent = algorithmSummary;
   });
   stage.addEventListener('click', (event) => {
+    if (suppressGraphClick) { suppressGraphClick = false; return; }
     const edge = event.target?.closest?.('.graph-edge-group');
     const group = event.target?.closest?.('.graph-node-group');
     stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
@@ -892,11 +1121,30 @@ function initGraph(figure) {
     }
   });
   const finish = (event) => {
+    if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
+      const group = draggedGraphNode;
+      draggedGraphNode = null;
+      graphNodeDrag = null;
+      group.classList.remove('is-dragging-node');
+      suppressGraphClick = true;
+      commitGraphPositions(false);
+      readout.textContent = `点 ${group.dataset.nodeLabel || group.dataset.nodeId} 的位置已写回源码，正在刷新预览…`;
+    }
+    pointers.delete(event.pointerId);
+    if (!pointers.size) { dragStart = null; pinchStart = null; stage.classList.remove('is-dragging'); }
+  };
+  const cancelDrag = (event) => {
+    if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
+      setGraphNodeScreen(draggedGraphNode, graphNodeDrag.screen);
+      draggedGraphNode.classList.remove('is-dragging-node');
+      draggedGraphNode = null;
+      graphNodeDrag = null;
+    }
     pointers.delete(event.pointerId);
     if (!pointers.size) { dragStart = null; pinchStart = null; stage.classList.remove('is-dragging'); }
   };
   stage.addEventListener('pointerup', finish);
-  stage.addEventListener('pointercancel', finish);
+  stage.addEventListener('pointercancel', cancelDrag);
   stage.addEventListener('wheel', (event) => {
     const point = svgPoint(event);
     if (!point) return;

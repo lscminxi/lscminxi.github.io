@@ -456,3 +456,44 @@ test('Shift+ArrowUp opens a searchable LaTeX symbol picker and inserts at the sa
   assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'zen', '关符号面板后仍留在纯净模式');
   editor.window.close();
 });
+
+test('admin writes dragged graph positions back into the matching graph fence', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Graph position commit must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = [
+    '第一段',
+    '',
+    '```graph',
+    'node: A ; x=0 ; y=0',
+    'node: B ; x=100 ; y=0',
+    'edge: A - B',
+    '```',
+    '',
+    '```graph',
+    'node: A ; label=起点 ; color=red',
+    'edge: A - C',
+    '```',
+  ].join('\n');
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const doc = frame.contentDocument;
+  const fire = (detail) => {
+    doc.dispatchEvent(new frame.contentWindow.CustomEvent('minxi:graph-positions', { detail }));
+  };
+  fire({ graphIndex: 1, reset: false, positions: { A: { x: 12.5, y: -3 }, C: { x: 40, y: 50 } } });
+  assert.match(field.value, /node: A ; label=起点 ; color=red ; x=12\.5 ; y=-3/, '已有 node 行保留其它选项并写回坐标');
+  assert.match(field.value, /node: C ; x=40 ; y=50/, '边里隐式出现的点补一行坐标');
+  assert.match(field.value, /node: A ; x=0 ; y=0/, '第一张图的源码不被改动');
+  fire({ graphIndex: 1, reset: true, positions: {} });
+  assert.doesNotMatch(field.value.split('```graph')[2], /x=|y=/, '重置会删掉该图的 x/y 坐标恢复自动布局');
+  editor.window.close();
+});

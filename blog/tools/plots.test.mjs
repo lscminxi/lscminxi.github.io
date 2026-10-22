@@ -793,3 +793,50 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.graph-edge-group.is-algo-back .graph-edge-line'), '返祖边样式');
   assert.ok(css.includes('.graph-node-group.is-dfs-root .graph-node-ring'), 'DFS 根外圈样式');
 });
+
+test('editor preview graph nodes can be dragged in adjust mode and report source positions', async () => {
+  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
+  const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
+  try {
+    page.window.Element.prototype.getBoundingClientRect = function rect() {
+      return { left: 0, top: 0, right: 680, bottom: 420, width: 680, height: 420, x: 0, y: 0, toJSON() {} };
+    };
+    dom.window.MinxiPreview.enhance(page.window.document);
+    const figure = page.window.document.querySelector('.md-graph');
+    assert.equal(figure.dataset.graphEditable, 'true', '后台预览的图带可调整标记');
+    const adjustButton = figure.querySelector('[data-graph-adjust]');
+    assert.ok(adjustButton, '预览工具栏有「调整点位」');
+    const svg = figure.querySelector('svg');
+    assert.ok(svg.getAttribute('data-graph-scale-x'), '渲染器给出坐标变换供拖动换算');
+    const groupA = svg.querySelector('.graph-node-group[data-node-id="A"]');
+    assert.equal(groupA.dataset.nodeX, '0', '节点带原始坐标');
+
+    // 正式文章页（没有预览标记）不出现调整入口。
+    const publicPage = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+    try {
+      assert.equal(publicPage.window.document.querySelector('[data-graph-adjust]'), null, '读者页没有调整点位');
+    } finally { publicPage.window.close(); }
+
+    let committed = null;
+    page.window.document.addEventListener('minxi:graph-positions', (event) => { committed = event.detail; });
+    adjustButton.click();
+    assert.equal(figure.classList.contains('is-adjusting'), true, '进入调整模式');
+    const stage = figure.querySelector('.graph-stage');
+    const circleA = groupA.querySelector('.graph-node');
+    // A 的 SVG 位置约 (52, 280)，画布高 560 映射到 420px 显示高。
+    pointer(page, groupA, 'pointerdown', 52, 210);
+    pointer(page, stage, 'pointermove', 120, 252);
+    assert.equal(Number(circleA.getAttribute('cx')), 120, '拖动中节点实时跟随');
+    pointer(page, stage, 'pointerup', 120, 252);
+    assert.ok(committed, '松手后发出点位写回事件');
+    assert.equal(committed.graphIndex, 0);
+    assert.equal(committed.reset, false);
+    assert.ok(Math.abs(committed.positions.A.x - 11.81) < 0.05, `A 的横坐标换算回源码坐标，实际 ${committed.positions.A.x}`);
+    assert.ok(Math.abs(committed.positions.A.y - 14.74) < 0.05, `A 的纵坐标换算回源码坐标，实际 ${committed.positions.A.y}`);
+    assert.equal(committed.positions.B.x, 100, '没拖的点保持原横坐标');
+    assert.equal(committed.positions.B.y, 0, '没拖的点保持原纵坐标');
+    const line = svg.querySelector('.graph-edge-group line.graph-edge-line') || svg.querySelectorAll('.graph-edge-group line')[1];
+    assert.ok(Math.abs(Number(line.getAttribute('x1')) - (120 + 20)) < 0.01 || Number(line.getAttribute('x1')) > 52, '相连边端点跟随节点更新');
+    assert.match(figure.querySelector('.plot-readout').textContent, /已写回源码/, '松手后提示已写回');
+  } finally { page.window.close(); }
+});
