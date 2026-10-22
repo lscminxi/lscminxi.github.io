@@ -9,14 +9,15 @@
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css?v=card-link-1">
-  <link rel="stylesheet" href="./admin.css?v=zen-1">
+  <link rel="stylesheet" href="./admin.css?v=latex-picker-1">
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
        不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
-  <script src="./preview.js?v=plots-6" defer></script>
+  <script src="./preview.js?v=latex-picker-1" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=zen-sync-1" defer></script>
+  <script src="./admin.js?v=latex-picker-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -290,6 +291,7 @@
             <button class="btn ghost small" type="button" data-editor-mode="zen" aria-pressed="false" title="只留正文编辑区，隐藏其余后台面板（Esc 退出）">纯净</button>
           </div>
           <button class="btn ghost small" id="insert-math" type="button">插入公式</button>
+          <button class="btn ghost small" id="insert-latex-symbol" type="button" title="在正文编辑区按 Shift + ↑ 也可打开">LaTeX 符号 <kbd>Shift</kbd>+<kbd>↑</kbd></button>
           <select id="insert-fold" class="small-select" aria-label="插入折叠框">
             <option value="">插入折叠框…</option>
             <option value="info">info · 蓝色提示</option>
@@ -312,7 +314,7 @@
           <button class="btn ghost small" id="insert-more" type="button">插入 &lt;!-- more --&gt;</button>
         </div>
       </div>
-      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>；可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）；用 <code>algo: mst</code> 之类的一行可预设图算法，<code>algo: reader</code> 让读者自选，<code>algo: none</code> 不显示算法（「插入可视化图」下拉会帮你写好这一行，已有图改这一行即可）。</p>
+      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。在正文编辑区按 <kbd>Shift</kbd>+<kbd>↑</kbd> 可搜索并插入 LaTeX 符号（可搜 <code>\pm</code>、正负、积分、分数等中文叫法）。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>；可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）；用 <code>algo: mst</code> 之类的一行可预设图算法，<code>algo: reader</code> 让读者自选，<code>algo: none</code> 不显示算法（「插入可视化图」下拉会帮你写好这一行，已有图改这一行即可）。</p>
       <div class="writing-workspace" id="writing-workspace" data-mode="split">
       <textarea aria-label="正文 Markdown" id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
       <iframe id="post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
@@ -327,6 +329,27 @@
   </main>
 
   <div class="toast" id="toast" hidden></div>
+
+  <div class="latex-picker" id="latex-picker" hidden>
+    <div class="latex-picker-backdrop" id="latex-picker-backdrop"></div>
+    <section class="latex-picker-card" role="dialog" aria-modal="true" aria-labelledby="latex-picker-title">
+      <div class="latex-picker-head">
+        <h2 id="latex-picker-title">插入 LaTeX 符号</h2>
+        <button class="btn ghost small" id="close-latex-picker" type="button" aria-label="关闭 LaTeX 符号搜索">关闭</button>
+      </div>
+      <label class="latex-picker-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="latex-symbol-search" type="search" placeholder="搜索命令或中文，如 pm、正负、异或、积分、分数…" autocomplete="off" aria-label="搜索 LaTeX 符号">
+        <kbd>Esc</kbd>
+      </label>
+      <div class="latex-category-tabs" id="latex-category-tabs" aria-label="LaTeX 符号分类"></div>
+      <div class="latex-symbol-grid" id="latex-symbol-grid" aria-live="polite"></div>
+      <div class="latex-picker-foot">
+        <code id="latex-symbol-command">选择一个符号</code>
+        <span id="latex-symbol-detail">方向键选择，Enter 或点击插入</span>
+      </div>
+    </section>
+  </div>
 
   <div class="modal" id="modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">

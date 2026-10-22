@@ -1,4 +1,5 @@
 import { Marked } from 'marked';
+import katex from 'katex';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
 import foldContainers from '../lib/fold-containers.cjs';
@@ -87,5 +88,13 @@ window.MinxiPreview = {
   // 拖动/缩放/读数的监听器全部由父页面挂到 iframe 文档上（同源才可访问）。
   enhance(root) {
     if (root) window.MinxiPlots?.initPlots(root);
+  },
+  // 后台 LaTeX 符号选择器用：只渲染内置符号目录里的单个公式片段。
+  renderLatex(tex) {
+    try {
+      return katex.renderToString(String(tex || ''), { throwOnError: false, displayMode: false });
+    } catch {
+      return '';
+    }
   },
 };

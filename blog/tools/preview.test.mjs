@@ -386,3 +386,73 @@ test('scrolling the preview (compile side) drives the editor and re-render keeps
   assert.equal(previewTop, 1050, '重新渲染后预览不跳回顶部');
   editor.window.close();
 });
+
+test('Shift+ArrowUp opens a searchable LaTeX symbol picker and inserts at the saved caret', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('LaTeX picker must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const picker = w.document.querySelector('#latex-picker');
+  const search = w.document.querySelector('#latex-symbol-search');
+  const openWithShortcut = () => {
+    field.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true, bubbles: true, cancelable: true }));
+  };
+  const searchFor = (query) => {
+    search.value = query;
+    search.dispatchEvent(new w.Event('input', { bubbles: true }));
+    return [...w.document.querySelectorAll('#latex-symbol-grid .latex-symbol-card')];
+  };
+
+  assert.ok(w.document.querySelector('#insert-latex-symbol'), '工具栏有 LaTeX 符号入口');
+  field.value = '公式：$$';
+  field.focus();
+  field.setSelectionRange(4, 4);
+  field.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true, '普通上箭头不打开符号搜索');
+  openWithShortcut();
+  assert.equal(picker.hidden, false, 'Shift+上箭头打开符号搜索');
+
+  let cards = searchFor('正负');
+  assert.equal(w.document.querySelector('#latex-symbol-command').textContent, '\\pm', '中文别名「正负」应找到 \\pm');
+  assert.ok(cards.length >= 1);
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true, 'Enter 插入后关闭');
+  assert.equal(field.value, '公式：$\\pm$', '符号插回打开面板前的光标处');
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('minxi:latex-recent')), ['\\pm'], '最近使用会被记住');
+
+  field.setSelectionRange(field.value.length, field.value.length);
+  openWithShortcut();
+  cards = searchFor('分数');
+  assert.equal(w.document.querySelector('#latex-symbol-command').textContent, '\\frac{}{}', '搜「分数」优先给出分式模板');
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.ok(field.value.endsWith('\\frac{}{}$$') || field.value.includes('\\frac{}{}'), '分式模板已插入');
+  const fracAt = field.value.indexOf('\\frac{}{}');
+  assert.equal(field.selectionStart, fracAt + 6, '插入分式后光标落在第一个花括号里');
+
+  field.value = 'A选中的文字B';
+  field.setSelectionRange(1, 6);
+  openWithShortcut();
+  searchFor('积分');
+  assert.equal(w.document.querySelector('#latex-symbol-command').textContent, '\\int_{}^{}', '搜「积分」给出带上下限的积分模板');
+  const beforeCancel = field.value;
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true, 'Esc 关闭符号搜索');
+  assert.equal(field.value, beforeCancel, 'Esc 取消时不修改正文');
+  assert.equal(field.selectionStart, 1, '取消后恢复原选区起点');
+  assert.equal(field.selectionEnd, 6, '取消后恢复原选区终点');
+
+  // 纯净模式里 Esc 应先关符号面板，不能顺手退出纯净模式。
+  w.document.querySelector('[data-editor-mode="zen"]').click();
+  field.focus();
+  openWithShortcut();
+  assert.equal(picker.hidden, false);
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true);
+  assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'zen', '关符号面板后仍留在纯净模式');
+  editor.window.close();
+});

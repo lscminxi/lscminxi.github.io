@@ -1535,6 +1535,465 @@
       setEditorMode("split");
     }
   });
+  /* ---------------- 编辑区 LaTeX 符号搜索（Shift + ↑） ---------------- */
+  const latexCategories = [
+    ["structures", "结构"],
+    ["greek", "希腊字母"],
+    ["operators", "运算"],
+    ["relations", "关系"],
+    ["sets-logic", "集合与逻辑"],
+    ["arrows", "箭头"],
+    ["big-operators", "大型运算符"],
+    ["functions", "函数"],
+    ["misc", "其他"],
+  ];
+  const latexCategoryName = (id) => latexCategories.find(([key]) => key === id)?.[1] || id;
+  const latexAutoPreview = (insert) => {
+    const fillers = ["a", "b", "c"];
+    let used = 0;
+    return insert.replace(/\[\]/g, "[n]").replace(/\{\}/g, () => `{${fillers[Math.min(used++, fillers.length - 1)]}}`);
+  };
+  const latexSymbols = [];
+  const addLatexSymbol = (category, command, aliases, options = {}) => {
+    if (latexSymbols.some((symbol) => symbol.command === command)) return;
+    const insert = options.insert ?? command;
+    let cursor = options.cursor;
+    if (!cursor && options.cursorAfter) {
+      const at = insert.indexOf(options.cursorAfter);
+      const pos = at === -1 ? insert.length : at + options.cursorAfter.length;
+      cursor = [pos, pos];
+    }
+    if (!cursor) {
+      const braces = insert.indexOf("{}");
+      cursor = braces === -1 ? [insert.length, insert.length] : [braces + 1, braces + 1];
+    }
+    latexSymbols.push({
+      category,
+      command,
+      aliases,
+      insert,
+      preview: options.preview ?? latexAutoPreview(insert),
+      glyph: options.glyph || "",
+      cursor,
+    });
+  };
+  const addLatexGroup = (category, entries) => {
+    entries.forEach(([command, aliases, options]) => addLatexSymbol(category, command, aliases, options || {}));
+  };
+
+  addLatexGroup("structures", [
+    ["\\frac{}{}", ["分数", "分式", "除", "分数线", "fraction"]],
+    ["\\dfrac{}{}", ["大分数", "显示分数", "分数", "分式"]],
+    ["\\tfrac{}{}", ["小分数", "分数", "分式"]],
+    ["\\cfrac{}{}", ["连分数", "分数", "分式"]],
+    ["\\sqrt{}", ["根号", "平方根", "开方", "根式", "sqrt", "root"]],
+    ["\\sqrt[n]{}", ["n次根", "立方根", "根号", "开方"], { insert: "\\sqrt[]{}", cursorAfter: "\\sqrt[", preview: "\\sqrt[3]{x}" }],
+    ["^{}", ["上标", "次方", "幂", "指数", "平方", "superscript", "power"], { preview: "x^{2}" }],
+    ["_{}", ["下标", "角标", "序号", "subscript"], { preview: "a_{n}" }],
+    ["\\binom{}{}", ["组合数", "二项式系数", "组合", "binomial", "choose"]],
+    ["\\overline{}", ["上划线", "线段", "共轭", "平均值"]],
+    ["\\underline{}", ["下划线"]],
+    ["\\hat{}", ["帽", "估计值", "单位向量"]],
+    ["\\widehat{}", ["宽帽", "角", "弧"]],
+    ["\\bar{}", ["平均值", "均值", "共轭"]],
+    ["\\vec{}", ["向量", "箭头", "vector"]],
+    ["\\overrightarrow{}", ["向量", "长箭头"]],
+    ["\\dot{}", ["一阶导数", "上点", "求导"]],
+    ["\\ddot{}", ["二阶导数", "两点"]],
+    ["\\tilde{}", ["波浪号", "近似号"]],
+    ["\\widetilde{}", ["宽波浪"]],
+    ["\\overbrace{}", ["上大括号", "上括号", "brace"]],
+    ["\\underbrace{}", ["下大括号", "下括号", "brace"]],
+    ["\\overset{}{}", ["上方标注", "上标符号"]],
+    ["\\underset{}{}", ["下方标注", "下标符号"]],
+    ["\\boxed{}", ["方框", "答案框", "框选"]],
+    ["\\cancel{}", ["约去", "划掉", "斜线删除"]],
+    ["\\left(\\right)", ["自适应括号", "大圆括号", "圆括号"], { insert: "\\left(\\right)", cursorAfter: "\\left(", preview: "\\left(\\dfrac{a}{b}\\right)" }],
+    ["\\left[\\right]", ["自适应方括号", "大方括号", "方括号"], { insert: "\\left[\\right]", cursorAfter: "\\left[", preview: "\\left[\\dfrac{a}{b}\\right]" }],
+    ["\\left\\{\\right\\}", ["自适应花括号", "花括号", "集合括号"], { insert: "\\left\\{\\right\\}", cursorAfter: "\\left\\{", preview: "\\left\\{\\dfrac{a}{b}\\right\\}" }],
+    ["\\left|\\right|", ["绝对值", "模", "自适应竖线", "absolute"], { insert: "\\left|\\right|", cursorAfter: "\\left|", preview: "\\left|x\\right|" }],
+    ["\\langle\\rangle", ["内积", "尖括号", "角括号"], { insert: "\\langle\\rangle", cursorAfter: "\\langle", preview: "\\langle u,v\\rangle" }],
+    ["\\lfloor\\rfloor", ["向下取整", "地板", "高斯取整", "floor"], { insert: "\\lfloor\\rfloor", cursorAfter: "\\lfloor", preview: "\\lfloor x\\rfloor" }],
+    ["\\lceil\\rceil", ["向上取整", "天花板", "ceil"], { insert: "\\lceil\\rceil", cursorAfter: "\\lceil", preview: "\\lceil x\\rceil" }],
+    ["\\begin{matrix}…\\end{matrix}", ["矩阵", "无括号矩阵", "matrix"], { insert: "\\begin{matrix}\n\n\\end{matrix}", cursorAfter: "\\begin{matrix}\n", preview: "\\begin{matrix}a&b\\\\c&d\\end{matrix}" }],
+    ["\\begin{pmatrix}…\\end{pmatrix}", ["圆括号矩阵", "矩阵", "matrix"], { insert: "\\begin{pmatrix}\n\n\\end{pmatrix}", cursorAfter: "\\begin{pmatrix}\n", preview: "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}" }],
+    ["\\begin{bmatrix}…\\end{bmatrix}", ["方括号矩阵", "矩阵", "matrix"], { insert: "\\begin{bmatrix}\n\n\\end{bmatrix}", cursorAfter: "\\begin{bmatrix}\n", preview: "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}" }],
+    ["\\begin{vmatrix}…\\end{vmatrix}", ["行列式", "竖线矩阵", "determinant"], { insert: "\\begin{vmatrix}\n\n\\end{vmatrix}", cursorAfter: "\\begin{vmatrix}\n", preview: "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}" }],
+    ["\\begin{cases}…\\end{cases}", ["分段函数", "方程组", "大括号分段", "cases"], { insert: "\\begin{cases}\n\n\\end{cases}", cursorAfter: "\\begin{cases}\n", preview: "\\begin{cases}x,&x>0\\\\0,&x=0\\end{cases}" }],
+    ["\\begin{aligned}…\\end{aligned}", ["对齐", "多行公式", "等式链", "aligned"], { insert: "\\begin{aligned}\n\n\\end{aligned}", cursorAfter: "\\begin{aligned}\n", preview: "\\begin{aligned}a&=b+c\\\\&=d\\end{aligned}" }],
+    ["\\text{}", ["文本", "文字", "中文", "text"]],
+    ["\\mathrm{}", ["正体", "直立体", "罗马体", "单位"]],
+    ["\\mathbf{}", ["粗体", "黑体", "向量粗体", "bold"]],
+    ["\\boldsymbol{}", ["粗斜体", "加粗符号"]],
+    ["\\mathbb{}", ["黑板粗体", "数集字母", "空心字母", "blackboard"]],
+    ["\\mathcal{}", ["花体", "书法体", "calligraphic"]],
+    ["\\mathfrak{}", ["哥特体", "德文尖角体", "fraktur"]],
+    ["\\operatorname{}", ["算子名", "函数名", "正体名称"]],
+    ["\\\\", ["换行", "新行", "分行"], { insert: "\\\\", preview: "a\\\\b" }],
+    ["\\,", ["小空格", "窄空格", "间距"], { preview: "a\\,b" }],
+    ["\\quad", ["空格", "大间距", "quad"], { preview: "a\\quad b" }],
+    ["\\qquad", ["大空格", "双倍间距"], { preview: "a\\qquad b" }],
+  ]);
+
+  addLatexGroup("greek", [
+    ["\\alpha", ["阿尔法", "alpha"], { glyph: "α" }], ["\\beta", ["贝塔", "beta"], { glyph: "β" }],
+    ["\\gamma", ["伽马", "gamma"], { glyph: "γ" }], ["\\Gamma", ["伽马大写", "伽马函数", "Gamma"], { glyph: "Γ" }],
+    ["\\delta", ["德尔塔", "小增量", "delta"], { glyph: "δ" }], ["\\Delta", ["增量", "判别式", "差", "Delta"], { glyph: "Δ" }],
+    ["\\epsilon", ["艾普西龙", "小量", "epsilon"], { glyph: "ϵ" }], ["\\varepsilon", ["任意小", "正数", "varepsilon"], { glyph: "ε" }],
+    ["\\zeta", ["泽塔", "zeta"], { glyph: "ζ" }], ["\\eta", ["伊塔", "效率", "eta"], { glyph: "η" }],
+    ["\\theta", ["西塔", "角度", "theta"], { glyph: "θ" }], ["\\Theta", ["西塔大写", "Theta"], { glyph: "Θ" }],
+    ["\\iota", ["约塔", "iota"], { glyph: "ι" }], ["\\kappa", ["卡帕", "曲率", "kappa"], { glyph: "κ" }],
+    ["\\lambda", ["拉姆达", "波长", "特征值", "lambda"], { glyph: "λ" }], ["\\Lambda", ["拉姆达大写", "Lambda"], { glyph: "Λ" }],
+    ["\\mu", ["缪", "微", "期望", "mu"], { glyph: "μ" }], ["\\nu", ["纽", "频率", "nu"], { glyph: "ν" }],
+    ["\\xi", ["克西", "介值点", "xi"], { glyph: "ξ" }], ["\\Xi", ["克西大写", "Xi"], { glyph: "Ξ" }],
+    ["\\pi", ["派", "圆周率", "pi"], { glyph: "π" }], ["\\Pi", ["派大写", "Pi"], { glyph: "Π" }],
+    ["\\rho", ["柔", "密度", "rho"], { glyph: "ρ" }], ["\\sigma", ["西格玛", "标准差", "sigma"], { glyph: "σ" }],
+    ["\\Sigma", ["西格玛大写", "Sigma"], { glyph: "Σ" }], ["\\tau", ["陶", "tau"], { glyph: "τ" }],
+    ["\\phi", ["斐", "角度", "欧拉函数", "phi"], { glyph: "ϕ" }], ["\\Phi", ["斐大写", "磁通量", "Phi"], { glyph: "Φ" }],
+    ["\\varphi", ["斐异体", "角度", "varphi"], { glyph: "φ" }], ["\\chi", ["卡方", "chi"], { glyph: "χ" }],
+    ["\\psi", ["普赛", "波函数", "psi"], { glyph: "ψ" }], ["\\Psi", ["普赛大写", "Psi"], { glyph: "Ψ" }],
+    ["\\omega", ["欧米伽", "角速度", "omega"], { glyph: "ω" }], ["\\Omega", ["欧姆", "全集", "样本空间", "Omega"], { glyph: "Ω" }],
+  ]);
+
+  addLatexGroup("operators", [
+    ["\\pm", ["正负", "加减", "正负号", "plus minus"], { glyph: "±" }], ["\\mp", ["负正", "减加"], { glyph: "∓" }],
+    ["\\times", ["乘号", "乘", "叉乘", "times"], { glyph: "×" }], ["\\div", ["除号", "除以", "除"], { glyph: "÷" }],
+    ["\\cdot", ["点乘", "内积", "点"], { glyph: "⋅" }], ["\\cdots", ["省略号", "中间省略"], { glyph: "⋯" }],
+    ["\\ldots", ["省略号", "低省略"], { glyph: "…" }], ["\\vdots", ["竖省略号"], { glyph: "⋮" }],
+    ["\\ddots", ["斜省略号"], { glyph: "⋱" }], ["\\ast", ["星号", "星运算"], { glyph: "∗" }],
+    ["\\star", ["星", "star"], { glyph: "⋆" }], ["\\circ", ["复合", "函数复合", "圆圈"], { glyph: "∘" }],
+    ["\\bullet", ["实心圆点", "项目点"], { glyph: "•" }], ["\\oplus", ["异或", "直和", "圆加", "xor"], { glyph: "⊕" }],
+    ["\\ominus", ["圆减"], { glyph: "⊖" }], ["\\otimes", ["张量积", "圆乘"], { glyph: "⊗" }],
+    ["\\odot", ["圆点"], { glyph: "⊙" }], ["\\cap", ["交集", "帽子"], { glyph: "∩" }],
+    ["\\cup", ["并集", "杯子"], { glyph: "∪" }], ["\\wedge", ["合取", "逻辑与", "楔形"], { glyph: "∧" }],
+    ["\\vee", ["析取", "逻辑或"], { glyph: "∨" }], ["\\setminus", ["差集", "去掉"], { glyph: "∖" }],
+  ]);
+
+  addLatexGroup("relations", [
+    ["\\leq", ["小于等于", "不大于", "less equal"], { glyph: "≤" }], ["\\geq", ["大于等于", "不小于"], { glyph: "≥" }],
+    ["\\neq", ["不等于", "不等"], { glyph: "≠" }], ["\\approx", ["约等于", "近似"], { glyph: "≈" }],
+    ["\\equiv", ["恒等", "同余", "等价"], { glyph: "≡" }], ["\\sim", ["相似", "分布", "波浪"], { glyph: "∼" }],
+    ["\\simeq", ["近似相等", "相似等"], { glyph: "≃" }], ["\\cong", ["全等", "同构"], { glyph: "≅" }],
+    ["\\propto", ["正比", "成比例"], { glyph: "∝" }], ["\\ll", ["远小于"], { glyph: "≪" }],
+    ["\\gg", ["远大于"], { glyph: "≫" }], ["\\prec", ["先于", "小于关系"], { glyph: "≺" }],
+    ["\\succ", ["后于", "大于关系"], { glyph: "≻" }], ["\\preceq", ["先于等于"], { glyph: "⪯" }],
+    ["\\succeq", ["后于等于"], { glyph: "⪰" }], ["\\parallel", ["平行"], { glyph: "∥" }],
+    ["\\nparallel", ["不平行"], { glyph: "∦" }], ["\\perp", ["垂直"], { glyph: "⊥" }],
+    ["\\mid", ["整除", "竖线", "条件"], { glyph: "∣" }], ["\\nmid", ["不整除"], { glyph: "∤" }],
+    ["\\models", ["模型", "推出"], { glyph: "⊨" }], ["\\vdash", ["证明", "推出"], { glyph: "⊢" }],
+    ["\\dashv", ["被推出"], { glyph: "⊣" }],
+  ]);
+
+  addLatexGroup("sets-logic", [
+    ["\\in", ["属于", "元素"], { glyph: "∈" }], ["\\notin", ["不属于"], { glyph: "∉" }],
+    ["\\ni", ["包含元素", "含于反向"], { glyph: "∋" }], ["\\subset", ["真子集", "包含于"], { glyph: "⊂" }],
+    ["\\subseteq", ["子集", "包含于等于"], { glyph: "⊆" }], ["\\supset", ["真超集"], { glyph: "⊃" }],
+    ["\\supseteq", ["超集"], { glyph: "⊇" }], ["\\emptyset", ["空集"], { glyph: "∅" }],
+    ["\\varnothing", ["空集"], { glyph: "∅" }], ["\\forall", ["任意", "对于所有", "全称"], { glyph: "∀" }],
+    ["\\exists", ["存在", "存在量词"], { glyph: "∃" }], ["\\nexists", ["不存在"], { glyph: "∄" }],
+    ["\\neg", ["非", "否定", "not"], { glyph: "¬" }], ["\\land", ["逻辑与", "并且", "and"], { glyph: "∧" }],
+    ["\\lor", ["逻辑或", "或者", "or"], { glyph: "∨" }], ["\\Rightarrow", ["推出", "蕴含", "箭头"], { glyph: "⇒" }],
+    ["\\Leftarrow", ["反推出", "被推出"], { glyph: "⇐" }], ["\\Leftrightarrow", ["等价", "充要", "当且仅当"], { glyph: "⇔" }],
+    ["\\top", ["真", "顶"], { glyph: "⊤" }], ["\\bot", ["假", "底", "矛盾"], { glyph: "⊥" }],
+    ["\\therefore", ["所以", "因此"], { glyph: "∴" }], ["\\because", ["因为"], { glyph: "∵" }],
+    ["\\aleph", ["阿列夫", "基数"], { glyph: "ℵ" }],
+  ]);
+
+  addLatexGroup("arrows", [
+    ["\\leftarrow", ["左箭头"], { glyph: "←" }], ["\\rightarrow", ["右箭头", "趋向", "映射"], { glyph: "→" }],
+    ["\\leftrightarrow", ["双向箭头"], { glyph: "↔" }], ["\\Leftarrow", ["左粗箭头", "推出"], { glyph: "⇐" }],
+    ["\\Rightarrow", ["右粗箭头", "推出"], { glyph: "⇒" }], ["\\Leftrightarrow", ["双向粗箭头", "等价"], { glyph: "⇔" }],
+    ["\\uparrow", ["上箭头"], { glyph: "↑" }], ["\\downarrow", ["下箭头"], { glyph: "↓" }],
+    ["\\mapsto", ["映射到", "对应"], { glyph: "↦" }], ["\\longmapsto", ["长映射到"], { glyph: "⟼" }],
+    ["\\longrightarrow", ["长右箭头", "趋向"], { glyph: "⟶" }], ["\\longleftarrow", ["长左箭头"], { glyph: "⟵" }],
+    ["\\longleftrightarrow", ["长双向箭头"], { glyph: "⟷" }], ["\\hookrightarrow", ["钩箭头", "嵌入"], { glyph: "↪" }],
+    ["\\twoheadrightarrow", ["双头箭头", "满射"], { glyph: "↠" }], ["\\rightarrowtail", ["尾箭头", "单射"], { glyph: "↣" }],
+  ]);
+
+  addLatexGroup("big-operators", [
+    ["\\sum_{}^{}", ["求和", "总和", "累加", "sum"], { insert: "\\sum_{}^{}", cursorAfter: "\\sum_{", preview: "\\sum_{i=1}^{n}" }],
+    ["\\prod_{}^{}", ["连乘", "求积", "product"], { insert: "\\prod_{}^{}", cursorAfter: "\\prod_{", preview: "\\prod_{i=1}^{n}" }],
+    ["\\coprod_{}^{}", ["余积", "coproduct"], { insert: "\\coprod_{}^{}", cursorAfter: "\\coprod_{", preview: "\\coprod_{i=1}^{n}" }],
+    ["\\int_{}^{}", ["积分", "定积分", "integral"], { insert: "\\int_{}^{}", cursorAfter: "\\int_{", preview: "\\int_{a}^{b} f(x)\\,\\mathrm{d}x" }],
+    ["\\int", ["积分", "不定积分", "integral"], { preview: "\\int f(x)\\,\\mathrm{d}x" }],
+    ["\\iint", ["二重积分", "double integral"], { preview: "\\iint_D f" }],
+    ["\\iiint", ["三重积分", "triple integral"], { preview: "\\iiint_V f" }],
+    ["\\oint", ["曲线积分", "环路积分", "contour"], { preview: "\\oint_C f" }],
+    ["\\bigcup_{}^{}", ["大并集", "并集求和"], { insert: "\\bigcup_{}^{}", cursorAfter: "\\bigcup_{", preview: "\\bigcup_{i=1}^{n} A_i" }],
+    ["\\bigcap_{}^{}", ["大交集"], { insert: "\\bigcap_{}^{}", cursorAfter: "\\bigcap_{", preview: "\\bigcap_{i=1}^{n} A_i" }],
+    ["\\bigoplus_{}^{}", ["大直和", "异或和"], { insert: "\\bigoplus_{}^{}", cursorAfter: "\\bigoplus_{", preview: "\\bigoplus_{i=1}^{n} V_i" }],
+    ["\\bigotimes_{}^{}", ["大张量积"], { insert: "\\bigotimes_{}^{}", cursorAfter: "\\bigotimes_{", preview: "\\bigotimes_{i=1}^{n} V_i" }],
+    ["\\lim_{}", ["极限", "趋于", "limit"], { insert: "\\lim_{}", preview: "\\lim_{x\\to\\infty}" }],
+    ["\\limsup_{}", ["上极限"], { insert: "\\limsup_{}", preview: "\\limsup_{n\\to\\infty}" }],
+    ["\\liminf_{}", ["下极限"], { insert: "\\liminf_{}", preview: "\\liminf_{n\\to\\infty}" }],
+  ]);
+
+  addLatexGroup("functions", [
+    ["\\sin", ["正弦", "sine"]], ["\\cos", ["余弦", "cosine"]], ["\\tan", ["正切", "tangent"]],
+    ["\\cot", ["余切"]], ["\\sec", ["正割"]], ["\\csc", ["余割"]],
+    ["\\arcsin", ["反正弦"]], ["\\arccos", ["反余弦"]], ["\\arctan", ["反正切"]],
+    ["\\sinh", ["双曲正弦"]], ["\\cosh", ["双曲余弦"]], ["\\tanh", ["双曲正切"]],
+    ["\\ln", ["自然对数", "log"]], ["\\log_{}", ["对数", "log"], { insert: "\\log_{}", preview: "\\log_{2} n" }],
+    ["\\lg", ["常用对数"]], ["\\exp", ["指数函数", "e的幂"]],
+    ["\\max", ["最大值", "max"]], ["\\min", ["最小值", "min"]], ["\\sup", ["上确界"]],
+    ["\\inf", ["下确界"]], ["\\det", ["行列式", "determinant"]], ["\\dim", ["维数", "dimension"]],
+    ["\\gcd", ["最大公约数", "gcd"]], ["\\ker", ["核", "零空间", "kernel"]],
+    ["\\deg", ["次数", "度", "degree"]], ["\\Pr", ["概率", "probability"]],
+    ["\\bmod", ["取模", "取余", "mod"]], ["\\pmod{}", ["同余模", "模", "modulo"], { insert: "\\pmod{}", preview: "a\\equiv b\\pmod{m}" }],
+  ]);
+
+  addLatexGroup("misc", [
+    ["\\infty", ["无穷", "无限", "infinity"], { glyph: "∞" }], ["\\partial", ["偏导数", "偏微分", "partial"], { glyph: "∂" }],
+    ["\\nabla", ["梯度", "散度", "旋度", "倒三角", "nabla"], { glyph: "∇" }], ["'", ["导数", "撇", "一阶导"], { insert: "'", preview: "f'(x)" }],
+    ["^\\circ", ["度", "角度单位", "度数", "degree"], { insert: "^\\circ", preview: "90^\\circ", glyph: "°" }],
+    ["^\\top", ["转置", "矩阵转置", "transpose"], { insert: "^\\top", preview: "A^\\top" }],
+    ["\\angle", ["角", "角度符号", "angle"], { glyph: "∠" }], ["\\triangle", ["三角形", "triangle"], { glyph: "△" }],
+    ["\\square", ["正方形", "方框", "证毕"], { glyph: "□" }], ["\\blacksquare", ["实心方", "证毕", "qed"], { glyph: "■" }],
+    ["\\checkmark", ["对勾", "勾选", "正确"], { glyph: "✓" }], ["\\hbar", ["约化普朗克"], { glyph: "ℏ" }],
+    ["\\ell", ["手写l", "小写L"], { glyph: "ℓ" }], ["\\Re", ["实部"], { glyph: "ℜ" }],
+    ["\\Im", ["虚部"], { glyph: "ℑ" }], ["\\%", ["百分号", "百分比"], { glyph: "%" }],
+    ["\\$", ["美元", "钱"], { glyph: "$" }], ["\\&", ["和号", "连接符"], { glyph: "&" }],
+    ["\\#", ["井号", "编号"], { glyph: "#" }], ["\\_", ["下划线符号"], { glyph: "_" }],
+    ["\\{", ["左花括号", "集合"], { glyph: "{" }], ["\\}", ["右花括号", "集合"], { glyph: "}" }],
+  ]);
+
+  const latexPicker = $("#latex-picker");
+  const latexSearchInput = $("#latex-symbol-search");
+  const latexGrid = $("#latex-symbol-grid");
+  const latexTabs = $("#latex-category-tabs");
+  const latexCommandDetail = $("#latex-symbol-command");
+  const latexSymbolDetail = $("#latex-symbol-detail");
+  const latexPreviewCache = new Map();
+  let latexPickerSelection = null;
+  let latexPickerCategory = "all";
+  let latexPickerActive = 0;
+  let latexPickerResults = [];
+  const latexRecentKey = "minxi:latex-recent";
+  const readLatexRecent = () => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(latexRecentKey) || "[]");
+      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+  const recordLatexRecent = (symbol) => {
+    try {
+      const next = [symbol.command, ...readLatexRecent().filter((item) => item !== symbol.command)].slice(0, 18);
+      window.localStorage.setItem(latexRecentKey, JSON.stringify(next));
+    } catch { /* 本地存储不可用时不影响插入 */ }
+  };
+  const recentLatexSymbols = () => readLatexRecent()
+    .map((command) => latexSymbols.find((symbol) => symbol.command === command))
+    .filter(Boolean);
+  const latexSubsequence = (needle, haystack) => {
+    if (!needle) return true;
+    let index = 0;
+    for (const char of haystack) {
+      if (char === needle[index]) index += 1;
+      if (index >= needle.length) return true;
+    }
+    return false;
+  };
+  const scoreLatexSymbol = (symbol, query) => {
+    const command = symbol.command.toLocaleLowerCase();
+    const bare = command.replace(/^\\+/, "");
+    const aliases = symbol.aliases.map((alias) => alias.toLocaleLowerCase());
+    if (bare === query || command === query || command === `\\${query}`) return 0;
+    if (bare.startsWith(query)) return 1;
+    if (symbol.glyph === query || aliases.some((alias) => alias === query)) return 2;
+    if (aliases.some((alias) => alias.startsWith(query))) return 3;
+    if (bare.includes(query)) return 4;
+    if (aliases.some((alias) => alias.includes(query))) return 5;
+    if (latexSubsequence(query, bare)) return 6;
+    if (aliases.some((alias) => latexSubsequence(query, alias))) return 7;
+    return Number.POSITIVE_INFINITY;
+  };
+  const currentLatexResults = () => {
+    const query = latexSearchInput.value.trim().toLocaleLowerCase().replace(/^\\+/, "");
+    if (query) {
+      return latexSymbols
+        .map((symbol, index) => ({ symbol, index, score: scoreLatexSymbol(symbol, query) }))
+        .filter((item) => Number.isFinite(item.score))
+        .sort((a, b) => a.score - b.score || a.index - b.index)
+        .map((item) => item.symbol);
+    }
+    if (latexPickerCategory === "recent") return recentLatexSymbols();
+    if (latexPickerCategory === "all") return [...latexSymbols];
+    return latexSymbols.filter((symbol) => symbol.category === latexPickerCategory);
+  };
+  const latexPreviewHtml = (symbol) => {
+    if (!latexPreviewCache.has(symbol.command)) {
+      latexPreviewCache.set(symbol.command, window.MinxiPreview?.renderLatex?.(symbol.preview) || "");
+    }
+    return latexPreviewCache.get(symbol.command);
+  };
+  const setLatexPickerActive = (index, scroll = false) => {
+    if (!latexPickerResults.length) return;
+    latexPickerActive = Math.min(Math.max(index, 0), latexPickerResults.length - 1);
+    [...latexGrid.querySelectorAll("[data-latex-index]")].forEach((button) => {
+      button.classList.toggle("active", Number(button.dataset.latexIndex) === latexPickerActive);
+    });
+    const symbol = latexPickerResults[latexPickerActive];
+    latexCommandDetail.textContent = symbol.command;
+    latexSymbolDetail.textContent = `${latexCategoryName(symbol.category)} · ${symbol.aliases.join(" · ")}`;
+    if (scroll) latexGrid.querySelector(`[data-latex-index="${latexPickerActive}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+  const renderLatexTabs = () => {
+    const tabs = [{ id: "all", name: "全部" }];
+    if (recentLatexSymbols().length) tabs.push({ id: "recent", name: "最近" });
+    tabs.push(...latexCategories.map(([id, name]) => ({ id, name })));
+    latexTabs.replaceChildren(...tabs.map((tab) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = tab.name;
+      button.dataset.latexCategory = tab.id;
+      button.classList.toggle("active", !latexSearchInput.value.trim() && latexPickerCategory === tab.id);
+      button.setAttribute("aria-pressed", String(latexPickerCategory === tab.id));
+      return button;
+    }));
+  };
+  const renderLatexResults = () => {
+    latexPickerResults = currentLatexResults();
+    latexPickerActive = 0;
+    renderLatexTabs();
+    if (!latexPickerResults.length) {
+      const empty = document.createElement("p");
+      empty.className = "latex-picker-empty";
+      empty.textContent = latexSearchInput.value.trim() ? "没有匹配的符号，换个命令或中文叫法试试。" : "还没有用过的符号，搜一个插入后会出现在这里。";
+      latexGrid.replaceChildren(empty);
+      latexCommandDetail.textContent = "没有匹配的符号";
+      latexSymbolDetail.textContent = "可搜 \\pm、正负、积分、分数等";
+      return;
+    }
+    const nodes = latexPickerResults.map((symbol, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "latex-symbol-card";
+      button.dataset.latexIndex = String(index);
+      button.title = `${symbol.command}（${symbol.aliases.join(" · ")}）`;
+      button.setAttribute("aria-label", `插入 ${symbol.command}，${symbol.aliases.join("、")}`);
+      const preview = document.createElement("span");
+      preview.className = "latex-symbol-preview";
+      if (symbol.glyph) preview.textContent = symbol.glyph;
+      else {
+        const html = latexPreviewHtml(symbol);
+        if (html) preview.innerHTML = html;
+        else preview.textContent = symbol.preview;
+      }
+      const command = document.createElement("span");
+      command.className = "latex-symbol-name";
+      command.textContent = symbol.command;
+      button.append(preview, command);
+      return button;
+    });
+    latexGrid.replaceChildren(...nodes);
+    setLatexPickerActive(0);
+  };
+  const restoreLatexEditorFocus = (selection = latexPickerSelection) => {
+    el.f.body.focus({ preventScroll: true });
+    if (!selection) return;
+    const start = Math.min(selection.start, el.f.body.value.length);
+    const end = Math.min(selection.end, el.f.body.value.length);
+    el.f.body.selectionStart = start;
+    el.f.body.selectionEnd = end;
+  };
+  const openLatexPicker = () => {
+    latexPickerSelection = {
+      start: el.f.body.selectionStart ?? el.f.body.value.length,
+      end: el.f.body.selectionEnd ?? el.f.body.value.length,
+    };
+    latexPickerCategory = "all";
+    latexSearchInput.value = "";
+    latexPicker.hidden = false;
+    renderLatexResults();
+    setTimeout(() => latexSearchInput.focus(), 0);
+  };
+  const closeLatexPicker = (restoreFocus = true) => {
+    if (latexPicker.hidden) return;
+    latexPicker.hidden = true;
+    if (restoreFocus) restoreLatexEditorFocus();
+  };
+  const insertLatexSymbol = (symbol) => {
+    if (!symbol) return;
+    recordLatexRecent(symbol);
+    const saved = latexPickerSelection || {
+      start: el.f.body.selectionStart ?? el.f.body.value.length,
+      end: el.f.body.selectionEnd ?? el.f.body.value.length,
+    };
+    const start = Math.min(saved.start, el.f.body.value.length);
+    const end = Math.min(saved.end, el.f.body.value.length);
+    el.f.body.value = el.f.body.value.slice(0, start) + symbol.insert + el.f.body.value.slice(end);
+    latexPicker.hidden = true;
+    el.f.body.focus({ preventScroll: true });
+    el.f.body.selectionStart = start + symbol.cursor[0];
+    el.f.body.selectionEnd = start + symbol.cursor[1];
+    el.f.body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    updatePreview();
+  };
+  latexTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-latex-category]");
+    if (!button) return;
+    latexPickerCategory = button.dataset.latexCategory;
+    latexSearchInput.value = "";
+    renderLatexResults();
+    latexSearchInput.focus();
+  });
+  latexGrid.addEventListener("mouseover", (event) => {
+    const button = event.target.closest("[data-latex-index]");
+    if (button) setLatexPickerActive(Number(button.dataset.latexIndex));
+  });
+  latexGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-latex-index]");
+    if (button) insertLatexSymbol(latexPickerResults[Number(button.dataset.latexIndex)]);
+  });
+  latexSearchInput.addEventListener("input", renderLatexResults);
+  latexSearchInput.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLatexPicker();
+      return;
+    }
+    if (!latexPickerResults.length) return;
+    const columns = Math.max(1, (window.getComputedStyle(latexGrid).gridTemplateColumns || "").split(" ").filter(Boolean).length || 6);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setLatexPickerActive(latexPickerActive + columns, true);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setLatexPickerActive(latexPickerActive - columns, true);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const collapsed = latexSearchInput.selectionStart === latexSearchInput.selectionEnd;
+      const atBoundary = event.key === "ArrowLeft"
+        ? collapsed && latexSearchInput.selectionStart === 0
+        : collapsed && latexSearchInput.selectionStart === latexSearchInput.value.length;
+      if (atBoundary) {
+        event.preventDefault();
+        setLatexPickerActive(latexPickerActive + (event.key === "ArrowLeft" ? -1 : 1), true);
+      }
+    } else if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      insertLatexSymbol(latexPickerResults[latexPickerActive]);
+    }
+  });
+  $("#close-latex-picker").addEventListener("click", () => closeLatexPicker());
+  $("#latex-picker-backdrop").addEventListener("click", () => closeLatexPicker());
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !latexPicker.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeLatexPicker();
+    }
+  }, true);
+  el.f.body.addEventListener("keydown", (event) => {
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "ArrowUp" && !event.isComposing) {
+      event.preventDefault();
+      openLatexPicker();
+    }
+  });
+  $("#insert-latex-symbol").addEventListener("click", openLatexPicker);
+
   $("#insert-math").addEventListener("click", () => {
     insertAtCursor(el.f.body, "\n\n$$\nf(n) = \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n");
   });
