@@ -103,20 +103,32 @@ test("admin marks a published:false post as private and gives it no public view 
   }
 });
 
+test("admin editor shows a published:false post as private on the toggle buttons", async () => {
+  const { dom, $ } = await setup(postText("published: false"));
+  try {
+    listButton($, "编辑").click();
+    await wait(() => $("#editor-status").textContent.includes("已加载"));
+    assert.equal($('[data-visibility="private"]').getAttribute("aria-pressed"), "true", "打开私密文章时私密按钮选中");
+    assert.equal($('[data-visibility="public"]').getAttribute("aria-pressed"), "false");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("admin editor round-trips public/private through published:false", async () => {
   const { dom, $, files } = await setup(postText());
   try {
     listButton($, "编辑").click();
     await wait(() => $("#editor-status").textContent.includes("已加载"));
-    assert.equal($("#f-visibility").value, "public", "没有 published:false 时默认是公开");
+    assert.equal($('[data-visibility="public"]').getAttribute("aria-pressed"), "true", "没有 published:false 时默认是公开");
 
-    $("#f-visibility").value = "private";
+    $('[data-visibility="private"]').click();
     $("#save-post").click();
     await wait(() => files.get(postPath).text.includes("published: false") && !$("#save-post").disabled);
     assert.match($("#editor-status").textContent, /私密文章/);
     assert.match($("#post-list").textContent, /私密（仅后台可见）/);
 
-    $("#f-visibility").value = "public";
+    $('[data-visibility="public"]').click();
     $("#save-post").click();
     await wait(() => !files.get(postPath).text.includes("published:") && !$("#save-post").disabled);
     assert.match($("#editor-status").textContent, /发布地址/);

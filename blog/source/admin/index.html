@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css?v=card-link-1">
-  <link rel="stylesheet" href="./admin.css?v=latex-picker-1">
+  <link rel="stylesheet" href="./admin.css?v=editor-fix-1">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
@@ -17,7 +17,7 @@
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=graph-adjust-1" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=graph-adjust-1" defer></script>
+  <script src="./admin.js?v=editor-fix-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -271,9 +271,8 @@
           </select>
         </label>
         <div class="field pin-field"><span>置顶</span><div class="preview-modes" role="group" aria-label="置顶设置"><button class="btn ghost small" type="button" data-pin="off" aria-pressed="true">不置顶</button><button class="btn ghost small" type="button" data-pin="on" aria-pressed="false">置顶</button></div><p class="pin-hint" id="pin-hint" aria-live="polite"></p></div>
-        <label class="field"><span>可见性</span><select id="f-visibility"><option value="public">公开（发布到站点）</option><option value="private">私密（仅后台可见）</option></select></label>
+        <div class="field visibility-field"><span>可见性</span><div class="preview-modes" role="group" aria-label="文章可见性"><button class="btn ghost small" type="button" data-visibility="public" aria-pressed="true">公开</button><button class="btn ghost small" type="button" data-visibility="private" aria-pressed="false">私密</button></div><p class="visibility-hint" id="visibility-hint" aria-live="polite"></p></div>
         <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
-        <p class="muted small wide">私密文章保存为 <code>published: false</code>，不会生成公开文章页，也不会出现在首页、归档、分类、标签和搜索中；这不是密码保护，源码仍保存在 GitHub 仓库中。</p>
         <label class="checkline wide"><input id="f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
       </div>
       <p class="muted small">
@@ -288,7 +287,7 @@
             <button class="btn ghost small" type="button" data-editor-mode="edit" aria-pressed="false">编辑</button>
             <button class="btn ghost small" type="button" data-editor-mode="split" aria-pressed="true">分屏</button>
             <button class="btn ghost small" type="button" data-editor-mode="preview" aria-pressed="false">预览</button>
-            <button class="btn ghost small" type="button" data-editor-mode="zen" aria-pressed="false" title="只留正文编辑区，隐藏其余后台面板（Esc 退出）">纯净</button>
+            <button class="btn ghost small" type="button" data-editor-mode="zen" aria-pressed="false" title="隐藏后台其余面板，专注分屏写作（Esc 退出）">纯净</button>
           </div>
           <button class="btn ghost small" id="insert-math" type="button">插入公式</button>
           <button class="btn ghost small" id="insert-latex-symbol" type="button" title="在正文编辑区按 Shift + ↑ 也可打开">LaTeX 符号 <kbd>Shift</kbd>+<kbd>↑</kbd></button>
@@ -314,7 +313,18 @@
           <button class="btn ghost small" id="insert-more" type="button">插入 &lt;!-- more --&gt;</button>
         </div>
       </div>
-      <p class="muted small">实时预览仅在本地浏览器生成，不会保存或发布。行内公式：<code>$a_i^2$</code>；独立公式：<code>$$</code> 单独成行。在正文编辑区按 <kbd>Shift</kbd>+<kbd>↑</kbd> 可搜索并插入 LaTeX 符号（可搜 <code>\pm</code>、正负、积分、分数等中文叫法）。折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>；可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）；用 <code>algo: mst</code> 之类的一行可预设图算法，<code>algo: reader</code> 让读者自选，<code>algo: none</code> 不显示算法（「插入可视化图」下拉会帮你写好这一行，已有图改这一行即可）。</p>
+      <details class="editor-guide">
+        <summary>写作说明与语法速查（点开查看）</summary>
+        <div class="editor-guide-body">
+          <p>实时预览仅在本地浏览器生成，不会保存或发布。</p>
+          <ul>
+            <li>公式：行内 <code>$a_i^2$</code>；独立公式用 <code>$$</code> 单独成行。正文区按 <kbd>Shift</kbd>+<kbd>↑</kbd> 可搜索并插入 LaTeX 符号（可搜 <code>\pm</code>、正负、积分、分数等中文叫法）。</li>
+            <li>折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</li>
+            <li>函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>。</li>
+            <li>可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）；<code>algo: mst</code> 这类一行可预设图算法，<code>algo: reader</code> 让读者自选，<code>algo: none</code> 不显示算法（「插入可视化图」下拉会帮你写好）。预览里的图还能点「调整点位」拖动节点写回坐标。</li>
+          </ul>
+        </div>
+      </details>
       <div class="writing-workspace" id="writing-workspace" data-mode="split">
       <textarea aria-label="正文 Markdown" id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
       <iframe id="post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>

@@ -671,15 +671,14 @@ code {
 #post-preview { display: block; width: 100%; height: 100%; min-height: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); box-sizing: border-box; }
 .writing-workspace[data-mode="edit"], .writing-workspace[data-mode="preview"] { grid-template-columns: minmax(0, 1fr); }
 .writing-workspace[data-mode="edit"] #post-preview, .writing-workspace[data-mode="preview"] #f-body { display: none; }
-/* 纯净（专注）编辑：只留正文编辑区，隐藏顶栏与元信息表单，写长文不分心；Esc 或切回其它模式退出。 */
-.writing-workspace[data-mode="zen"] { grid-template-columns: minmax(0, 1fr); height: calc(100vh - 170px); min-height: 480px; }
-.writing-workspace[data-mode="zen"] #post-preview { display: none; }
-.writing-workspace[data-mode="zen"] .code-area { font-size: 16px; line-height: 1.85; padding: 22px 26px; }
+/* 纯净（专注）模式：隐藏顶栏与元信息表单，但保留左编辑右预览的专注分屏；Esc 或切回其它模式退出。 */
+.writing-workspace[data-mode="zen"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: calc(100vh - 160px); min-height: 480px; }
+.writing-workspace[data-mode="zen"] .code-area { font-size: 15px; line-height: 1.85; padding: 20px 22px; }
 body.zen-editing .admin-topbar,
 body.zen-editing #view-editor .panel-head,
 body.zen-editing #view-editor .form-grid,
 body.zen-editing #view-editor > .muted { display: none; }
-body.zen-editing .admin-main { max-width: 920px; }
+body.zen-editing .admin-main { max-width: 1440px; padding-top: 14px; }
 @media (max-width: 820px) {
   .writing-workspace { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .writing-workspace .code-area, #post-preview { height: 50vh; min-height: 320px; }
@@ -834,14 +833,47 @@ body.zen-editing .admin-main { max-width: 920px; }
   }
 }
 
-/* 置顶开关复用「编辑 / 分屏 / 预览」的按钮样式 */
-.pin-field {
+/* 置顶与可见性开关复用「编辑 / 分屏 / 预览」的按钮样式 */
+.pin-field,
+.visibility-field {
   margin-bottom: 14px;
 }
-.pin-hint {
+.pin-hint,
+.visibility-hint {
   margin: 8px 2px 0;
   font-size: 12px;
   color: var(--muted);
+}
+/* 写作说明折叠框：默认收起，不再让大段介绍挤占编辑页。 */
+.editor-guide {
+  margin: 4px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.editor-guide > summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+  user-select: none;
+}
+.editor-guide > summary:hover {
+  color: var(--accent);
+}
+.editor-guide-body {
+  border-top: 1px solid var(--line);
+  padding: 10px 16px 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.9;
+}
+.editor-guide-body p {
+  margin: 0 0 6px;
+}
+.editor-guide-body ul {
+  margin: 0;
+  padding-left: 20px;
 }
 
 /* ------------------------------------------------------------------

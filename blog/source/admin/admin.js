@@ -143,7 +143,6 @@
       tags: $("#f-tags"),
       accent: $("#f-accent"),
       description: $("#f-description"),
-      visibility: $("#f-visibility"),
       sample: $("#f-sample"),
       body: $("#f-body"),
     },
@@ -482,6 +481,31 @@
   pinButtons.forEach((button) =>
     button.addEventListener("click", () => setPinned(button.dataset.pin === "on")),
   );
+
+  // 可见性按钮：与置顶一样二选一，状态保存在 visibility 变量里，
+  // 写入 front matter 时 private 对应 published: false。
+  let visibility = "public";
+  const visibilityButtons = document.querySelectorAll("[data-visibility]");
+  const visibilityHint = document.querySelector("#visibility-hint");
+  function setVisibility(value) {
+    visibility = value === "private" ? "private" : "public";
+    visibilityButtons.forEach((button) => {
+      const on = button.dataset.visibility === visibility;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", String(on));
+    });
+    if (visibilityHint)
+      visibilityHint.textContent = visibility === "private"
+        ? "私密：不生成公开页面，也不进首页、归档与搜索（不是密码保护，源码仍在仓库中）。"
+        : "公开：保存并构建后发布到站点。";
+  }
+  visibilityButtons.forEach((button) =>
+    button.addEventListener("click", () => {
+      setVisibility(button.dataset.visibility);
+      updatePreview();
+    }),
+  );
+  setVisibility("public");
 
   function buildMarkdown(fields) {
     const lines = ["---"];
@@ -1185,7 +1209,7 @@
     const slug = el.f.slug.value.trim();
     const dateValue = fromDateInput(el.f.date.value);
     const valid = /^[a-z0-9][a-z0-9-]*$/.test(slug);
-    el.urlPreview.textContent = el.f.visibility.value === "private"
+    el.urlPreview.textContent = visibility === "private"
       ? "私密文章（不会生成公开页面）"
       : dateValue && valid ? postUrl(dateValue, slug) : "/…";
     const taken = [...postIndex.entries()].some(
@@ -1216,6 +1240,8 @@
   // 预览顶部当前停在哪个源码行块上（行号 + 块内偏移像素）。只记比例时正文一变长
   // 就会飘到别的内容上；按源码行锚点恢复，重渲染后停的还是同一段内容。
   let previewAnchor = null;
+  let editorScrollRatio = 0;
+  let editorAnchor = null;
   const previewFrame = $("#post-preview");
   // 双向滚动同步（参考行锚点同步法）：预览块带源码行号，编辑区用隐藏镜像层
   // 量出每一行的像素位置，两边按锚点插值对齐内容，而不是按总高度百分比硬拉；
@@ -1241,6 +1267,35 @@
     if (!Number.isFinite(max) || max <= 0) return;
     const value = Math.min(1, Math.max(0, ratio || 0)) * max;
     if (axis === "top") element.scrollTop = value; else element.scrollLeft = value;
+  };
+  const rememberEditorScroll = () => {
+    editorScrollRatio = scrollRatioFor(el.f.body, "top");
+  };
+  const captureEditorAnchor = () => {
+    if (!lineMirror?.children?.length) return;
+    const y = el.f.body.scrollTop || 0;
+    const children = lineMirror.children;
+    let index = 0;
+    for (let i = 0; i < children.length; i++) {
+      if ((children[i].offsetTop || 0) <= y + 1) index = i;
+      else break;
+    }
+    const lineEl = children[index];
+    if (!lineEl) return;
+    const offset = Math.max(0, y - (lineEl.offsetTop || 0));
+    editorAnchor = {
+      line: index + 1,
+      ratio: lineEl.offsetHeight > 0 ? offset / lineEl.offsetHeight : 0,
+    };
+  };
+  const previewTopForEditorAnchor = (scroll) => {
+    if (!editorAnchor || !scroll) return null;
+    const doc = previewFrame.contentDocument;
+    if (!doc) return null;
+    const block = doc.querySelector(`.article-content > [data-source-line="${editorAnchor.line}"]`);
+    if (!block) return null;
+    const rect = block.getBoundingClientRect();
+    return rect.top + (scroll.scrollTop || 0) + editorAnchor.ratio * rect.height;
   };
   const capturePreviewAnchor = () => {
     const doc = previewFrame.contentDocument;
@@ -1349,25 +1404,35 @@
     const targetTop = Math.max(0, top || 0);
     const targetLeft = Math.max(0, left || 0);
     if (Math.abs((element.scrollTop || 0) - targetTop) < 1 && Math.abs((element.scrollLeft || 0) - targetLeft) < 1) return;
-    syncGuard = { side, until: syncNow() + 250, top: targetTop, left: targetLeft };
+    syncGuard = { side, until: syncNow() + 800, top: targetTop, left: targetLeft };
     element.scrollTop = targetTop;
     element.scrollLeft = targetLeft;
     if (side === "preview") rememberPreviewScroll(element);
   };
   const isSyncEcho = (side, element) => Boolean(element)
     && syncGuard.side === side && syncNow() <= syncGuard.until
-    && Math.abs((element.scrollTop || 0) - syncGuard.top) <= 2
-    && Math.abs((element.scrollLeft || 0) - syncGuard.left) <= 2;
+    && Math.abs((element.scrollTop || 0) - syncGuard.top) <= 6
+    && Math.abs((element.scrollLeft || 0) - syncGuard.left) <= 6;
   const syncPreviewToEditor = () => {
     const scroll = previewFrame.contentDocument?.scrollingElement;
     if (!scroll) return;
     lastScrollSource = "editor";
+    rememberEditorScroll();
     ensureScrollAnchors();
+    captureEditorAnchor();
     const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    const top = scrollAnchors.length
-      ? interpolateScroll(el.f.body.scrollTop || 0, "ta", "pv", maxTa, maxPv)
-      : (maxTa > 0 ? ((el.f.body.scrollTop || 0) / maxTa) * maxPv : 0);
+    // 三级对齐：源码行锚点 → 锚点插值 → 滚动比例。编辑区已经滚下去时，
+    // 前两级万一失效也不能把预览带回最前端，所以比例兜底始终保留。
+    let top = previewTopForEditorAnchor(scroll);
+    if (!Number.isFinite(top)) {
+      top = scrollAnchors.length
+        ? interpolateScroll(el.f.body.scrollTop || 0, "ta", "pv", maxTa, maxPv)
+        : (maxTa > 0 ? ((el.f.body.scrollTop || 0) / maxTa) * maxPv : 0);
+    }
+    if ((!Number.isFinite(top) || top <= 0) && editorScrollRatio > 0 && maxPv > 0) {
+      top = editorScrollRatio * maxPv;
+    }
     setSyncedScroll("preview", scroll, top, (scrollRatioFor(el.f.body, "left") || 0) * Math.max(0, scroll.scrollWidth - scroll.clientWidth));
   };
   const syncEditorToPreview = () => {
@@ -1435,6 +1500,7 @@
     if (isSyncEcho("editor", el.f.body)) return;
     lastScrollSource = "editor";
     lastManualScrollAt = syncNow();
+    rememberEditorScroll();
     queueScrollSync("editor");
   });
   // 滚轮先于 scroll 事件到达，先排一次同步，位置在帧回调里按最新 scrollTop 读。
@@ -1560,6 +1626,9 @@
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
           rememberPreviewScroll(doc.scrollingElement);
           capturePreviewAnchor();
+          rememberEditorScroll();
+          ensureScrollAnchors();
+          captureEditorAnchor();
         }
       }
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
@@ -1586,6 +1655,12 @@
       item.setAttribute("aria-pressed", String(item.dataset.editorMode === mode));
     });
     renderPostPreview();
+    // 从纯编辑切回带预览的模式时，按编辑区当前滚动位置把预览对齐过来，
+    // 不能让预览从最前端开始；布局刚变，行锚点也要重算。
+    scrollAnchorsDirty = true;
+    if (mode === "split" || mode === "preview" || mode === "zen") {
+      scheduleFrame(() => syncPreviewToEditor());
+    }
     if (mode === "zen") el.f.body.focus();
   };
   $$('[data-editor-mode]').forEach((button) => {
@@ -2115,7 +2190,7 @@
       el.f.description.value = String(data.description || "");
       el.f.accent.value = String(data.accent || "");
       el.f.sample.checked = String(data.sample || "") === "true";
-      el.f.visibility.value = String(data.published || "") === "false" ? "private" : "public";
+      setVisibility(String(data.published || "") === "false" ? "private" : "public");
       setPinned(Number(data.sticky) > 0);
       el.f.body.value = body.replace(/^\n+/, "");
       snapshots.editor = editorSnapshotValue();
@@ -2140,7 +2215,7 @@
     el.f.description.value = "";
     el.f.accent.value = "";
     el.f.sample.checked = false;
-    el.f.visibility.value = "public";
+    setVisibility("public");
     setPinned(false);
     el.f.body.value = "";
     delete el.f.slug.dataset.touched;
@@ -2174,7 +2249,7 @@
       description: el.f.description.value.trim(),
       accent: el.f.accent.value,
       sample: el.f.sample.checked,
-      visibility: el.f.visibility.value === "private" ? "private" : "public",
+      visibility,
       pinned,
       body: el.f.body.value,
       path: `${CONFIG.postsDir}/${slug}.md`,
@@ -2268,7 +2343,6 @@
   }
   el.cancelEdit.addEventListener("click", leaveEditor);
   el.f.date.addEventListener("input", updatePreview);
-  el.f.visibility.addEventListener("change", updatePreview);
   el.f.title.addEventListener("input", () => {
     if (editing?.isNew && !el.f.slug.dataset.touched) {
       el.f.slug.value = slugify(el.f.title.value);
@@ -2323,7 +2397,7 @@
       accent: el.f.accent.value,
       description: el.f.description.value,
       sample: el.f.sample.checked,
-      visibility: el.f.visibility.value,
+      visibility,
       pinned,
       body: el.f.body.value,
     });

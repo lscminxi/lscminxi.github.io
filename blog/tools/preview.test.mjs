@@ -329,7 +329,8 @@ test('zen (pure) editor mode hides the chrome, keeps the draft and exits with Es
   assert.equal(field.value, '纯净模式里写的草稿', '切换模式不丢未保存内容');
   const css = await readFile('source/admin/admin.css', 'utf8');
   assert.match(css, /body\.zen-editing \.admin-topbar/, '纯净模式隐藏后台顶栏');
-  assert.match(css, /\.writing-workspace\[data-mode="zen"\] #post-preview \{[^}]*display: none/, '纯净模式隐藏预览区');
+  assert.match(css, /\.writing-workspace\[data-mode="zen"\] \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/, '纯净模式是左编辑右预览的专注分屏');
+  assert.ok(!/\.writing-workspace\[data-mode="zen"\] #post-preview \{[^}]*display: none/.test(css), '纯净模式不再隐藏预览区');
   w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
   assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'split', 'Esc 退回分屏');
   assert.ok(!w.document.body.classList.contains('zen-editing'));
@@ -495,5 +496,82 @@ test('admin writes dragged graph positions back into the matching graph fence', 
   assert.match(field.value, /node: A ; x=0 ; y=0/, '第一张图的源码不被改动');
   fire({ graphIndex: 1, reset: true, positions: {} });
   assert.doesNotMatch(field.value.split('```graph')[2], /x=|y=/, '重置会删掉该图的 x/y 坐标恢复自动布局');
+  editor.window.close();
+});
+
+test('editor-lead scrolling syncs the preview and re-render does not jump to the top', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  const doc = frame.contentDocument;
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+
+  // 在编辑区滚到一半：预览必须被带到对应位置（此前报修编辑侧不起效）。
+  editorTop = 400;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 700, '编辑区滚动应带动预览同步到对应位置');
+
+  // 继续输入触发重新渲染：编辑区是主导侧，预览仍停在对应位置，不得跳回最前端。
+  field.value = '第一段改了一点\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const renderedDoc = frame.contentDocument;
+  if (!renderedDoc.scrollingElement) {
+    Object.defineProperty(renderedDoc, 'scrollingElement', { configurable: true, get: () => renderedDoc.documentElement });
+  }
+  metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(previewTop, 700, '编辑区主导时重新渲染后预览不回顶部');
+  editor.window.close();
+});
+
+test('editor guide is folded and visibility uses pin-style toggle buttons', async () => {
+  const html = await readFile('source/admin/index.html', 'utf8');
+  assert.match(html, /<details class="editor-guide">/, '写作介绍应放进折叠框');
+  assert.ok(!/<details class="editor-guide" open/.test(html), '介绍折叠框默认收起');
+  assert.equal(html.includes('id="f-visibility"'), false, '可见性不再用下拉框');
+  assert.ok(html.includes('data-visibility="public"') && html.includes('data-visibility="private"'), '可见性是公开/私密按钮组');
+  const editor = new JSDOM(html, { url: 'https://preview.example/admin/', runScripts: 'outside-only' });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Visibility toggle must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const priv = w.document.querySelector('[data-visibility="private"]');
+  const pub = w.document.querySelector('[data-visibility="public"]');
+  assert.equal(pub.getAttribute('aria-pressed'), 'true', '默认公开');
+  priv.click();
+  assert.equal(priv.getAttribute('aria-pressed'), 'true', '点私密后按钮选中');
+  assert.equal(pub.getAttribute('aria-pressed'), 'false');
+  assert.match(w.document.querySelector('#visibility-hint').textContent, /私密/, '私密说明跟随按钮状态');
+  assert.match(w.document.querySelector('#url-preview').textContent, /私密文章/, '私密时发布地址提示同步更新');
+  pub.click();
+  assert.equal(pub.getAttribute('aria-pressed'), 'true', '可切回公开');
   editor.window.close();
 });
