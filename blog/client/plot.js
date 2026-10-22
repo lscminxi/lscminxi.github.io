@@ -564,11 +564,50 @@ function initGraph(figure) {
     ? '<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><button type="button" data-graph-algo="components" aria-pressed="false">连通分量</button><button type="button" data-graph-algo="bridges" aria-pressed="false">桥与割点</button><button type="button" data-graph-algo="mst" aria-pressed="false">最小生成树</button><button type="button" data-graph-algo="bipartite" aria-pressed="false">二分图</button><button type="button" data-graph-algo="vbcc" aria-pressed="false">点双</button><button type="button" data-graph-algo="ebcc" aria-pressed="false">边双</button><button type="button" data-graph-algo="dfs" aria-pressed="false">DFS 树（返祖边）</button><button type="button" data-graph-algo="clear" aria-pressed="false">清除算法</button></div>'
     : (algorithmMode === 'none' ? '' : `<div class="plot-tools graph-algorithms" role="group" aria-label="图算法"><span class="graph-algorithm-fixed">${algorithmLabels[algorithmMode]} · 作者指定</span></div>`);
   toolbar.innerHTML = '<div class="plot-tools" role="group" aria-label="缩放"><button type="button" data-graph-action="zoom-out" aria-label="缩小">−</button><button type="button" data-graph-action="zoom-in" aria-label="放大">＋</button><button type="button" data-graph-action="reset">重置</button></div>' + algorithmToolbar;
+  // 只有后台预览的图带 data-graph-editable：作者可在此调整点位并写回源码；
+  // 正式文章页不生成这个标记，读者仍只能平移、缩放、选点边和看算法。
+  const editableGraph = figure.dataset.graphEditable === 'true';
+  let adjustButton = null;
+  let savePositionsButton = null;
+  let resetPositionButton = null;
+  if (editableGraph) {
+    const adjustTools = doc.createElement('div');
+    adjustTools.className = 'plot-tools graph-adjust-tools';
+    adjustTools.setAttribute('role', 'group');
+    adjustTools.setAttribute('aria-label', '调整图点位置');
+    adjustButton = doc.createElement('button');
+    adjustButton.type = 'button';
+    adjustButton.dataset.graphAdjust = 'true';
+    adjustButton.setAttribute('aria-pressed', 'false');
+    adjustButton.textContent = '调整点位';
+    savePositionsButton = doc.createElement('button');
+    savePositionsButton.type = 'button';
+    savePositionsButton.dataset.graphSavePositions = 'true';
+    savePositionsButton.textContent = '保存点位';
+    savePositionsButton.title = '把当前图中所有点位一次性写回 Markdown 源码';
+    savePositionsButton.hidden = true;
+    resetPositionButton = doc.createElement('button');
+    resetPositionButton.type = 'button';
+    resetPositionButton.dataset.graphResetPositions = 'true';
+    resetPositionButton.textContent = '重置点位';
+    resetPositionButton.hidden = true;
+    adjustTools.append(adjustButton, savePositionsButton, resetPositionButton);
+    toolbar.append(adjustTools);
+  }
   figure.insertBefore(toolbar, stage);
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
-  readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+  const graphReadoutHint = editableGraph
+    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可连续拖动多个节点，最后点「保存点位」一次性写回源码。'
+    : '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+  readout.textContent = graphReadoutHint;
+  // 调整点位时暂时关闭下方详细信息：拖动中坐标读数会不断变行数，撑高/压矮
+  // 这行会让整张图跟着抖。调整期间冻结并隐藏读数（占位高度不变），退出恢复。
+  let graphAdjustMode = false;
+  function updateReadout(text) {
+    if (!graphAdjustMode) readout.textContent = text;
+  }
   stage.after(readout);
   const tooltip = doc.createElement('div');
   tooltip.className = 'plot-tooltip';
@@ -579,7 +618,7 @@ function initGraph(figure) {
   const tooltipDetail = tooltip.querySelector('span');
   const hideTooltip = () => tooltip.classList.remove('is-visible');
   const showDisplay = (event, title, detail = '') => {
-    readout.textContent = detail ? `${title}：${detail}` : title;
+    updateReadout(detail ? `${title}：${detail}` : title);
     tooltipTitle.textContent = title;
     tooltipDetail.textContent = detail;
     tooltipDetail.hidden = !detail;
@@ -684,7 +723,7 @@ function initGraph(figure) {
       if (circle) { if (saved.circleFill === null || saved.circleFill === undefined) circle.removeAttribute('fill'); else circle.setAttribute('fill', saved.circleFill); }
     });
     toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => button.setAttribute('aria-pressed', 'false'));
-    if (restoreReadout) readout.textContent = '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
+    if (restoreReadout) updateReadout(graphReadoutHint);
   };
   const edgeName = (el) => `${nameOf(el.dataset.from)} — ${nameOf(el.dataset.to)}`;
   const edgeDetail = (el) => {
@@ -801,7 +840,7 @@ function initGraph(figure) {
       const forest = graphAnalysis.dfsTree.roots.length > 1;
       algorithmSummary = `${forest ? 'DFS 森林' : 'DFS 树'}（带返祖边）${graphAnalysis.directed ? '（有向边沿箭头方向搜索）' : ''}：根为 ${graphAnalysis.dfsTree.roots.map(nameOf).join('、')} · 访问顺序 ${graphAnalysis.dfsTree.order.map(nameOf).join(' → ')} · 树边 ${treeNames.length} 条${treeNames.length ? `（${treeNames.join('、')}）` : ''} · 返祖边 ${backNames.length} 条${backNames.length ? `（${backNames.join('、')}，橙色虚线）` : ''}${otherNames.length ? ` · 其余边 ${otherNames.length} 条（${otherNames.join('、')}）` : ''}`;
     }
-    readout.textContent = algorithmSummary;
+    updateReadout(algorithmSummary);
   };
   toolbar.querySelectorAll('[data-graph-algo]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -812,6 +851,225 @@ function initGraph(figure) {
   // 作者在图源码里指定了固定算法时，进页面就直接展示该算法，读者只能缩放/平移，不能改算法；
   // algo: reader（缺省）才把算法按钮交给读者自己选，algo: none 则完全不显示算法。
   if (algorithmMode !== 'reader' && algorithmMode !== 'none') applyAlgorithm(algorithmMode);
+
+  /* ---------------- 后台预览：拖动节点调整点位 ----------------
+   * 渲染器把每个点的原始坐标写在 data-node-x/y 上，并把「原始坐标 → SVG 坐标」
+   * 的变换写在 svg 的 data-graph-* 上。拖动时只更新本地 SVG 并实时重画相连
+   * 的边，不触发源码写入或预览重渲染；作者点「保存点位」后，才把换算回
+   * 原始坐标的全部点位一次性发给后台父页面写回 Markdown 源码。 */
+  const graphTransform = {
+    pad: Number(svg.getAttribute('data-graph-pad') || 52),
+    minX: Number(svg.getAttribute('data-graph-min-x') || 0),
+    minY: Number(svg.getAttribute('data-graph-min-y') || 0),
+    scaleX: Number(svg.getAttribute('data-graph-scale-x') || 1) || 1,
+    scaleY: Number(svg.getAttribute('data-graph-scale-y') || 1) || 1,
+  };
+  const screenToGraphSource = (point) => ({
+    x: graphTransform.minX + (point.x - graphTransform.pad) / graphTransform.scaleX,
+    y: graphTransform.minY + (point.y - graphTransform.pad) / graphTransform.scaleY,
+  });
+  const graphNodes = new Map();
+  nodeEls.forEach((group) => {
+    const circle = group.querySelector('.graph-node');
+    const size = Number(group.dataset.nodeSize || circle?.getAttribute('r') || 20);
+    const screen = {
+      x: Number(circle?.getAttribute('cx') || 0),
+      y: Number(circle?.getAttribute('cy') || 0),
+    };
+    const source = {
+      x: Number(group.dataset.nodeX),
+      y: Number(group.dataset.nodeY),
+    };
+    graphNodes.set(group.dataset.nodeId, {
+      group,
+      size,
+      screen,
+      source: Number.isFinite(source.x) && Number.isFinite(source.y) ? source : screenToGraphSource(screen),
+    });
+  });
+  const graphArrowPoints = (x, y, angle) => {
+    const size = 9;
+    const a1 = angle + Math.PI * 0.82;
+    const a2 = angle - Math.PI * 0.82;
+    return `${x},${y} ${x + size * Math.cos(a1)},${y + size * Math.sin(a1)} ${x + size * Math.cos(a2)},${y + size * Math.sin(a2)}`;
+  };
+  edgeEls.forEach((group) => {
+    if (group.dataset.from === group.dataset.to) {
+      group.dataset.edgeKind = 'loop';
+      group.dataset.edgeOffset = '0';
+      return;
+    }
+    const path = group.querySelector('path.graph-edge-line');
+    if (!path) {
+      group.dataset.edgeKind = 'line';
+      group.dataset.edgeOffset = '0';
+      return;
+    }
+    group.dataset.edgeKind = 'curve';
+    const nums = (path.getAttribute('d') || '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+    const a = graphNodes.get(group.dataset.from)?.screen;
+    const b = graphNodes.get(group.dataset.to)?.screen;
+    let offset = 0;
+    if (nums.length >= 6 && a && b) {
+      const dx = b.x - a.x; const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const ux = dx / dist; const uy = dy / dist;
+      offset = (((nums[2] - (a.x + b.x) / 2) * -uy) + ((nums[3] - (a.y + b.y) / 2) * ux)) / 2;
+    }
+    group.dataset.edgeOffset = String(offset);
+  });
+  const updateGraphEdge = (group) => {
+    const a = graphNodes.get(group.dataset.from);
+    const b = graphNodes.get(group.dataset.to);
+    if (!a || !b) return;
+    const label = group.querySelector('.graph-edge-label');
+    const arrowEl = group.querySelector('polygon');
+    if (group.dataset.edgeKind === 'loop') {
+      const r = a.size + 8;
+      const cy = a.screen.y - a.size - r + 6;
+      group.querySelectorAll('circle').forEach((circle) => {
+        circle.setAttribute('cx', a.screen.x);
+        circle.setAttribute('cy', cy);
+      });
+      if (arrowEl) arrowEl.setAttribute('points', graphArrowPoints(a.screen.x + (r - 4) * 0.72, cy - (r - 4) * 0.72, Math.PI / 4));
+      if (label) {
+        label.setAttribute('x', a.screen.x);
+        label.setAttribute('y', a.screen.y - a.size - 2 * r - 2);
+      }
+      return;
+    }
+    const dx = b.screen.x - a.screen.x;
+    const dy = b.screen.y - a.screen.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const ux = dx / dist; const uy = dy / dist;
+    const offset = Number(group.dataset.edgeOffset || 0);
+    let labelX; let labelY;
+    if (group.dataset.edgeKind === 'curve') {
+      const cxp = (a.screen.x + b.screen.x) / 2 - uy * offset * 2;
+      const cyp = (a.screen.y + b.screen.y) / 2 + ux * offset * 2;
+      const startX = a.screen.x + ux * a.size;
+      const startY = a.screen.y + uy * a.size;
+      const tx = b.screen.x - cxp; const ty = b.screen.y - cyp;
+      const tl = Math.hypot(tx, ty) || 1;
+      const endX = b.screen.x - (tx / tl) * b.size;
+      const endY = b.screen.y - (ty / tl) * b.size;
+      const d = `M${startX} ${startY} Q${cxp} ${cyp} ${endX} ${endY}`;
+      group.querySelectorAll('path').forEach((path) => path.setAttribute('d', d));
+      if (arrowEl) arrowEl.setAttribute('points', graphArrowPoints(endX, endY, Math.atan2(ty, tx)));
+      labelX = 0.25 * startX + 0.5 * cxp + 0.25 * endX;
+      labelY = 0.25 * startY + 0.5 * cyp + 0.25 * endY - 5;
+    } else {
+      const startX = a.screen.x + ux * a.size;
+      const startY = a.screen.y + uy * a.size;
+      const endX = b.screen.x - ux * b.size;
+      const endY = b.screen.y - uy * b.size;
+      group.querySelectorAll('line').forEach((line) => {
+        line.setAttribute('x1', startX); line.setAttribute('y1', startY);
+        line.setAttribute('x2', endX); line.setAttribute('y2', endY);
+      });
+      if (arrowEl) arrowEl.setAttribute('points', graphArrowPoints(endX, endY, Math.atan2(uy, ux)));
+      labelX = (startX + endX) / 2;
+      labelY = (startY + endY) / 2 - 5;
+    }
+    if (label) { label.setAttribute('x', labelX); label.setAttribute('y', labelY); }
+  };
+  const updateGraphEdgesFor = (nodeId) => {
+    edgeEls.forEach((group) => {
+      if (group.dataset.from === nodeId || group.dataset.to === nodeId) updateGraphEdge(group);
+    });
+  };
+  const setGraphNodeScreen = (group, point) => {
+    const state = graphNodes.get(group.dataset.nodeId);
+    if (!state) return;
+    state.screen = { x: point.x, y: point.y };
+    state.source = screenToGraphSource(point);
+    const circle = group.querySelector('.graph-node');
+    const ring = group.querySelector('.graph-node-ring');
+    const label = group.querySelector('.graph-node-label');
+    const sub = group.querySelector('.graph-node-sub');
+    if (circle) { circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); }
+    if (ring) { ring.setAttribute('cx', point.x); ring.setAttribute('cy', point.y); }
+    if (label) { label.setAttribute('x', point.x); label.setAttribute('y', point.y + 4); }
+    if (sub) { sub.setAttribute('x', point.x); sub.setAttribute('y', point.y + state.size + 15); }
+    updateGraphEdgesFor(group.dataset.nodeId);
+  };
+  const roundGraphCoord = (value) => Number(Number(value).toFixed(2));
+  let graphPositionSnapshot = null;
+  let graphPositionsDirty = false;
+  const captureGraphPositions = () => new Map([...graphNodes].map(([id, state]) => [id, {
+    screen: { ...state.screen }, source: { ...state.source },
+  }]));
+  const restoreGraphPositions = (snapshot) => {
+    if (!snapshot) return;
+    snapshot.forEach((position, id) => {
+      const state = graphNodes.get(id);
+      if (state) setGraphNodeScreen(state.group, position.screen);
+    });
+  };
+  const refreshGraphPositionsDirty = () => {
+    graphPositionsDirty = Boolean(graphPositionSnapshot) && [...graphPositionSnapshot].some(([id, position]) => {
+      const state = graphNodes.get(id);
+      return state && (Math.abs(state.screen.x - position.screen.x) > 0.001 || Math.abs(state.screen.y - position.screen.y) > 0.001);
+    });
+  };
+  const commitGraphPositions = (reset = false) => {
+    const positions = {};
+    graphNodes.forEach((state, id) => {
+      positions[id] = { x: roundGraphCoord(state.source.x), y: roundGraphCoord(state.source.y) };
+    });
+    const EventCtor = doc.defaultView?.CustomEvent || CustomEvent;
+    figure.dispatchEvent(new EventCtor('minxi:graph-positions', {
+      bubbles: true,
+      detail: { graphIndex: Number(figure.dataset.graphIndex || 0), reset, positions },
+    }));
+  };
+  let draggedGraphNode = null;
+  let graphNodeDrag = null;
+  let suppressGraphClick = false;
+  const setGraphAdjustMode = (on) => {
+    if (on && !graphAdjustMode) {
+      graphPositionSnapshot = captureGraphPositions();
+      graphPositionsDirty = false;
+    }
+    if (!on && graphAdjustMode) {
+      // 未点「保存点位」就退出调整：丢弃本地暂存，恢复进入调整前的位置，
+      // 不向源码派发任何坐标，也不会触发重新渲染。
+      if (graphPositionsDirty) restoreGraphPositions(graphPositionSnapshot);
+      graphPositionSnapshot = null;
+      graphPositionsDirty = false;
+    }
+    graphAdjustMode = on;
+    figure.classList.toggle('is-adjusting', on);
+    if (adjustButton) {
+      adjustButton.setAttribute('aria-pressed', String(on));
+      adjustButton.textContent = on ? '退出调整' : '调整点位';
+    }
+    if (savePositionsButton) savePositionsButton.hidden = !on;
+    if (resetPositionButton) resetPositionButton.hidden = !on;
+    // 进入调整先隐藏读数且不改其文本，占位高度保持不变，拖动全程零抖动。
+    readout.style.visibility = on ? 'hidden' : '';
+    if (!on) readout.textContent = graphReadoutHint;
+  };
+  if (adjustButton) adjustButton.addEventListener('click', () => setGraphAdjustMode(!graphAdjustMode));
+  if (savePositionsButton) {
+    savePositionsButton.addEventListener('click', () => {
+      // 调整完毕的统一提交点：无论之前连续拖了多少个点，只派发一次事件，
+      // 后台据此一次性写回全部坐标并只重新渲染一次。
+      commitGraphPositions(false);
+      graphPositionSnapshot = captureGraphPositions();
+      graphPositionsDirty = false;
+      savePositionsButton.textContent = '已保存';
+      const view = doc.defaultView;
+      const restoreLabel = () => { savePositionsButton.textContent = '保存点位'; };
+      if (view?.setTimeout) view.setTimeout(restoreLabel, 1400); else setTimeout(restoreLabel, 1400);
+    });
+  }
+  if (resetPositionButton) {
+    resetPositionButton.addEventListener('click', () => {
+      commitGraphPositions(true);
+      updateReadout('已请求重置点位：恢复自动布局…');
+    });
+  }
 
   toolbar.querySelectorAll('[data-graph-action]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -826,6 +1084,22 @@ function initGraph(figure) {
   let pinchStart = null;
   stage.addEventListener('pointerdown', (event) => {
     if (event.button !== undefined && event.button > 0) return;
+    const nodeGroup = editableGraph && graphAdjustMode ? event.target?.closest?.('.graph-node-group') : null;
+    if (nodeGroup && stage.contains(nodeGroup) && !pointers.size) {
+      const point = svgPoint(event);
+      const state = graphNodes.get(nodeGroup.dataset.nodeId);
+      if (point && state) {
+        pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+        try { stage.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
+        draggedGraphNode = nodeGroup;
+        graphNodeDrag = { pointerId: event.pointerId, start: point, screen: { ...state.screen } };
+        stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
+        nodeGroup.classList.add('is-selected', 'is-dragging-node');
+        updateReadout(`点 ${nodeGroup.dataset.nodeLabel || nodeGroup.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（拖动中）`);
+        stage.classList.add('is-dragging');
+        return;
+      }
+    }
     pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
     try { stage.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
     if (pointers.size === 1) dragStart = { clientX: event.clientX, clientY: event.clientY, view: [...current] };
@@ -839,6 +1113,20 @@ function initGraph(figure) {
   stage.addEventListener('pointermove', (event) => {
     if (pointers.has(event.pointerId)) {
       pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+      if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
+        const point = svgPoint(event);
+        const state = graphNodes.get(draggedGraphNode.dataset.nodeId);
+        if (point && state) {
+          const next = {
+            x: clamp(graphNodeDrag.screen.x + point.x - graphNodeDrag.start.x, initial[0] + state.size, initial[0] + initial[2] - state.size),
+            y: clamp(graphNodeDrag.screen.y + point.y - graphNodeDrag.start.y, initial[1] + state.size, initial[1] + initial[3] - state.size),
+          };
+          setGraphNodeScreen(draggedGraphNode, next);
+          refreshGraphPositionsDirty();
+          updateReadout(`点 ${draggedGraphNode.dataset.nodeLabel || draggedGraphNode.dataset.nodeId}：x = ${roundGraphCoord(state.source.x)}，y = ${roundGraphCoord(state.source.y)}（已暂存，保存点位后统一写回）`);
+        }
+        return;
+      }
       const rect = svg.getBoundingClientRect();
       if (pointers.size === 1 && dragStart && rect.width) {
         current = [...dragStart.view];
@@ -871,14 +1159,15 @@ function initGraph(figure) {
       showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
     } else {
       hideTooltip();
-      if (algorithmSummary) readout.textContent = algorithmSummary;
+      if (algorithmSummary) updateReadout(algorithmSummary);
     }
   });
   stage.addEventListener('pointerleave', () => {
     hideTooltip();
-    if (algorithmSummary) readout.textContent = algorithmSummary;
+    if (algorithmSummary) updateReadout(algorithmSummary);
   });
   stage.addEventListener('click', (event) => {
+    if (suppressGraphClick) { suppressGraphClick = false; return; }
     const edge = event.target?.closest?.('.graph-edge-group');
     const group = event.target?.closest?.('.graph-node-group');
     stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
@@ -892,11 +1181,31 @@ function initGraph(figure) {
     }
   });
   const finish = (event) => {
+    if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
+      const group = draggedGraphNode;
+      draggedGraphNode = null;
+      graphNodeDrag = null;
+      group.classList.remove('is-dragging-node');
+      suppressGraphClick = true;
+      refreshGraphPositionsDirty();
+      updateReadout(`点 ${group.dataset.nodeLabel || group.dataset.nodeId} 的位置已暂存，点「保存点位」统一写回源码`);
+    }
+    pointers.delete(event.pointerId);
+    if (!pointers.size) { dragStart = null; pinchStart = null; stage.classList.remove('is-dragging'); }
+  };
+  const cancelDrag = (event) => {
+    if (draggedGraphNode && graphNodeDrag?.pointerId === event.pointerId) {
+      setGraphNodeScreen(draggedGraphNode, graphNodeDrag.screen);
+      refreshGraphPositionsDirty();
+      draggedGraphNode.classList.remove('is-dragging-node');
+      draggedGraphNode = null;
+      graphNodeDrag = null;
+    }
     pointers.delete(event.pointerId);
     if (!pointers.size) { dragStart = null; pinchStart = null; stage.classList.remove('is-dragging'); }
   };
   stage.addEventListener('pointerup', finish);
-  stage.addEventListener('pointercancel', finish);
+  stage.addEventListener('pointercancel', cancelDrag);
   stage.addEventListener('wheel', (event) => {
     const point = svgPoint(event);
     if (!point) return;

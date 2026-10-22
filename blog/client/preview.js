@@ -1,4 +1,5 @@
 import { Marked } from 'marked';
+import katex from 'katex';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
 import foldContainers from '../lib/fold-containers.cjs';
@@ -65,6 +66,12 @@ window.MinxiPreview = {
     fragment.querySelectorAll('.md-graph > svg, .md-graph svg').forEach((svg, index) => {
       if (graphViews[index]) svg.setAttribute('data-preview-viewbox', graphViews[index]);
     });
+    // 后台预览专属：图节点可拖动调整，松手后由父页面把坐标写回源码。
+    // 这里只打标记，正式文章页没有 data-graph-editable，读者侧不会开启调整。
+    fragment.querySelectorAll('.md-graph').forEach((figure, index) => {
+      figure.setAttribute('data-graph-editable', 'true');
+      figure.setAttribute('data-graph-index', String(index));
+    });
     const wrapper = document.createElement('div');
     wrapper.append(fragment);
     const content = wrapper.innerHTML;
@@ -74,7 +81,7 @@ window.MinxiPreview = {
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src https: data:;">
       <base href="${escape(location.origin)}/">
-      <link rel="stylesheet" href="/css/main.css?v=nav-7">
+      <link rel="stylesheet" href="/css/main.css?v=graph-save-1">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
       <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:28px;line-height:1.4;margin:0 0 12px}.article-content{min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>文章预览</title></head><body>
@@ -87,5 +94,13 @@ window.MinxiPreview = {
   // 拖动/缩放/读数的监听器全部由父页面挂到 iframe 文档上（同源才可访问）。
   enhance(root) {
     if (root) window.MinxiPlots?.initPlots(root);
+  },
+  // 后台 LaTeX 符号选择器用：只渲染内置符号目录里的单个公式片段。
+  renderLatex(tex) {
+    try {
+      return katex.renderToString(String(tex || ''), { throwOnError: false, displayMode: false });
+    } catch {
+      return '';
+    }
   },
 };

@@ -793,3 +793,77 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
   assert.ok(css.includes('.graph-edge-group.is-algo-back .graph-edge-line'), '返祖边样式');
   assert.ok(css.includes('.graph-node-group.is-dfs-root .graph-node-ring'), 'DFS 根外圈样式');
 });
+
+test('editor preview graph nodes drag locally and save reports all source positions at once', async () => {
+  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
+  const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
+  try {
+    page.window.Element.prototype.getBoundingClientRect = function rect() {
+      return { left: 0, top: 0, right: 680, bottom: 420, width: 680, height: 420, x: 0, y: 0, toJSON() {} };
+    };
+    dom.window.MinxiPreview.enhance(page.window.document);
+    const figure = page.window.document.querySelector('.md-graph');
+    assert.equal(figure.dataset.graphEditable, 'true', '后台预览的图带可调整标记');
+    const adjustButton = figure.querySelector('[data-graph-adjust]');
+    assert.ok(adjustButton, '预览工具栏有「调整点位」');
+    const svg = figure.querySelector('svg');
+    assert.ok(svg.getAttribute('data-graph-scale-x'), '渲染器给出坐标变换供拖动换算');
+    const groupA = svg.querySelector('.graph-node-group[data-node-id="A"]');
+    assert.equal(groupA.dataset.nodeX, '0', '节点带原始坐标');
+
+    // 正式文章页（没有预览标记）不出现调整入口。
+    const publicPage = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+    try {
+      assert.equal(publicPage.window.document.querySelector('[data-graph-adjust]'), null, '读者页没有调整点位');
+    } finally { publicPage.window.close(); }
+
+    let committed = null;
+    let commitCount = 0;
+    page.window.document.addEventListener('minxi:graph-positions', (event) => { committed = event.detail; commitCount += 1; });
+    adjustButton.click();
+    assert.equal(figure.classList.contains('is-adjusting'), true, '进入调整模式');
+    const savePositionsButton = figure.querySelector('[data-graph-save-positions]');
+    assert.ok(savePositionsButton, '调整模式有保存点位按钮');
+    assert.equal(savePositionsButton.hidden, false, '保存点位按钮在调整模式显示');
+    assert.equal(adjustButton.textContent, '退出调整', '调整中按钮显示退出调整');
+    const readout = figure.querySelector('.plot-readout');
+    assert.equal(readout.style.visibility, 'hidden', '调整点位时暂时关闭下方详细信息，避免行数变化抖动');
+    const frozenReadout = readout.textContent;
+    const stage = figure.querySelector('.graph-stage');
+    const circleA = groupA.querySelector('.graph-node');
+    // A 的 SVG 位置约 (52, 280)，画布高 560 映射到 420px 显示高。
+    pointer(page, groupA, 'pointerdown', 52, 210);
+    pointer(page, stage, 'pointermove', 120, 252);
+    assert.equal(Number(circleA.getAttribute('cx')), 120, '拖动中节点实时跟随');
+    assert.equal(readout.textContent, frozenReadout, '拖动中详细信息冻结不更新，行数不变不抖动');
+    pointer(page, stage, 'pointerup', 120, 252);
+    assert.equal(commitCount, 0, '拖完一个点松手不写回源码、不触发重渲染');
+    // 同一轮调整里继续拖同一点：位置只在本地累积，仍然不派发事件。
+    pointer(page, groupA, 'pointerdown', 120, 252);
+    pointer(page, stage, 'pointermove', 150, 280);
+    pointer(page, stage, 'pointerup', 150, 280);
+    assert.equal(commitCount, 0, '连续拖动仍只暂存本地');
+    savePositionsButton.click();
+    assert.equal(commitCount, 1, '调整完毕点保存点位后只统一派发一次');
+    assert.ok(committed, '保存后发出点位写回事件');
+    assert.equal(committed.graphIndex, 0);
+    assert.equal(committed.reset, false);
+    assert.ok(Math.abs(committed.positions.A.x - 17.01) < 0.1, `A 的最终横坐标一次性换算回源码坐标，实际 ${committed.positions.A.x}`);
+    assert.ok(Math.abs(committed.positions.A.y - 24.56) < 0.1, `A 的最终纵坐标一次性换算回源码坐标，实际 ${committed.positions.A.y}`);
+    assert.equal(committed.positions.B.x, 100, '没拖的点保持原横坐标');
+    assert.equal(committed.positions.B.y, 0, '没拖的点保持原纵坐标');
+    const line = svg.querySelector('.graph-edge-group line.graph-edge-line') || svg.querySelectorAll('.graph-edge-group line')[1];
+    assert.ok(Math.abs(Number(line.getAttribute('x1')) - (120 + 20)) < 0.01 || Number(line.getAttribute('x1')) > 52, '相连边端点跟随节点更新');
+    assert.equal(readout.textContent, frozenReadout, '保存后调整模式内仍不更新详细信息（写回提示看后台状态栏）');
+    // 保存后再拖动但不保存就退出：本地恢复到上次保存位置，且不产生第二次写回。
+    pointer(page, groupA, 'pointerdown', 150, 280);
+    pointer(page, stage, 'pointermove', 170, 294);
+    pointer(page, stage, 'pointerup', 170, 294);
+    assert.equal(commitCount, 1, '未保存的后续拖动仍不写回');
+    adjustButton.click();
+    assert.equal(commitCount, 1, '未保存退出不派发写回事件');
+    assert.equal(Number(circleA.getAttribute('cx')), 150, '未保存退出恢复到上次保存位置');
+    assert.equal(readout.style.visibility, '', '退出调整模式后详细信息恢复显示');
+    assert.match(readout.textContent, /拖动平移/, '退出后恢复默认提示');
+  } finally { page.window.close(); }
+});

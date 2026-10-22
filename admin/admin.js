@@ -482,6 +482,31 @@
     button.addEventListener("click", () => setPinned(button.dataset.pin === "on")),
   );
 
+  // 可见性按钮：与置顶一样二选一，状态保存在 visibility 变量里，
+  // 写入 front matter 时 private 对应 published: false。
+  let visibility = "public";
+  const visibilityButtons = document.querySelectorAll("[data-visibility]");
+  const visibilityHint = document.querySelector("#visibility-hint");
+  function setVisibility(value) {
+    visibility = value === "private" ? "private" : "public";
+    visibilityButtons.forEach((button) => {
+      const on = button.dataset.visibility === visibility;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", String(on));
+    });
+    if (visibilityHint)
+      visibilityHint.textContent = visibility === "private"
+        ? "私密：不生成公开页面，也不进首页、归档与搜索（不是密码保护，源码仍在仓库中）。"
+        : "公开：保存并构建后发布到站点。";
+  }
+  visibilityButtons.forEach((button) =>
+    button.addEventListener("click", () => {
+      setVisibility(button.dataset.visibility);
+      updatePreview();
+    }),
+  );
+  setVisibility("public");
+
   function buildMarkdown(fields) {
     const lines = ["---"];
     lines.push(`title: ${yamlString(fields.title)}`);
@@ -498,6 +523,7 @@
     if (fields.accent) lines.push(`accent: ${fields.accent}`);
     if (fields.sample) lines.push("sample: true");
     if (fields.pinned) lines.push("sticky: 1");
+    if (fields.visibility === "private") lines.push("published: false");
     lines.push("---", "");
     return `${lines.join("\n")}${fields.body.replace(/^\s+/, "")}\n`;
   }
@@ -797,6 +823,7 @@
           description: String(data.description || ""),
           sample: String(data.sample || "") === "true",
           sticky: Number(data.sticky) > 0,
+          published: String(data.published || "") !== "false",
         });
       } catch (error) {
         if (error.status === 404) return; // File removed while the tree was loading.
@@ -810,6 +837,7 @@
           description: `读取失败：${describeError(error)}`,
           sample: false,
           sticky: false,
+          published: true,
         });
       }
     });
@@ -834,7 +862,8 @@
       title.textContent = post.title;
       const meta = document.createElement("div");
       meta.className = "row-meta";
-      const url = post.date ? postUrl(post.date, fileName(path)) : "";
+      const isPrivate = post.published === false;
+      const url = !isPrivate && post.date ? postUrl(post.date, fileName(path)) : "";
       meta.textContent = [
         path.replace(`${CONFIG.postsDir}/`, ""),
         post.date,
@@ -842,6 +871,7 @@
         post.tags.map((tag) => `#${tag}`).join(" "),
         post.sample ? "示例文章" : "",
         post.sticky ? "置顶" : "",
+        isPrivate ? "私密（仅后台可见）" : "",
         url ? `→ ${url}` : "",
       ]
         .filter(Boolean)
@@ -1179,7 +1209,9 @@
     const slug = el.f.slug.value.trim();
     const dateValue = fromDateInput(el.f.date.value);
     const valid = /^[a-z0-9][a-z0-9-]*$/.test(slug);
-    el.urlPreview.textContent = dateValue && valid ? postUrl(dateValue, slug) : "/…";
+    el.urlPreview.textContent = visibility === "private"
+      ? "私密文章（不会生成公开页面）"
+      : dateValue && valid ? postUrl(dateValue, slug) : "/…";
     const taken = [...postIndex.entries()].some(
       ([path]) => fileName(path) === slug && path !== editing?.path,
     );
@@ -1198,48 +1230,21 @@
   let previewOpenFolds = [];
   let previewPlotViews = [];
   let previewGraphViews = [];
-  let previewScroll = { top: 0, left: 0 };
-  // 滚动位置按比例记，不只记像素：正文变长/变短后重渲染仍停在相对位置，
-  // 不会因为内容高度变了被顶回头部。
-  let previewScrollRatio = { top: 0, left: 0 };
-  let lastScrollSource = "preview";
-  const previewFrame = $("#post-preview");
-  // 双向滚动同步（参考行锚点同步法）：预览块带源码行号，编辑区用隐藏镜像层
-  // 量出每一行的像素位置，两边按锚点插值对齐内容，而不是按总高度百分比硬拉；
-  // 同步只由滚动驱动（rAF 合并一帧一次），给另一侧赋值时记下目标位置，
-  // 它回弹的 scroll 事件按位置识别为回声直接忽略，避免左右来回拉扯发抖。
-  let scrollAnchors = [];
+  // 滚动同步（照参考编辑器 blog-apa.pages.dev 的单向行锚点法）：只由编辑区
+  // 滚动驱动预览，预览滚动不反写编辑区——程序赋值不会再产生「回声滚动」，
+  // 也就没有左右来回拉扯、被带回最前端的问题。编辑区一侧用隐藏镜像层量出
+  // 每一行的像素位置（自动换行也准），预览块带源码行号 data-source-line，
+  // 两侧按锚点分段插值对齐内容，而不是按总高度百分比硬拉；没有锚点时才
+  // 退回比例。重新渲染后同样按编辑区当前的位置重新对齐，编辑区停在哪一
+  // 段，预览就停在哪一段，不会跳回最前端。锚点只依赖镜像层：内容/尺寸变
+  // 化时标脏，停笔约 200ms 空闲时提前重建，下一次滚动不用现算。
   let scrollAnchorsDirty = true;
   let lineMirror = null;
   let syncRaf = 0;
-  let pendingSyncSource = "";
-  let syncGuard = { side: "", until: 0, top: 0, left: 0 };
-  const syncNow = () => (window.performance?.now ? window.performance.now() : Date.now());
+  let mirrorIdleTimer = 0;
+  let previewLoadPending = false;
+  const previewFrame = $("#post-preview");
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
-  const scrollRatioFor = (element, axis) => {
-    if (!element) return 0;
-    const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
-    const value = axis === "top" ? element.scrollTop : element.scrollLeft;
-    return Number.isFinite(max) && max > 0 ? Math.min(1, Math.max(0, (value || 0) / max)) : 0;
-  };
-  const applyScrollRatio = (element, axis, ratio) => {
-    if (!element) return;
-    const max = axis === "top" ? element.scrollHeight - element.clientHeight : element.scrollWidth - element.clientWidth;
-    if (!Number.isFinite(max) || max <= 0) return;
-    const value = Math.min(1, Math.max(0, ratio || 0)) * max;
-    if (axis === "top") element.scrollTop = value; else element.scrollLeft = value;
-  };
-  const rememberPreviewScroll = (scroll) => {
-    if (!scroll) return;
-    previewScroll = { top: scroll.scrollTop || 0, left: scroll.scrollLeft || 0 };
-    // 内容还没完成布局时不要把已记住的比例清零，否则随后的恢复会回到头。
-    const topMax = scroll.scrollHeight - scroll.clientHeight;
-    const leftMax = scroll.scrollWidth - scroll.clientWidth;
-    previewScrollRatio = {
-      top: Number.isFinite(topMax) && topMax > 0 ? scrollRatioFor(scroll, "top") : previewScrollRatio.top,
-      left: Number.isFinite(leftMax) && leftMax > 0 ? scrollRatioFor(scroll, "left") : previewScrollRatio.left,
-    };
-  };
   const ensureLineMirror = () => {
     if (lineMirror) return lineMirror;
     const mirror = document.createElement("div");
@@ -1270,139 +1275,161 @@
       mirror.append(div);
     }
   };
-  const buildScrollAnchors = () => {
-    const doc = previewFrame.contentDocument;
-    const scroll = doc?.scrollingElement;
-    scrollAnchors = [];
-    if (!doc || !scroll) { scrollAnchorsDirty = false; return; }
-    rebuildLineMirror();
+  // 每次同步都按当前文档现算锚点：只取最外层标注块，行位置取镜像层 offsetTop，
+  // 预览位置取块相对预览视口的偏移；非单调的锚点（折叠/表格内的嵌套块）跳过。
+  const collectScrollAnchors = (doc, scroll) => {
+    if (scrollAnchorsDirty) {
+      try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
+      scrollAnchorsDirty = false;
+    }
     const anchors = [];
-    for (const el of doc.querySelectorAll(".article-content > [data-source-line]")) {
-      const line = Number(el.dataset.sourceLine);
-      const lineEl = lineMirror?.children[line - 1];
+    if (!lineMirror?.children?.length) return anchors;
+    for (const block of doc.querySelectorAll("[data-source-line]")) {
+      if (block.parentElement?.closest?.("[data-source-line]")) continue;
+      const line = Number(block.dataset.sourceLine);
+      const lineEl = lineMirror.children[line - 1];
       if (!Number.isInteger(line) || line < 1 || !lineEl) continue;
       const taY = lineEl.offsetTop;
-      const pvY = el.getBoundingClientRect().top + (scroll.scrollTop || 0);
+      const pvY = block.getBoundingClientRect().top + (scroll.scrollTop || 0);
       if (!Number.isFinite(taY) || !Number.isFinite(pvY)) continue;
       const prev = anchors[anchors.length - 1];
       if (prev && (taY <= prev.ta || pvY <= prev.pv)) continue;
       anchors.push({ ta: taY, pv: pvY });
     }
-    scrollAnchors = anchors;
-    scrollAnchorsDirty = false;
+    return anchors;
   };
-  const interpolateScroll = (value, fromKey, toKey, fromMax, toMax) => {
-    const ratioTarget = fromMax > 0 && toMax > 0 ? (value / fromMax) * toMax : 0;
-    const usable = scrollAnchors.filter((anchor) => anchor[fromKey] < fromMax - 0.5);
-    if (!usable.length || fromMax <= 0 || toMax <= 0) return ratioTarget;
-    if (value <= usable[0][fromKey]) {
-      return usable[0][fromKey] > 0 ? (value / usable[0][fromKey]) * usable[0][toKey] : usable[0][toKey];
-    }
-    const last = usable[usable.length - 1];
-    if (value >= last[fromKey]) {
-      const span = fromMax - last[fromKey];
-      return span < 1 ? (value >= fromMax - 0.5 ? toMax : last[toKey])
-        : last[toKey] + ((value - last[fromKey]) / span) * (toMax - last[toKey]);
-    }
-    let lo = 0; let hi = usable.length - 1;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (usable[mid][fromKey] <= value) lo = mid; else hi = mid;
-    }
-    const a = usable[lo]; const b = usable[hi];
-    return a[toKey] + ((value - a[fromKey]) / (b[fromKey] - a[fromKey])) * (b[toKey] - a[toKey]);
-  };
-  const ensureScrollAnchors = () => {
-    if (!scrollAnchorsDirty) return;
-    try { buildScrollAnchors(); } catch { scrollAnchors = []; scrollAnchorsDirty = false; }
-  };
-  const setSyncedScroll = (side, element, top, left) => {
-    if (!element || !Number.isFinite(top) || !Number.isFinite(left)) return;
-    const targetTop = Math.max(0, top || 0);
-    const targetLeft = Math.max(0, left || 0);
-    if (Math.abs((element.scrollTop || 0) - targetTop) < 1 && Math.abs((element.scrollLeft || 0) - targetLeft) < 1) return;
-    syncGuard = { side, until: syncNow() + 250, top: targetTop, left: targetLeft };
-    element.scrollTop = targetTop;
-    element.scrollLeft = targetLeft;
-    if (side === "preview") rememberPreviewScroll(element);
-  };
-  const isSyncEcho = (side, element) => Boolean(element)
-    && syncGuard.side === side && syncNow() <= syncGuard.until
-    && Math.abs((element.scrollTop || 0) - syncGuard.top) <= 2
-    && Math.abs((element.scrollLeft || 0) - syncGuard.left) <= 2;
-  const syncPreviewToEditor = () => {
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    if (!scroll) return;
-    lastScrollSource = "editor";
-    ensureScrollAnchors();
-    const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
+  const syncPreviewScroll = () => {
+    const ta = el.f.body;
+    const doc = previewFrame.contentDocument;
+    const scroll = doc?.scrollingElement;
+    if (!doc || !scroll) return;
+    if ($("#writing-workspace")?.dataset.mode === "edit") return;
+    const maxTa = ta.scrollHeight - ta.clientHeight;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    const top = scrollAnchors.length
-      ? interpolateScroll(el.f.body.scrollTop || 0, "ta", "pv", maxTa, maxPv)
-      : (maxTa > 0 ? ((el.f.body.scrollTop || 0) / maxTa) * maxPv : 0);
-    setSyncedScroll("preview", scroll, top, (scrollRatioFor(el.f.body, "left") || 0) * Math.max(0, scroll.scrollWidth - scroll.clientWidth));
+    if (!(maxTa > 0) || !(maxPv > 0)) return;
+    const anchors = collectScrollAnchors(doc, scroll);
+    const y = ta.scrollTop || 0;
+    // 只保留编辑区实际能滚到的锚点；更靠下的锚点只可能出现在视口下部。
+    const usable = anchors.filter((anchor) => anchor.ta < maxTa - 0.5);
+    let target;
+    if (!usable.length) {
+      target = (y / maxTa) * maxPv;
+    } else if (y <= usable[0].ta) {
+      target = usable[0].ta > 0 ? (y / usable[0].ta) * usable[0].pv : usable[0].pv;
+    } else {
+      const last = usable[usable.length - 1];
+      if (y >= last.ta) {
+        // 最后一个可达锚点到末尾：平滑过渡到两侧同时见底。
+        const span = maxTa - last.ta;
+        target = span < 1
+          ? (y >= maxTa - 0.5 ? maxPv : last.pv)
+          : last.pv + ((y - last.ta) / span) * (maxPv - last.pv);
+      } else {
+        let lo = 0; let hi = usable.length - 1;
+        while (hi - lo > 1) {
+          const mid = (lo + hi) >> 1;
+          if (usable[mid].ta <= y) lo = mid; else hi = mid;
+        }
+        const a = usable[lo]; const b = usable[hi];
+        target = a.pv + ((y - a.ta) / (b.ta - a.ta)) * (b.pv - a.pv);
+      }
+    }
+    // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放
+    // 一段从旧位置滚到目标位置的物理滚动动画。
+    if (scroll.style) scroll.style.scrollBehavior = "auto";
+    scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
   };
-  const syncEditorToPreview = () => {
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    if (!scroll) return;
-    lastScrollSource = "preview";
-    rememberPreviewScroll(scroll);
-    ensureScrollAnchors();
-    const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    const maxTa = el.f.body.scrollHeight - el.f.body.clientHeight;
-    const top = scrollAnchors.length
-      ? interpolateScroll(scroll.scrollTop || 0, "pv", "ta", maxPv, maxTa)
-      : (maxPv > 0 ? ((scroll.scrollTop || 0) / maxPv) * maxTa : 0);
-    setSyncedScroll("editor", el.f.body, top, previewScrollRatio.left * Math.max(0, el.f.body.scrollWidth - el.f.body.clientWidth));
-  };
-  let syncFallback = 0;
-  const runQueuedSync = () => {
-    if (syncFallback) { clearTimeout(syncFallback); syncFallback = 0; }
-    syncRaf = 0;
-    const sourceNow = pendingSyncSource;
-    pendingSyncSource = "";
-    if (sourceNow === "editor") syncPreviewToEditor();
-    else if (sourceNow === "preview") syncEditorToPreview();
-  };
-  const queueScrollSync = (source) => {
-    pendingSyncSource = source;
+  const queuePreviewSync = () => {
     if (syncRaf) return;
-    // rAF 之外再加一个定时兜底：编辑区滚动时若这一帧没被调度到，
-    // 预览也不会纹丝不动（此前编辑侧偶发「滑了没反应」就是队列丢帧）。
-    syncRaf = scheduleFrame(runQueuedSync);
-    syncFallback = setTimeout(runQueuedSync, 90);
+    syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
   };
-  const restorePreviewScroll = (scroll) => {
-    if (!scroll) return;
-    // 刚刚是编辑区在滚：重渲染后也按锚点对齐到编辑区，而不是旧像素位置。
-    if (lastScrollSource === "editor") { syncPreviewToEditor(); return; }
-    const topMax = scroll.scrollHeight - scroll.clientHeight;
-    const leftMax = scroll.scrollWidth - scroll.clientWidth;
-    setSyncedScroll("preview", scroll,
-      Number.isFinite(topMax) && topMax > 0 ? previewScrollRatio.top * topMax : 0,
-      Number.isFinite(leftMax) && leftMax > 0 ? previewScrollRatio.left * leftMax : 0);
-  };
-  const handlePreviewScroll = () => {
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    rememberPreviewScroll(scroll);
-    if (!isSyncEcho("preview", scroll)) queueScrollSync("preview");
-  };
-  el.f.body.addEventListener("scroll", () => { if (!isSyncEcho("editor", el.f.body)) queueScrollSync("editor"); });
-  // 滚轮先于 scroll 事件到达，先排一次同步，位置在帧回调里按最新 scrollTop 读。
-  el.f.body.addEventListener("wheel", () => queueScrollSync("editor"), { passive: true });
+  el.f.body.addEventListener("scroll", queuePreviewSync, { passive: true });
   window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
+  // 预览里拖动图节点后，把坐标写回第 graphIndex 个 ```graph 块的 node 行：
+  // 已有 node 行保留 label/color/size 等其它选项，只替换 x/y；边里隐式出现的点
+  // 补一行 node: ID ; x=.. ; y=..。positions 为 null 表示重置（删掉所有 x/y）。
+  const formatGraphCoord = (value) => String(Number(Number(value).toFixed(2)));
+  const rewriteGraphBlockPositions = (markdown, graphIndex, positions) => {
+    const lines = String(markdown).split("\n");
+    const graphNodeId = /^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/;
+    let current = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^```graph\s*$/.test(lines[i].trim())) continue;
+      current += 1;
+      let end = i + 1;
+      while (end < lines.length && !/^```\s*$/.test(lines[end].trim())) end += 1;
+      if (current !== graphIndex) { i = end; continue; }
+      if (end >= lines.length) return null;
+      const seen = new Set();
+      const bodyLines = lines.slice(i + 1, end).map((line) => {
+        const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
+        if (!match) return line;
+        const id = match[2].trim();
+        if (!graphNodeId.test(id)) return line;
+        seen.add(id);
+        const options = (match[3] || "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item) => !/^(x|y)\s*=/i.test(item));
+        const pos = positions?.[id];
+        if (pos && Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.y))) {
+          options.push(`x=${formatGraphCoord(pos.x)}`, `y=${formatGraphCoord(pos.y)}`);
+        }
+        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+      });
+      if (positions) {
+        for (const [id, pos] of Object.entries(positions)) {
+          if (seen.has(id) || !graphNodeId.test(id)) continue;
+          if (!pos || !Number.isFinite(Number(pos.x)) || !Number.isFinite(Number(pos.y))) continue;
+          bodyLines.push(`node: ${id} ; x=${formatGraphCoord(pos.x)} ; y=${formatGraphCoord(pos.y)}`);
+        }
+      }
+      return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
+    }
+    return null;
+  };
+  const handleGraphPositions = (event) => {
+    const detail = event.detail || {};
+    const graphIndex = Number(detail.graphIndex || 0);
+    const positions = detail.reset ? null : detail.positions;
+    if (!detail.reset && (!positions || typeof positions !== "object")) return;
+    const next = rewriteGraphBlockPositions(el.f.body.value, graphIndex, positions);
+    if (next === null || next === el.f.body.value) return;
+    const cursor = Math.min(el.f.body.selectionStart ?? next.length, next.length);
+    el.f.body.value = next;
+    el.f.body.selectionStart = el.f.body.selectionEnd = cursor;
+    el.f.body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    updatePreview();
+    $("#preview-status").textContent = detail.reset
+      ? "图点位已重置为自动布局（改动在源码里，记得保存文章）"
+      : "图点位已写回源码（记得保存文章）";
+  };
   previewFrame.addEventListener("load", () => {
+    previewLoadPending = false;
     // Controlled by the parent: keep the iframe script-free. The plot/graph
     // interactions are attached by this parent page onto the iframe document
     // (same-origin), so the sandboxed iframe itself still runs no scripts.
-    const scroll = previewFrame.contentDocument?.scrollingElement;
-    try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
-    restorePreviewScroll(scroll);
-    // 工具栏/图注是 enhance 时才插入的，布局稳定后再恢复一次，避免位置被顶动。
-    setTimeout(() => restorePreviewScroll(scroll), 0);
+    // 先把锚点标记为过期：同步要按新文档的块位置与新镜像层重算。
     scrollAnchorsDirty = true;
-    try { previewFrame.contentWindow?.addEventListener("scroll", handlePreviewScroll, { passive: true }); } catch { /* 预览未就绪时忽略 */ }
-    try { previewFrame.contentWindow?.addEventListener("wheel", () => queueScrollSync("preview"), { passive: true }); } catch { /* 预览未就绪时忽略 */ }
+    try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
+    try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
+    // 新文档先保持隐藏，对齐完成后再显示，避免用户先看到最前端、再被滚到目标位置。
+    // 后续两次校准都已关闭平滑滚动，只会直接落位，不产生物理滚动特效。
+    syncPreviewScroll();
+    const revealAlignedPreview = () => {
+      syncPreviewScroll();
+      previewFrame.style.visibility = "";
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(revealAlignedPreview);
+    else revealAlignedPreview();
+    setTimeout(() => syncPreviewScroll(), 120);
+    try {
+      previewFrame.contentDocument?.fonts?.ready?.then(() => {
+        scrollAnchorsDirty = true;
+        syncPreviewScroll();
+      });
+    } catch { /* 字体接口不可用时忽略 */ }
   });
   function renderPostPreview() {
     clearTimeout(previewTimer);
@@ -1420,9 +1447,7 @@
         previewOpenFolds = [];
         previewPlotViews = [];
         previewGraphViews = [];
-        previewScroll = { top: 0, left: 0 };
-        previewScrollRatio = { top: 0, left: 0 };
-        lastScrollSource = "preview";
+        scrollAnchorsDirty = true;
       } else {
         const doc = previewFrame.contentDocument;
         // During an in-flight srcdoc load retain the last valid snapshot.
@@ -1437,9 +1462,10 @@
           }));
           previewGraphViews = [...doc.querySelectorAll('.md-graph svg')]
             .map((svg) => svg.getAttribute('data-preview-viewbox') || '');
-          rememberPreviewScroll(doc.scrollingElement);
         }
       }
+      previewLoadPending = true;
+      previewFrame.style.visibility = "hidden";
       previewFrame.srcdoc = window.MinxiPreview.document({ ...input, openFolds: previewOpenFolds, plotViews: previewPlotViews, graphViews: previewGraphViews });
       previewSignature = signature;
       previewNeedsReset = false;
@@ -1453,17 +1479,500 @@
       scrollAnchorsDirty = true;
       clearTimeout(previewTimer);
       previewTimer = setTimeout(renderPostPreview, 180);
+      // 停笔约 200ms 后提前重建行镜像，下一次滚动不用现算（参考编辑器同款）。
+      clearTimeout(mirrorIdleTimer);
+      mirrorIdleTimer = setTimeout(() => {
+        if (!scrollAnchorsDirty) return;
+        if ($("#writing-workspace")?.dataset.mode === "edit") return;
+        try { rebuildLineMirror(); scrollAnchorsDirty = false; } catch { /* 镜像不可用时忽略 */ }
+      }, 200);
     });
   });
+  const setEditorMode = (mode) => {
+    $("#writing-workspace").dataset.mode = mode;
+    // 纯净（专注）模式：只留正文编辑区，其余后台面板靠 body.zen-editing 的样式隐藏。
+    // 编辑区还是同一个 textarea，所以切换模式不会丢未保存内容，也不会触发重渲染。
+    document.body.classList.toggle("zen-editing", mode === "zen");
+    $$('[data-editor-mode]').forEach((item) => {
+      item.setAttribute("aria-pressed", String(item.dataset.editorMode === mode));
+    });
+    renderPostPreview();
+    if (!previewLoadPending) previewFrame.style.visibility = "";
+    // 从纯编辑切回带预览的模式时，按编辑区当前滚动位置把预览对齐过来，
+    // 不能让预览从最前端开始；布局刚变，行锚点也要重算。
+    scrollAnchorsDirty = true;
+    if (mode === "split" || mode === "preview" || mode === "zen") {
+      scheduleFrame(() => syncPreviewScroll());
+    }
+    if (mode === "zen") el.f.body.focus();
+  };
   $$('[data-editor-mode]').forEach((button) => {
-    button.addEventListener("click", () => {
-      $("#writing-workspace").dataset.mode = button.dataset.editorMode;
-      $$('[data-editor-mode]').forEach((item) => {
-        item.setAttribute("aria-pressed", String(item === button));
-      });
-      renderPostPreview();
-    });
+    button.addEventListener("click", () => setEditorMode(button.dataset.editorMode));
   });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("zen-editing")) {
+      setEditorMode("split");
+    }
+  });
+  /* ---------------- 编辑区 LaTeX 符号搜索（Shift + ↑） ---------------- */
+  const latexCategories = [
+    ["structures", "结构"],
+    ["greek", "希腊字母"],
+    ["operators", "运算"],
+    ["relations", "关系"],
+    ["sets-logic", "集合与逻辑"],
+    ["arrows", "箭头"],
+    ["big-operators", "大型运算符"],
+    ["functions", "函数"],
+    ["misc", "其他"],
+  ];
+  const latexCategoryName = (id) => latexCategories.find(([key]) => key === id)?.[1] || id;
+  const latexAutoPreview = (insert) => {
+    const fillers = ["a", "b", "c"];
+    let used = 0;
+    return insert.replace(/\[\]/g, "[n]").replace(/\{\}/g, () => `{${fillers[Math.min(used++, fillers.length - 1)]}}`);
+  };
+  const latexSymbols = [];
+  const addLatexSymbol = (category, command, aliases, options = {}) => {
+    if (latexSymbols.some((symbol) => symbol.command === command)) return;
+    const insert = options.insert ?? command;
+    let cursor = options.cursor;
+    if (!cursor && options.cursorAfter) {
+      const at = insert.indexOf(options.cursorAfter);
+      const pos = at === -1 ? insert.length : at + options.cursorAfter.length;
+      cursor = [pos, pos];
+    }
+    if (!cursor) {
+      const braces = insert.indexOf("{}");
+      cursor = braces === -1 ? [insert.length, insert.length] : [braces + 1, braces + 1];
+    }
+    latexSymbols.push({
+      category,
+      command,
+      aliases,
+      insert,
+      preview: options.preview ?? latexAutoPreview(insert),
+      glyph: options.glyph || "",
+      cursor,
+    });
+  };
+  const addLatexGroup = (category, entries) => {
+    entries.forEach(([command, aliases, options]) => addLatexSymbol(category, command, aliases, options || {}));
+  };
+
+  addLatexGroup("structures", [
+    ["\\frac{}{}", ["分数", "分式", "除", "分数线", "fraction"]],
+    ["\\dfrac{}{}", ["大分数", "显示分数", "分数", "分式"]],
+    ["\\tfrac{}{}", ["小分数", "分数", "分式"]],
+    ["\\cfrac{}{}", ["连分数", "分数", "分式"]],
+    ["\\sqrt{}", ["根号", "平方根", "开方", "根式", "sqrt", "root"]],
+    ["\\sqrt[n]{}", ["n次根", "立方根", "根号", "开方"], { insert: "\\sqrt[]{}", cursorAfter: "\\sqrt[", preview: "\\sqrt[3]{x}" }],
+    ["^{}", ["上标", "次方", "幂", "指数", "平方", "superscript", "power"], { preview: "x^{2}" }],
+    ["_{}", ["下标", "角标", "序号", "subscript"], { preview: "a_{n}" }],
+    ["\\binom{}{}", ["组合数", "二项式系数", "组合", "binomial", "choose"]],
+    ["\\overline{}", ["上划线", "线段", "共轭", "平均值"]],
+    ["\\underline{}", ["下划线"]],
+    ["\\hat{}", ["帽", "估计值", "单位向量"]],
+    ["\\widehat{}", ["宽帽", "角", "弧"]],
+    ["\\bar{}", ["平均值", "均值", "共轭"]],
+    ["\\vec{}", ["向量", "箭头", "vector"]],
+    ["\\overrightarrow{}", ["向量", "长箭头"]],
+    ["\\dot{}", ["一阶导数", "上点", "求导"]],
+    ["\\ddot{}", ["二阶导数", "两点"]],
+    ["\\tilde{}", ["波浪号", "近似号"]],
+    ["\\widetilde{}", ["宽波浪"]],
+    ["\\overbrace{}", ["上大括号", "上括号", "brace"]],
+    ["\\underbrace{}", ["下大括号", "下括号", "brace"]],
+    ["\\overset{}{}", ["上方标注", "上标符号"]],
+    ["\\underset{}{}", ["下方标注", "下标符号"]],
+    ["\\boxed{}", ["方框", "答案框", "框选"]],
+    ["\\cancel{}", ["约去", "划掉", "斜线删除"]],
+    ["\\left(\\right)", ["自适应括号", "大圆括号", "圆括号"], { insert: "\\left(\\right)", cursorAfter: "\\left(", preview: "\\left(\\dfrac{a}{b}\\right)" }],
+    ["\\left[\\right]", ["自适应方括号", "大方括号", "方括号"], { insert: "\\left[\\right]", cursorAfter: "\\left[", preview: "\\left[\\dfrac{a}{b}\\right]" }],
+    ["\\left\\{\\right\\}", ["自适应花括号", "花括号", "集合括号"], { insert: "\\left\\{\\right\\}", cursorAfter: "\\left\\{", preview: "\\left\\{\\dfrac{a}{b}\\right\\}" }],
+    ["\\left|\\right|", ["绝对值", "模", "自适应竖线", "absolute"], { insert: "\\left|\\right|", cursorAfter: "\\left|", preview: "\\left|x\\right|" }],
+    ["\\langle\\rangle", ["内积", "尖括号", "角括号"], { insert: "\\langle\\rangle", cursorAfter: "\\langle", preview: "\\langle u,v\\rangle" }],
+    ["\\lfloor\\rfloor", ["向下取整", "地板", "高斯取整", "floor"], { insert: "\\lfloor\\rfloor", cursorAfter: "\\lfloor", preview: "\\lfloor x\\rfloor" }],
+    ["\\lceil\\rceil", ["向上取整", "天花板", "ceil"], { insert: "\\lceil\\rceil", cursorAfter: "\\lceil", preview: "\\lceil x\\rceil" }],
+    ["\\begin{matrix}…\\end{matrix}", ["矩阵", "无括号矩阵", "matrix"], { insert: "\\begin{matrix}\n\n\\end{matrix}", cursorAfter: "\\begin{matrix}\n", preview: "\\begin{matrix}a&b\\\\c&d\\end{matrix}" }],
+    ["\\begin{pmatrix}…\\end{pmatrix}", ["圆括号矩阵", "矩阵", "matrix"], { insert: "\\begin{pmatrix}\n\n\\end{pmatrix}", cursorAfter: "\\begin{pmatrix}\n", preview: "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}" }],
+    ["\\begin{bmatrix}…\\end{bmatrix}", ["方括号矩阵", "矩阵", "matrix"], { insert: "\\begin{bmatrix}\n\n\\end{bmatrix}", cursorAfter: "\\begin{bmatrix}\n", preview: "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}" }],
+    ["\\begin{vmatrix}…\\end{vmatrix}", ["行列式", "竖线矩阵", "determinant"], { insert: "\\begin{vmatrix}\n\n\\end{vmatrix}", cursorAfter: "\\begin{vmatrix}\n", preview: "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}" }],
+    ["\\begin{cases}…\\end{cases}", ["分段函数", "方程组", "大括号分段", "cases"], { insert: "\\begin{cases}\n\n\\end{cases}", cursorAfter: "\\begin{cases}\n", preview: "\\begin{cases}x,&x>0\\\\0,&x=0\\end{cases}" }],
+    ["\\begin{aligned}…\\end{aligned}", ["对齐", "多行公式", "等式链", "aligned"], { insert: "\\begin{aligned}\n\n\\end{aligned}", cursorAfter: "\\begin{aligned}\n", preview: "\\begin{aligned}a&=b+c\\\\&=d\\end{aligned}" }],
+    ["\\text{}", ["文本", "文字", "中文", "text"]],
+    ["\\mathrm{}", ["正体", "直立体", "罗马体", "单位"]],
+    ["\\mathbf{}", ["粗体", "黑体", "向量粗体", "bold"]],
+    ["\\boldsymbol{}", ["粗斜体", "加粗符号"]],
+    ["\\mathbb{}", ["黑板粗体", "数集字母", "空心字母", "blackboard"]],
+    ["\\mathcal{}", ["花体", "书法体", "calligraphic"]],
+    ["\\mathfrak{}", ["哥特体", "德文尖角体", "fraktur"]],
+    ["\\operatorname{}", ["算子名", "函数名", "正体名称"]],
+    ["\\\\", ["换行", "新行", "分行"], { insert: "\\\\", preview: "a\\\\b" }],
+    ["\\,", ["小空格", "窄空格", "间距"], { preview: "a\\,b" }],
+    ["\\quad", ["空格", "大间距", "quad"], { preview: "a\\quad b" }],
+    ["\\qquad", ["大空格", "双倍间距"], { preview: "a\\qquad b" }],
+  ]);
+
+  addLatexGroup("greek", [
+    ["\\alpha", ["阿尔法", "alpha"], { glyph: "α" }], ["\\beta", ["贝塔", "beta"], { glyph: "β" }],
+    ["\\gamma", ["伽马", "gamma"], { glyph: "γ" }], ["\\Gamma", ["伽马大写", "伽马函数", "Gamma"], { glyph: "Γ" }],
+    ["\\delta", ["德尔塔", "小增量", "delta"], { glyph: "δ" }], ["\\Delta", ["增量", "判别式", "差", "Delta"], { glyph: "Δ" }],
+    ["\\epsilon", ["艾普西龙", "小量", "epsilon"], { glyph: "ϵ" }], ["\\varepsilon", ["任意小", "正数", "varepsilon"], { glyph: "ε" }],
+    ["\\zeta", ["泽塔", "zeta"], { glyph: "ζ" }], ["\\eta", ["伊塔", "效率", "eta"], { glyph: "η" }],
+    ["\\theta", ["西塔", "角度", "theta"], { glyph: "θ" }], ["\\Theta", ["西塔大写", "Theta"], { glyph: "Θ" }],
+    ["\\iota", ["约塔", "iota"], { glyph: "ι" }], ["\\kappa", ["卡帕", "曲率", "kappa"], { glyph: "κ" }],
+    ["\\lambda", ["拉姆达", "波长", "特征值", "lambda"], { glyph: "λ" }], ["\\Lambda", ["拉姆达大写", "Lambda"], { glyph: "Λ" }],
+    ["\\mu", ["缪", "微", "期望", "mu"], { glyph: "μ" }], ["\\nu", ["纽", "频率", "nu"], { glyph: "ν" }],
+    ["\\xi", ["克西", "介值点", "xi"], { glyph: "ξ" }], ["\\Xi", ["克西大写", "Xi"], { glyph: "Ξ" }],
+    ["\\pi", ["派", "圆周率", "pi"], { glyph: "π" }], ["\\Pi", ["派大写", "Pi"], { glyph: "Π" }],
+    ["\\rho", ["柔", "密度", "rho"], { glyph: "ρ" }], ["\\sigma", ["西格玛", "标准差", "sigma"], { glyph: "σ" }],
+    ["\\Sigma", ["西格玛大写", "Sigma"], { glyph: "Σ" }], ["\\tau", ["陶", "tau"], { glyph: "τ" }],
+    ["\\phi", ["斐", "角度", "欧拉函数", "phi"], { glyph: "ϕ" }], ["\\Phi", ["斐大写", "磁通量", "Phi"], { glyph: "Φ" }],
+    ["\\varphi", ["斐异体", "角度", "varphi"], { glyph: "φ" }], ["\\chi", ["卡方", "chi"], { glyph: "χ" }],
+    ["\\psi", ["普赛", "波函数", "psi"], { glyph: "ψ" }], ["\\Psi", ["普赛大写", "Psi"], { glyph: "Ψ" }],
+    ["\\omega", ["欧米伽", "角速度", "omega"], { glyph: "ω" }], ["\\Omega", ["欧姆", "全集", "样本空间", "Omega"], { glyph: "Ω" }],
+  ]);
+
+  addLatexGroup("operators", [
+    ["\\pm", ["正负", "加减", "正负号", "plus minus"], { glyph: "±" }], ["\\mp", ["负正", "减加"], { glyph: "∓" }],
+    ["\\times", ["乘号", "乘", "叉乘", "times"], { glyph: "×" }], ["\\div", ["除号", "除以", "除"], { glyph: "÷" }],
+    ["\\cdot", ["点乘", "内积", "点"], { glyph: "⋅" }], ["\\cdots", ["省略号", "中间省略"], { glyph: "⋯" }],
+    ["\\ldots", ["省略号", "低省略"], { glyph: "…" }], ["\\vdots", ["竖省略号"], { glyph: "⋮" }],
+    ["\\ddots", ["斜省略号"], { glyph: "⋱" }], ["\\ast", ["星号", "星运算"], { glyph: "∗" }],
+    ["\\star", ["星", "star"], { glyph: "⋆" }], ["\\circ", ["复合", "函数复合", "圆圈"], { glyph: "∘" }],
+    ["\\bullet", ["实心圆点", "项目点"], { glyph: "•" }], ["\\oplus", ["异或", "直和", "圆加", "xor"], { glyph: "⊕" }],
+    ["\\ominus", ["圆减"], { glyph: "⊖" }], ["\\otimes", ["张量积", "圆乘"], { glyph: "⊗" }],
+    ["\\odot", ["圆点"], { glyph: "⊙" }], ["\\cap", ["交集", "帽子"], { glyph: "∩" }],
+    ["\\cup", ["并集", "杯子"], { glyph: "∪" }], ["\\wedge", ["合取", "逻辑与", "楔形"], { glyph: "∧" }],
+    ["\\vee", ["析取", "逻辑或"], { glyph: "∨" }], ["\\setminus", ["差集", "去掉"], { glyph: "∖" }],
+  ]);
+
+  addLatexGroup("relations", [
+    ["\\leq", ["小于等于", "不大于", "less equal"], { glyph: "≤" }], ["\\geq", ["大于等于", "不小于"], { glyph: "≥" }],
+    ["\\neq", ["不等于", "不等"], { glyph: "≠" }], ["\\approx", ["约等于", "近似"], { glyph: "≈" }],
+    ["\\equiv", ["恒等", "同余", "等价"], { glyph: "≡" }], ["\\sim", ["相似", "分布", "波浪"], { glyph: "∼" }],
+    ["\\simeq", ["近似相等", "相似等"], { glyph: "≃" }], ["\\cong", ["全等", "同构"], { glyph: "≅" }],
+    ["\\propto", ["正比", "成比例"], { glyph: "∝" }], ["\\ll", ["远小于"], { glyph: "≪" }],
+    ["\\gg", ["远大于"], { glyph: "≫" }], ["\\prec", ["先于", "小于关系"], { glyph: "≺" }],
+    ["\\succ", ["后于", "大于关系"], { glyph: "≻" }], ["\\preceq", ["先于等于"], { glyph: "⪯" }],
+    ["\\succeq", ["后于等于"], { glyph: "⪰" }], ["\\parallel", ["平行"], { glyph: "∥" }],
+    ["\\nparallel", ["不平行"], { glyph: "∦" }], ["\\perp", ["垂直"], { glyph: "⊥" }],
+    ["\\mid", ["整除", "竖线", "条件"], { glyph: "∣" }], ["\\nmid", ["不整除"], { glyph: "∤" }],
+    ["\\models", ["模型", "推出"], { glyph: "⊨" }], ["\\vdash", ["证明", "推出"], { glyph: "⊢" }],
+    ["\\dashv", ["被推出"], { glyph: "⊣" }],
+  ]);
+
+  addLatexGroup("sets-logic", [
+    ["\\in", ["属于", "元素"], { glyph: "∈" }], ["\\notin", ["不属于"], { glyph: "∉" }],
+    ["\\ni", ["包含元素", "含于反向"], { glyph: "∋" }], ["\\subset", ["真子集", "包含于"], { glyph: "⊂" }],
+    ["\\subseteq", ["子集", "包含于等于"], { glyph: "⊆" }], ["\\supset", ["真超集"], { glyph: "⊃" }],
+    ["\\supseteq", ["超集"], { glyph: "⊇" }], ["\\emptyset", ["空集"], { glyph: "∅" }],
+    ["\\varnothing", ["空集"], { glyph: "∅" }], ["\\forall", ["任意", "对于所有", "全称"], { glyph: "∀" }],
+    ["\\exists", ["存在", "存在量词"], { glyph: "∃" }], ["\\nexists", ["不存在"], { glyph: "∄" }],
+    ["\\neg", ["非", "否定", "not"], { glyph: "¬" }], ["\\land", ["逻辑与", "并且", "and"], { glyph: "∧" }],
+    ["\\lor", ["逻辑或", "或者", "or"], { glyph: "∨" }], ["\\Rightarrow", ["推出", "蕴含", "箭头"], { glyph: "⇒" }],
+    ["\\Leftarrow", ["反推出", "被推出"], { glyph: "⇐" }], ["\\Leftrightarrow", ["等价", "充要", "当且仅当"], { glyph: "⇔" }],
+    ["\\top", ["真", "顶"], { glyph: "⊤" }], ["\\bot", ["假", "底", "矛盾"], { glyph: "⊥" }],
+    ["\\therefore", ["所以", "因此"], { glyph: "∴" }], ["\\because", ["因为"], { glyph: "∵" }],
+    ["\\aleph", ["阿列夫", "基数"], { glyph: "ℵ" }],
+  ]);
+
+  addLatexGroup("arrows", [
+    ["\\leftarrow", ["左箭头"], { glyph: "←" }], ["\\rightarrow", ["右箭头", "趋向", "映射"], { glyph: "→" }],
+    ["\\leftrightarrow", ["双向箭头"], { glyph: "↔" }], ["\\Leftarrow", ["左粗箭头", "推出"], { glyph: "⇐" }],
+    ["\\Rightarrow", ["右粗箭头", "推出"], { glyph: "⇒" }], ["\\Leftrightarrow", ["双向粗箭头", "等价"], { glyph: "⇔" }],
+    ["\\uparrow", ["上箭头"], { glyph: "↑" }], ["\\downarrow", ["下箭头"], { glyph: "↓" }],
+    ["\\mapsto", ["映射到", "对应"], { glyph: "↦" }], ["\\longmapsto", ["长映射到"], { glyph: "⟼" }],
+    ["\\longrightarrow", ["长右箭头", "趋向"], { glyph: "⟶" }], ["\\longleftarrow", ["长左箭头"], { glyph: "⟵" }],
+    ["\\longleftrightarrow", ["长双向箭头"], { glyph: "⟷" }], ["\\hookrightarrow", ["钩箭头", "嵌入"], { glyph: "↪" }],
+    ["\\twoheadrightarrow", ["双头箭头", "满射"], { glyph: "↠" }], ["\\rightarrowtail", ["尾箭头", "单射"], { glyph: "↣" }],
+  ]);
+
+  addLatexGroup("big-operators", [
+    ["\\sum_{}^{}", ["求和", "总和", "累加", "sum"], { insert: "\\sum_{}^{}", cursorAfter: "\\sum_{", preview: "\\sum_{i=1}^{n}" }],
+    ["\\prod_{}^{}", ["连乘", "求积", "product"], { insert: "\\prod_{}^{}", cursorAfter: "\\prod_{", preview: "\\prod_{i=1}^{n}" }],
+    ["\\coprod_{}^{}", ["余积", "coproduct"], { insert: "\\coprod_{}^{}", cursorAfter: "\\coprod_{", preview: "\\coprod_{i=1}^{n}" }],
+    ["\\int_{}^{}", ["积分", "定积分", "integral"], { insert: "\\int_{}^{}", cursorAfter: "\\int_{", preview: "\\int_{a}^{b} f(x)\\,\\mathrm{d}x" }],
+    ["\\int", ["积分", "不定积分", "integral"], { preview: "\\int f(x)\\,\\mathrm{d}x" }],
+    ["\\iint", ["二重积分", "double integral"], { preview: "\\iint_D f" }],
+    ["\\iiint", ["三重积分", "triple integral"], { preview: "\\iiint_V f" }],
+    ["\\oint", ["曲线积分", "环路积分", "contour"], { preview: "\\oint_C f" }],
+    ["\\bigcup_{}^{}", ["大并集", "并集求和"], { insert: "\\bigcup_{}^{}", cursorAfter: "\\bigcup_{", preview: "\\bigcup_{i=1}^{n} A_i" }],
+    ["\\bigcap_{}^{}", ["大交集"], { insert: "\\bigcap_{}^{}", cursorAfter: "\\bigcap_{", preview: "\\bigcap_{i=1}^{n} A_i" }],
+    ["\\bigoplus_{}^{}", ["大直和", "异或和"], { insert: "\\bigoplus_{}^{}", cursorAfter: "\\bigoplus_{", preview: "\\bigoplus_{i=1}^{n} V_i" }],
+    ["\\bigotimes_{}^{}", ["大张量积"], { insert: "\\bigotimes_{}^{}", cursorAfter: "\\bigotimes_{", preview: "\\bigotimes_{i=1}^{n} V_i" }],
+    ["\\lim_{}", ["极限", "趋于", "limit"], { insert: "\\lim_{}", preview: "\\lim_{x\\to\\infty}" }],
+    ["\\limsup_{}", ["上极限"], { insert: "\\limsup_{}", preview: "\\limsup_{n\\to\\infty}" }],
+    ["\\liminf_{}", ["下极限"], { insert: "\\liminf_{}", preview: "\\liminf_{n\\to\\infty}" }],
+  ]);
+
+  addLatexGroup("functions", [
+    ["\\sin", ["正弦", "sine"]], ["\\cos", ["余弦", "cosine"]], ["\\tan", ["正切", "tangent"]],
+    ["\\cot", ["余切"]], ["\\sec", ["正割"]], ["\\csc", ["余割"]],
+    ["\\arcsin", ["反正弦"]], ["\\arccos", ["反余弦"]], ["\\arctan", ["反正切"]],
+    ["\\sinh", ["双曲正弦"]], ["\\cosh", ["双曲余弦"]], ["\\tanh", ["双曲正切"]],
+    ["\\ln", ["自然对数", "log"]], ["\\log_{}", ["对数", "log"], { insert: "\\log_{}", preview: "\\log_{2} n" }],
+    ["\\lg", ["常用对数"]], ["\\exp", ["指数函数", "e的幂"]],
+    ["\\max", ["最大值", "max"]], ["\\min", ["最小值", "min"]], ["\\sup", ["上确界"]],
+    ["\\inf", ["下确界"]], ["\\det", ["行列式", "determinant"]], ["\\dim", ["维数", "dimension"]],
+    ["\\gcd", ["最大公约数", "gcd"]], ["\\ker", ["核", "零空间", "kernel"]],
+    ["\\deg", ["次数", "度", "degree"]], ["\\Pr", ["概率", "probability"]],
+    ["\\bmod", ["取模", "取余", "mod"]], ["\\pmod{}", ["同余模", "模", "modulo"], { insert: "\\pmod{}", preview: "a\\equiv b\\pmod{m}" }],
+  ]);
+
+  addLatexGroup("misc", [
+    ["\\infty", ["无穷", "无限", "infinity"], { glyph: "∞" }], ["\\partial", ["偏导数", "偏微分", "partial"], { glyph: "∂" }],
+    ["\\nabla", ["梯度", "散度", "旋度", "倒三角", "nabla"], { glyph: "∇" }], ["'", ["导数", "撇", "一阶导"], { insert: "'", preview: "f'(x)" }],
+    ["^\\circ", ["度", "角度单位", "度数", "degree"], { insert: "^\\circ", preview: "90^\\circ", glyph: "°" }],
+    ["^\\top", ["转置", "矩阵转置", "transpose"], { insert: "^\\top", preview: "A^\\top" }],
+    ["\\angle", ["角", "角度符号", "angle"], { glyph: "∠" }], ["\\triangle", ["三角形", "triangle"], { glyph: "△" }],
+    ["\\square", ["正方形", "方框", "证毕"], { glyph: "□" }], ["\\blacksquare", ["实心方", "证毕", "qed"], { glyph: "■" }],
+    ["\\checkmark", ["对勾", "勾选", "正确"], { glyph: "✓" }], ["\\hbar", ["约化普朗克"], { glyph: "ℏ" }],
+    ["\\ell", ["手写l", "小写L"], { glyph: "ℓ" }], ["\\Re", ["实部"], { glyph: "ℜ" }],
+    ["\\Im", ["虚部"], { glyph: "ℑ" }], ["\\%", ["百分号", "百分比"], { glyph: "%" }],
+    ["\\$", ["美元", "钱"], { glyph: "$" }], ["\\&", ["和号", "连接符"], { glyph: "&" }],
+    ["\\#", ["井号", "编号"], { glyph: "#" }], ["\\_", ["下划线符号"], { glyph: "_" }],
+    ["\\{", ["左花括号", "集合"], { glyph: "{" }], ["\\}", ["右花括号", "集合"], { glyph: "}" }],
+  ]);
+
+  const latexPicker = $("#latex-picker");
+  const latexSearchInput = $("#latex-symbol-search");
+  const latexGrid = $("#latex-symbol-grid");
+  const latexTabs = $("#latex-category-tabs");
+  const latexCommandDetail = $("#latex-symbol-command");
+  const latexSymbolDetail = $("#latex-symbol-detail");
+  const latexPreviewCache = new Map();
+  let latexPickerSelection = null;
+  let latexPickerCategory = "all";
+  let latexPickerActive = 0;
+  let latexPickerResults = [];
+  const latexRecentKey = "minxi:latex-recent";
+  const readLatexRecent = () => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(latexRecentKey) || "[]");
+      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+  const recordLatexRecent = (symbol) => {
+    try {
+      const next = [symbol.command, ...readLatexRecent().filter((item) => item !== symbol.command)].slice(0, 18);
+      window.localStorage.setItem(latexRecentKey, JSON.stringify(next));
+    } catch { /* 本地存储不可用时不影响插入 */ }
+  };
+  const recentLatexSymbols = () => readLatexRecent()
+    .map((command) => latexSymbols.find((symbol) => symbol.command === command))
+    .filter(Boolean);
+  const latexSubsequence = (needle, haystack) => {
+    if (!needle) return true;
+    let index = 0;
+    for (const char of haystack) {
+      if (char === needle[index]) index += 1;
+      if (index >= needle.length) return true;
+    }
+    return false;
+  };
+  const scoreLatexSymbol = (symbol, query) => {
+    const command = symbol.command.toLocaleLowerCase();
+    const bare = command.replace(/^\\+/, "");
+    const aliases = symbol.aliases.map((alias) => alias.toLocaleLowerCase());
+    if (bare === query || command === query || command === `\\${query}`) return 0;
+    if (bare.startsWith(query)) return 1;
+    if (symbol.glyph === query || aliases.some((alias) => alias === query)) return 2;
+    if (aliases.some((alias) => alias.startsWith(query))) return 3;
+    if (bare.includes(query)) return 4;
+    if (aliases.some((alias) => alias.includes(query))) return 5;
+    if (latexSubsequence(query, bare)) return 6;
+    if (aliases.some((alias) => latexSubsequence(query, alias))) return 7;
+    return Number.POSITIVE_INFINITY;
+  };
+  const currentLatexResults = () => {
+    const query = latexSearchInput.value.trim().toLocaleLowerCase().replace(/^\\+/, "");
+    if (query) {
+      return latexSymbols
+        .map((symbol, index) => ({ symbol, index, score: scoreLatexSymbol(symbol, query) }))
+        .filter((item) => Number.isFinite(item.score))
+        .sort((a, b) => a.score - b.score || a.index - b.index)
+        .map((item) => item.symbol);
+    }
+    if (latexPickerCategory === "recent") return recentLatexSymbols();
+    if (latexPickerCategory === "all") return [...latexSymbols];
+    return latexSymbols.filter((symbol) => symbol.category === latexPickerCategory);
+  };
+  const latexPreviewHtml = (symbol) => {
+    if (!latexPreviewCache.has(symbol.command)) {
+      latexPreviewCache.set(symbol.command, window.MinxiPreview?.renderLatex?.(symbol.preview) || "");
+    }
+    return latexPreviewCache.get(symbol.command);
+  };
+  const setLatexPickerActive = (index, scroll = false) => {
+    if (!latexPickerResults.length) return;
+    latexPickerActive = Math.min(Math.max(index, 0), latexPickerResults.length - 1);
+    [...latexGrid.querySelectorAll("[data-latex-index]")].forEach((button) => {
+      button.classList.toggle("active", Number(button.dataset.latexIndex) === latexPickerActive);
+    });
+    const symbol = latexPickerResults[latexPickerActive];
+    latexCommandDetail.textContent = symbol.command;
+    latexSymbolDetail.textContent = `${latexCategoryName(symbol.category)} · ${symbol.aliases.join(" · ")}`;
+    if (scroll) latexGrid.querySelector(`[data-latex-index="${latexPickerActive}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+  const renderLatexTabs = () => {
+    const tabs = [{ id: "all", name: "全部" }];
+    if (recentLatexSymbols().length) tabs.push({ id: "recent", name: "最近" });
+    tabs.push(...latexCategories.map(([id, name]) => ({ id, name })));
+    latexTabs.replaceChildren(...tabs.map((tab) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = tab.name;
+      button.dataset.latexCategory = tab.id;
+      button.classList.toggle("active", !latexSearchInput.value.trim() && latexPickerCategory === tab.id);
+      button.setAttribute("aria-pressed", String(latexPickerCategory === tab.id));
+      return button;
+    }));
+  };
+  const renderLatexResults = () => {
+    latexPickerResults = currentLatexResults();
+    latexPickerActive = 0;
+    renderLatexTabs();
+    if (!latexPickerResults.length) {
+      const empty = document.createElement("p");
+      empty.className = "latex-picker-empty";
+      empty.textContent = latexSearchInput.value.trim() ? "没有匹配的符号，换个命令或中文叫法试试。" : "还没有用过的符号，搜一个插入后会出现在这里。";
+      latexGrid.replaceChildren(empty);
+      latexCommandDetail.textContent = "没有匹配的符号";
+      latexSymbolDetail.textContent = "可搜 \\pm、正负、积分、分数等";
+      return;
+    }
+    const nodes = latexPickerResults.map((symbol, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "latex-symbol-card";
+      button.dataset.latexIndex = String(index);
+      button.title = `${symbol.command}（${symbol.aliases.join(" · ")}）`;
+      button.setAttribute("aria-label", `插入 ${symbol.command}，${symbol.aliases.join("、")}`);
+      const preview = document.createElement("span");
+      preview.className = "latex-symbol-preview";
+      if (symbol.glyph) preview.textContent = symbol.glyph;
+      else {
+        const html = latexPreviewHtml(symbol);
+        if (html) preview.innerHTML = html;
+        else preview.textContent = symbol.preview;
+      }
+      const command = document.createElement("span");
+      command.className = "latex-symbol-name";
+      command.textContent = symbol.command;
+      button.append(preview, command);
+      return button;
+    });
+    latexGrid.replaceChildren(...nodes);
+    setLatexPickerActive(0);
+  };
+  const restoreLatexEditorFocus = (selection = latexPickerSelection) => {
+    el.f.body.focus({ preventScroll: true });
+    if (!selection) return;
+    const start = Math.min(selection.start, el.f.body.value.length);
+    const end = Math.min(selection.end, el.f.body.value.length);
+    el.f.body.selectionStart = start;
+    el.f.body.selectionEnd = end;
+  };
+  const openLatexPicker = () => {
+    latexPickerSelection = {
+      start: el.f.body.selectionStart ?? el.f.body.value.length,
+      end: el.f.body.selectionEnd ?? el.f.body.value.length,
+    };
+    latexPickerCategory = "all";
+    latexSearchInput.value = "";
+    latexPicker.hidden = false;
+    renderLatexResults();
+    setTimeout(() => latexSearchInput.focus(), 0);
+  };
+  const closeLatexPicker = (restoreFocus = true) => {
+    if (latexPicker.hidden) return;
+    latexPicker.hidden = true;
+    if (restoreFocus) restoreLatexEditorFocus();
+  };
+  const insertLatexSymbol = (symbol) => {
+    if (!symbol) return;
+    recordLatexRecent(symbol);
+    const saved = latexPickerSelection || {
+      start: el.f.body.selectionStart ?? el.f.body.value.length,
+      end: el.f.body.selectionEnd ?? el.f.body.value.length,
+    };
+    const start = Math.min(saved.start, el.f.body.value.length);
+    const end = Math.min(saved.end, el.f.body.value.length);
+    el.f.body.value = el.f.body.value.slice(0, start) + symbol.insert + el.f.body.value.slice(end);
+    latexPicker.hidden = true;
+    el.f.body.focus({ preventScroll: true });
+    el.f.body.selectionStart = start + symbol.cursor[0];
+    el.f.body.selectionEnd = start + symbol.cursor[1];
+    el.f.body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    updatePreview();
+  };
+  latexTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-latex-category]");
+    if (!button) return;
+    latexPickerCategory = button.dataset.latexCategory;
+    latexSearchInput.value = "";
+    renderLatexResults();
+    latexSearchInput.focus();
+  });
+  latexGrid.addEventListener("mouseover", (event) => {
+    const button = event.target.closest("[data-latex-index]");
+    if (button) setLatexPickerActive(Number(button.dataset.latexIndex));
+  });
+  latexGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-latex-index]");
+    if (button) insertLatexSymbol(latexPickerResults[Number(button.dataset.latexIndex)]);
+  });
+  latexSearchInput.addEventListener("input", renderLatexResults);
+  latexSearchInput.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLatexPicker();
+      return;
+    }
+    if (!latexPickerResults.length) return;
+    const columns = Math.max(1, (window.getComputedStyle(latexGrid).gridTemplateColumns || "").split(" ").filter(Boolean).length || 6);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setLatexPickerActive(latexPickerActive + columns, true);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setLatexPickerActive(latexPickerActive - columns, true);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const collapsed = latexSearchInput.selectionStart === latexSearchInput.selectionEnd;
+      const atBoundary = event.key === "ArrowLeft"
+        ? collapsed && latexSearchInput.selectionStart === 0
+        : collapsed && latexSearchInput.selectionStart === latexSearchInput.value.length;
+      if (atBoundary) {
+        event.preventDefault();
+        setLatexPickerActive(latexPickerActive + (event.key === "ArrowLeft" ? -1 : 1), true);
+      }
+    } else if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      insertLatexSymbol(latexPickerResults[latexPickerActive]);
+    }
+  });
+  $("#close-latex-picker").addEventListener("click", () => closeLatexPicker());
+  $("#latex-picker-backdrop").addEventListener("click", () => closeLatexPicker());
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !latexPicker.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeLatexPicker();
+    }
+  }, true);
+  el.f.body.addEventListener("keydown", (event) => {
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "ArrowUp" && !event.isComposing) {
+      event.preventDefault();
+      openLatexPicker();
+    }
+  });
+  $("#insert-latex-symbol").addEventListener("click", openLatexPicker);
+
   $("#insert-math").addEventListener("click", () => {
     insertAtCursor(el.f.body, "\n\n$$\nf(n) = \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n");
   });
@@ -1524,6 +2033,7 @@
       el.f.description.value = String(data.description || "");
       el.f.accent.value = String(data.accent || "");
       el.f.sample.checked = String(data.sample || "") === "true";
+      setVisibility(String(data.published || "") === "false" ? "private" : "public");
       setPinned(Number(data.sticky) > 0);
       el.f.body.value = body.replace(/^\n+/, "");
       snapshots.editor = editorSnapshotValue();
@@ -1548,6 +2058,7 @@
     el.f.description.value = "";
     el.f.accent.value = "";
     el.f.sample.checked = false;
+    setVisibility("public");
     setPinned(false);
     el.f.body.value = "";
     delete el.f.slug.dataset.touched;
@@ -1581,6 +2092,7 @@
       description: el.f.description.value.trim(),
       accent: el.f.accent.value,
       sample: el.f.sample.checked,
+      visibility,
       pinned,
       body: el.f.body.value,
       path: `${CONFIG.postsDir}/${slug}.md`,
@@ -1638,9 +2150,11 @@
       }
       el.editorTitle.textContent = `编辑：${fields.title}`;
       el.deletePost.hidden = false;
-      el.editorStatus.textContent = `已提交。发布地址 ${postUrl(fields.date, fields.slug)}，静态页面约 1–2 分钟后更新。`;
+      el.editorStatus.textContent = fields.visibility === "private"
+        ? "已提交为私密文章。公开站点不会生成这篇文章，之后可在后台继续编辑。"
+        : `已提交。发布地址 ${postUrl(fields.date, fields.slug)}，静态页面约 1–2 分钟后更新。`;
       toast("已提交，GitHub Actions 正在重新生成站点");
-      postIndex.set(fields.path, { ...fields, sha: editing.sha, size: markdown.length });
+      postIndex.set(fields.path, { ...fields, published: fields.visibility !== "private", sha: editing.sha, size: markdown.length });
       await refreshPosts().catch(() => {});
       if (editing?.path) editing.sha = postIndex.get(editing.path)?.sha || editing.sha;
       watchBuild(submittedSha);
@@ -1726,6 +2240,7 @@
       accent: el.f.accent.value,
       description: el.f.description.value,
       sample: el.f.sample.checked,
+      visibility,
       pinned,
       body: el.f.body.value,
     });

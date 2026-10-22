@@ -260,22 +260,26 @@ test('editor and preview stay aligned and synced without jumping back to the top
   const stamped = preview('# 标题\n\n第一段\n\n第二段');
   assert.deepEqual([...stamped.querySelectorAll('.article-content > [data-source-line]')].map((el) => el.dataset.sourceLine), ['1', '3', '5'], '预览顶层块标有源码起始行');
   const adminJs = await readFile('source/admin/admin.js', 'utf8');
-  assert.ok(adminJs.includes('buildScrollAnchors') && adminJs.includes('isSyncEcho'), '同步走行锚点并忽略程序赋值的回声滚动');
-  assert.ok(adminJs.includes('runQueuedSync') && adminJs.includes('syncFallback'), '编辑侧同步有 rAF + 定时兜底队列，不会丢帧');
+  assert.ok(adminJs.includes('collectScrollAnchors') && adminJs.includes('syncPreviewScroll'), '同步走参考编辑器的行锚点单向对齐');
+  assert.ok(adminJs.includes('scroll.style.scrollBehavior = "auto"'), '程序对齐关闭平滑滚动，直接落位无滚动动画');
+  assert.ok(adminJs.includes('previewFrame.style.visibility = "hidden"') && adminJs.includes('revealAlignedPreview'), '重渲染先隐藏新预览，对齐完成后才显示，不先露最前端');
+  assert.ok(!adminJs.includes('syncEditorToPreview') && !adminJs.includes('isSyncEcho'), '单向同步：预览不反写编辑区，没有回声守卫');
 
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(previewTop, 700, '编辑区滚到一半时预览按比例对齐到一半（同步经 rAF 合并）');
 
   frame.dispatchEvent(new w.Event('load'));
-  await new Promise((resolve) => setTimeout(resolve, 90));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  assert.equal(previewTop, 700, '重新渲染后按编辑区当前位置重新对齐，不回最前端');
+  // 单向同步（参考编辑器同款）：在预览里滚动不反写编辑区。
   previewTop = 1050;
   frame.contentWindow.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 90));
-  assert.equal(editorTop, 600, '预览滚动时编辑区也按比例对齐');
+  assert.equal(editorTop, 400, '预览滚动不带动编辑区（单向同步）');
+  assert.equal(previewTop, 1050, '预览自己的滚动位置不被编辑区抢回去');
 
-  // 重新渲染后按比例恢复预览位置，不回到头。
-  previewTop = 1050;
+  // 再次编辑触发重新渲染：仍以编辑区为准对齐，不回到头。
   field.value = '改了一点正文，触发重新渲染';
   field.dispatchEvent(new w.Event('input'));
   await new Promise((resolve) => setTimeout(resolve, 260));
@@ -285,7 +289,8 @@ test('editor and preview stay aligned and synced without jumping back to the top
   }
   metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
   frame.dispatchEvent(new w.Event('load'));
-  assert.equal(previewTop, 1050, '重新渲染后预览停在原来的相对位置，不回头');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(previewTop, 700, '重新渲染后预览按编辑区对齐到对应位置，不回头');
   editor.window.close();
 });
 
@@ -309,5 +314,276 @@ test('view mode changes do not reload an unchanged live preview', async () => {
   assert.equal(renders, baseline);
   w.document.querySelector('#new-post-button').click();
   assert.equal(renders, baseline + 1, 'Opening a new article resets the preview even with identical inputs');
+  editor.window.close();
+});
+
+test('zen (pure) editor mode hides the chrome, keeps the draft and exits with Esc', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Zen mode must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  field.value = '纯净模式里写的草稿';
+  w.document.querySelector('[data-editor-mode="zen"]').click();
+  assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'zen');
+  assert.ok(w.document.body.classList.contains('zen-editing'), '纯净模式给 body 打上 zen-editing 标记');
+  assert.equal(field.value, '纯净模式里写的草稿', '切换模式不丢未保存内容');
+  const css = await readFile('source/admin/admin.css', 'utf8');
+  assert.match(css, /body\.zen-editing \.admin-topbar/, '纯净模式隐藏后台顶栏');
+  assert.match(css, /\.writing-workspace\[data-mode="zen"\] \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/, '纯净模式是左编辑右预览的专注分屏');
+  assert.ok(!/\.writing-workspace\[data-mode="zen"\] #post-preview \{[^}]*display: none/.test(css), '纯净模式不再隐藏预览区');
+  w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
+  assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'split', 'Esc 退回分屏');
+  assert.ok(!w.document.body.classList.contains('zen-editing'));
+  assert.equal(field.value, '纯净模式里写的草稿', '退出纯净模式也不丢内容');
+  editor.window.close();
+});
+
+test('preview scrolling stays independent and re-render re-aligns to the editor', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段\\n\\n第二段\\n\\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  const doc = frame.contentDocument;
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  // 编辑区滚到一半，预览跟随到一半。
+  editorTop = 400;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 700, '编辑区滚动带动预览');
+  // 单向同步：在预览（编译）区滚动，编辑区不被反向带动（参考编辑器同款，
+  // 消除双向回声拉扯）；预览自己的位置保持不变。
+  previewTop = 1050;
+  frame.contentWindow.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(editorTop, 400, '预览区滚动不反写编辑区');
+  assert.equal(previewTop, 1050, '预览滚动位置保持');
+  // 触发重新渲染后，预览按编辑区的位置重新对齐，不得跳回最前端。
+  field.value = '第一段改了一点\\n\\n第二段\\n\\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const renderedDoc = frame.contentDocument;
+  if (!renderedDoc.scrollingElement) {
+    Object.defineProperty(renderedDoc, 'scrollingElement', { configurable: true, get: () => renderedDoc.documentElement });
+  }
+  metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(previewTop, 700, '重新渲染后预览按编辑区对齐，不跳回顶部');
+  editor.window.close();
+});
+
+test('Shift+ArrowUp opens a searchable LaTeX symbol picker and inserts at the saved caret', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('LaTeX picker must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const picker = w.document.querySelector('#latex-picker');
+  const search = w.document.querySelector('#latex-symbol-search');
+  const openWithShortcut = () => {
+    field.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true, bubbles: true, cancelable: true }));
+  };
+  const searchFor = (query) => {
+    search.value = query;
+    search.dispatchEvent(new w.Event('input', { bubbles: true }));
+    return [...w.document.querySelectorAll('#latex-symbol-grid .latex-symbol-card')];
+  };
+
+  assert.ok(w.document.querySelector('#insert-latex-symbol'), '工具栏有 LaTeX 符号入口');
+  field.value = '公式：$$';
+  field.focus();
+  field.setSelectionRange(4, 4);
+  field.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true, '普通上箭头不打开符号搜索');
+  openWithShortcut();
+  assert.equal(picker.hidden, false, 'Shift+上箭头打开符号搜索');
+
+  let cards = searchFor('正负');
+  assert.equal(w.document.querySelector('#latex-symbol-command').textContent, '\\pm', '中文别名「正负」应找到 \\pm');
+  assert.ok(cards.length >= 1);
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true, 'Enter 插入后关闭');
+  assert.equal(field.value, '公式：$\\pm$', '符号插回打开面板前的光标处');
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('minxi:latex-recent')), ['\\pm'], '最近使用会被记住');
+
+  field.setSelectionRange(field.value.length, field.value.length);
+  openWithShortcut();
+  cards = searchFor('分数');
+  assert.equal(w.document.querySelector('#latex-symbol-command').textContent, '\\frac{}{}', '搜「分数」优先给出分式模板');
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.ok(field.value.endsWith('\\frac{}{}$$') || field.value.includes('\\frac{}{}'), '分式模板已插入');
+  const fracAt = field.value.indexOf('\\frac{}{}');
+  assert.equal(field.selectionStart, fracAt + 6, '插入分式后光标落在第一个花括号里');
+
+  field.value = 'A选中的文字B';
+  field.setSelectionRange(1, 6);
+  openWithShortcut();
+  searchFor('积分');
+  assert.equal(w.document.querySelector('#latex-symbol-command').textContent, '\\int_{}^{}', '搜「积分」给出带上下限的积分模板');
+  const beforeCancel = field.value;
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true, 'Esc 关闭符号搜索');
+  assert.equal(field.value, beforeCancel, 'Esc 取消时不修改正文');
+  assert.equal(field.selectionStart, 1, '取消后恢复原选区起点');
+  assert.equal(field.selectionEnd, 6, '取消后恢复原选区终点');
+
+  // 纯净模式里 Esc 应先关符号面板，不能顺手退出纯净模式。
+  w.document.querySelector('[data-editor-mode="zen"]').click();
+  field.focus();
+  openWithShortcut();
+  assert.equal(picker.hidden, false);
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(picker.hidden, true);
+  assert.equal(w.document.querySelector('#writing-workspace').dataset.mode, 'zen', '关符号面板后仍留在纯净模式');
+  editor.window.close();
+});
+
+test('admin writes dragged graph positions back into the matching graph fence', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Graph position commit must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = [
+    '第一段',
+    '',
+    '```graph',
+    'node: A ; x=0 ; y=0',
+    'node: B ; x=100 ; y=0',
+    'edge: A - B',
+    '```',
+    '',
+    '```graph',
+    'node: A ; label=起点 ; color=red',
+    'edge: A - C',
+    '```',
+  ].join('\n');
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const doc = frame.contentDocument;
+  const fire = (detail) => {
+    doc.dispatchEvent(new frame.contentWindow.CustomEvent('minxi:graph-positions', { detail }));
+  };
+  fire({ graphIndex: 1, reset: false, positions: { A: { x: 12.5, y: -3 }, C: { x: 40, y: 50 } } });
+  assert.match(field.value, /node: A ; label=起点 ; color=red ; x=12\.5 ; y=-3/, '已有 node 行保留其它选项并写回坐标');
+  assert.match(field.value, /node: C ; x=40 ; y=50/, '边里隐式出现的点补一行坐标');
+  assert.match(field.value, /node: A ; x=0 ; y=0/, '第一张图的源码不被改动');
+  fire({ graphIndex: 1, reset: true, positions: {} });
+  assert.doesNotMatch(field.value.split('```graph')[2], /x=|y=/, '重置会删掉该图的 x/y 坐标恢复自动布局');
+  editor.window.close();
+});
+
+test('editor-lead scrolling syncs the preview and re-render does not jump to the top', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  const doc = frame.contentDocument;
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+
+  // 在编辑区滚到一半：预览必须被带到对应位置（此前报修编辑侧不起效）。
+  editorTop = 400;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 700, '编辑区滚动应带动预览同步到对应位置');
+
+  // 继续输入触发重新渲染：编辑区是主导侧，预览仍停在对应位置，不得跳回最前端。
+  field.value = '第一段改了一点\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const renderedDoc = frame.contentDocument;
+  if (!renderedDoc.scrollingElement) {
+    Object.defineProperty(renderedDoc, 'scrollingElement', { configurable: true, get: () => renderedDoc.documentElement });
+  }
+  metric(renderedDoc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(previewTop, 700, '编辑区主导时重新渲染后预览不回顶部');
+  editor.window.close();
+});
+
+test('editor guide is folded and visibility uses pin-style toggle buttons', async () => {
+  const html = await readFile('source/admin/index.html', 'utf8');
+  assert.match(html, /<details class="editor-guide">/, '写作介绍应放进折叠框');
+  assert.ok(!/<details class="editor-guide" open/.test(html), '介绍折叠框默认收起');
+  assert.equal(html.includes('id="f-visibility"'), false, '可见性不再用下拉框');
+  assert.ok(html.includes('data-visibility="public"') && html.includes('data-visibility="private"'), '可见性是公开/私密按钮组');
+  const editor = new JSDOM(html, { url: 'https://preview.example/admin/', runScripts: 'outside-only' });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Visibility toggle must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const priv = w.document.querySelector('[data-visibility="private"]');
+  const pub = w.document.querySelector('[data-visibility="public"]');
+  assert.equal(pub.getAttribute('aria-pressed'), 'true', '默认公开');
+  priv.click();
+  assert.equal(priv.getAttribute('aria-pressed'), 'true', '点私密后按钮选中');
+  assert.equal(pub.getAttribute('aria-pressed'), 'false');
+  assert.match(w.document.querySelector('#visibility-hint').textContent, /私密/, '私密说明跟随按钮状态');
+  assert.match(w.document.querySelector('#url-preview').textContent, /私密文章/, '私密时发布地址提示同步更新');
+  pub.click();
+  assert.equal(pub.getAttribute('aria-pressed'), 'true', '可切回公开');
   editor.window.close();
 });

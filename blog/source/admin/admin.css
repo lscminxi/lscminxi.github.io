@@ -454,6 +454,183 @@ html[data-wallpaper="on"] .admin-topbar {
   gap: 9px;
   margin-top: 18px;
 }
+/* LaTeX 符号搜索（Shift + ↑）：覆盖在编辑器上方，选中后插回原光标。 */
+.latex-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 9vh 18px 18px;
+  box-sizing: border-box;
+}
+.latex-picker[hidden] {
+  display: none;
+}
+.latex-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 6, 10, 0.62);
+  backdrop-filter: blur(3px);
+}
+.latex-picker-card {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-raised);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+.latex-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 17px 11px;
+}
+.latex-picker-head h2 {
+  margin: 0;
+  font: 600 15px var(--mono);
+}
+.latex-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 17px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--muted);
+}
+.latex-picker-search:focus-within {
+  border-color: var(--accent);
+}
+.latex-picker-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 14px var(--sans);
+}
+.latex-picker-search kbd,
+.body-tools kbd {
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+.latex-category-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 12px 17px 10px;
+}
+.latex-category-tabs button {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 5px 10px;
+  font: 11px var(--sans);
+  cursor: pointer;
+}
+.latex-category-tabs button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.latex-symbol-grid {
+  min-height: 160px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+  padding: 4px 17px 14px;
+}
+.latex-symbol-card {
+  min-width: 0;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  padding: 8px 4px;
+  cursor: pointer;
+}
+.latex-symbol-card:hover,
+.latex-symbol-card.active {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.latex-symbol-preview {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 19px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.latex-symbol-preview .katex {
+  font-size: 1.02em;
+}
+.latex-symbol-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+.latex-picker-empty {
+  grid-column: 1 / -1;
+  margin: 42px 10px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+.latex-picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 10px 17px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.latex-picker-foot code {
+  flex: 0 1 auto;
+}
+.latex-picker-foot span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .latex-picker {
+    padding: 5vh 10px 10px;
+  }
+  .latex-symbol-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .latex-picker-foot span {
+    display: none;
+  }
+}
 code {
   font: 11px var(--mono);
   background: #0e131b;
@@ -494,6 +671,14 @@ code {
 #post-preview { display: block; width: 100%; height: 100%; min-height: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); box-sizing: border-box; }
 .writing-workspace[data-mode="edit"], .writing-workspace[data-mode="preview"] { grid-template-columns: minmax(0, 1fr); }
 .writing-workspace[data-mode="edit"] #post-preview, .writing-workspace[data-mode="preview"] #f-body { display: none; }
+/* 纯净（专注）模式：隐藏顶栏与元信息表单，但保留左编辑右预览的专注分屏；Esc 或切回其它模式退出。 */
+.writing-workspace[data-mode="zen"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: calc(100vh - 160px); min-height: 480px; }
+.writing-workspace[data-mode="zen"] .code-area { font-size: 15px; line-height: 1.85; padding: 20px 22px; }
+body.zen-editing .admin-topbar,
+body.zen-editing #view-editor .panel-head,
+body.zen-editing #view-editor .form-grid,
+body.zen-editing #view-editor > .muted { display: none; }
+body.zen-editing .admin-main { max-width: 1440px; padding-top: 14px; }
 @media (max-width: 820px) {
   .writing-workspace { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .writing-workspace .code-area, #post-preview { height: 50vh; min-height: 320px; }
@@ -648,14 +833,47 @@ code {
   }
 }
 
-/* 置顶开关复用「编辑 / 分屏 / 预览」的按钮样式 */
-.pin-field {
+/* 置顶与可见性开关复用「编辑 / 分屏 / 预览」的按钮样式 */
+.pin-field,
+.visibility-field {
   margin-bottom: 14px;
 }
-.pin-hint {
+.pin-hint,
+.visibility-hint {
   margin: 8px 2px 0;
   font-size: 12px;
   color: var(--muted);
+}
+/* 写作说明折叠框：默认收起，不再让大段介绍挤占编辑页。 */
+.editor-guide {
+  margin: 4px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.editor-guide > summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+  user-select: none;
+}
+.editor-guide > summary:hover {
+  color: var(--accent);
+}
+.editor-guide-body {
+  border-top: 1px solid var(--line);
+  padding: 10px 16px 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.9;
+}
+.editor-guide-body p {
+  margin: 0 0 6px;
+}
+.editor-guide-body ul {
+  margin: 0;
+  padding-left: 20px;
 }
 
 /* ------------------------------------------------------------------
@@ -851,6 +1069,12 @@ html[data-theme="light"] .modal {
 }
 html[data-theme="light"] .modal-card p {
   color: #4c5966;
+}
+html[data-theme="light"] .latex-picker-backdrop {
+  background: rgba(223, 230, 240, 0.82);
+}
+html[data-theme="light"] .latex-picker-card {
+  box-shadow: 0 18px 50px rgba(23, 40, 66, 0.18);
 }
 html[data-theme="light"] .preview-card {
   border-color: #d7dfe9;

@@ -1029,7 +1029,7 @@ function renderGraphSvg(spec) {
   const sx = (x) => pad + (x - minX) * scale;
   const sy = (y) => pad + (y - minY) * yScale; // 屏幕坐标：y 越大越靠下（与画图习惯一致，声明坐标即屏幕方向）
 
-  const out = [`<svg class="md-graph-svg" viewBox="0 0 ${W} ${fmt(H)}" role="img" aria-label="${escape(spec.title || '可视化图')}" preserveAspectRatio="xMidYMid meet">`];
+  const out = [`<svg class="md-graph-svg" viewBox="0 0 ${W} ${fmt(H)}" data-graph-pad="${fmt(pad)}" data-graph-min-x="${fmt(minX)}" data-graph-min-y="${fmt(minY)}" data-graph-scale-x="${fmt(scale)}" data-graph-scale-y="${fmt(yScale)}" role="img" aria-label="${escape(spec.title || '可视化图')}" preserveAspectRatio="xMidYMid meet">`];
 
   // 边（同对点的多条边用弧线错开）
   const pairCount = new Map();
@@ -1097,7 +1097,7 @@ function renderGraphSvg(spec) {
     const sub = node.label && node.label !== node.id && node.id !== text
       ? `<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`
       : '';
-    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}"><title>${escape(text)}</title><circle class="graph-node-ring" cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size + 5}" fill="none" style="stroke:var(--text,#e6eaf0)" stroke-width="1.6"/><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
+    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}" data-node-x="${fmt(node.x)}" data-node-y="${fmt(node.y)}" data-node-size="${fmt(node.size)}"><title>${escape(text)}</title><circle class="graph-node-ring" cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size + 5}" fill="none" style="stroke:var(--text,#e6eaf0)" stroke-width="1.6"/><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
   }
 
   out.push('</svg>');

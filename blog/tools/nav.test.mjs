@@ -22,11 +22,11 @@ const CLOSE_WAIT = 950;
  * jsdom 不会做样式计算，所以这里用 getBoundingClientRect + 真实类名把几何喂给脚本，
  * 脚本里「按几何判断指针在哪」的逻辑就能被真实验证。
  */
-function setup() {
+function setup(searchPosts = []) {
   const dom = new JSDOM(page, { url: "https://lscminxi.github.io/", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.scrollTo = () => {};
-  w.fetch = async () => ({ ok: true, json: async () => ({ posts: [] }) });
+  w.fetch = async () => ({ ok: true, json: async () => searchPosts });
   const root = w.document.documentElement;
   const isOpen = () => root.classList.contains("header-open");
   const box = (node) => {
@@ -258,4 +258,50 @@ test("the page ships the arrow, the script version and the trigger markup", () =
   assert(/js\/main\.js\?v=/.test(page), "main.js 必须带版本号，否则浏览器会用旧缓存");
   assert(/css\/main\.css\?v=/.test(page), "main.css 必须带版本号");
   assert(page.includes('class="header-hover-zone"'), "顶部感应区仍要在（顶部 14px 都能触发）");
+});
+
+test("search finds articles by LaTeX fragments with fuzzy matching", async () => {
+  const env = setup([
+    {
+      title: "等差数列求和",
+      url: "/posts/sum/",
+      description: "求和公式推导",
+      tags: ["数列"],
+      content: "今天推导求和公式，并练习若干例题。",
+      latex: ["f(n)=\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"],
+    },
+    {
+      title: "二分查找",
+      url: "/posts/binary-search/",
+      description: "在有序数组里折半查找",
+      tags: ["二分"],
+      content: "二分查找模板与边界处理。",
+      latex: [],
+    },
+  ]);
+  try {
+    const { w, $ } = env;
+    const input = $("#search-input");
+    const type = async (value) => {
+      input.value = value;
+      input.dispatchEvent(new w.Event("input", { bubbles: true }));
+      await sleep(30);
+      return [...w.document.querySelectorAll("#search-results .search-result")];
+    };
+    // 精确命令、大小写与花括号写法差异、去掉反斜杠分词、输一半的子序列模糊，都应命中同一篇。
+    for (const query of ["\\sum", "SUM_{i=1}", "frac n 2", "\\su", "sm"]) {
+      const found = await type(query);
+      assert.equal(found.length, 1, `查询 ${query} 应只命中含公式的文章`);
+      assert.equal(found[0].getAttribute("href"), "/posts/sum/");
+    }
+    const withFormula = await type("\\frac{n(n+1)}{2}");
+    assert.match(withFormula[0].querySelector(".search-latex")?.textContent || "", /frac/, "结果里应亮出命中的公式片段");
+    const plain = await type("二分");
+    assert.equal(plain.length, 1);
+    assert.equal(plain[0].getAttribute("href"), "/posts/binary-search/", "普通关键词搜索保持原行为");
+    const none = await type("\\int_0^1");
+    assert.equal(none.length, 0, "没有对应公式时不乱报命中");
+  } finally {
+    await env.close();
+  }
 });

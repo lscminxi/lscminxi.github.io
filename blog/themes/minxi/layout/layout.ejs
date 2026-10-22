@@ -20,7 +20,7 @@
   <script src="<%- url_for('/js/wallpaper.js') %>?v=wallpaper-2"></script>
   <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>">
   <% if (appearance.faviconType === 'image/png') { %><link rel="apple-touch-icon" href="<%= url_for(appearance.favicon) %>">
-  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=nav-7">
+  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=graph-save-1">
   <link rel="stylesheet" href="<%- url_for('/vendor/katex/katex.min.css') %>">
   <% if (appearance.hasWallpaper) { %><style>
     :root {
@@ -29,9 +29,9 @@
       --wallpaper-blur: <%= appearance.wallpaperBlur %>px;
     }
   </style>
-  <% } %><script src="<%- url_for('/js/main.js') %>?v=nav-2" defer></script>
+  <% } %><script src="<%- url_for('/js/main.js') %>?v=latex-search-1" defer></script>
   <script src="<%- url_for('/js/auth.js') %>?v=auth-1" defer></script>
-  <script src="<%- url_for('/js/plot.js') %>?v=plot-8" defer></script>
+  <script src="<%- url_for('/js/plot.js') %>?v=graph-save-1" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>
@@ -40,7 +40,7 @@
   <%- partial('_partial/footer') %>
   <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title" data-index="<%- url_for('/search.json') %>">
     <div class="search-heading"><h2 id="search-title">搜索笔记</h2><button class="icon-button" id="close-search" aria-label="关闭搜索">×</button></div>
-    <div class="search-input-wrap"><span aria-hidden="true">⌕</span><input id="search-input" type="search" placeholder="搜索文章、算法、标签…" autocomplete="off" aria-label="搜索文章、算法、标签"></div>
+    <div class="search-input-wrap"><span aria-hidden="true">⌕</span><input id="search-input" type="search" placeholder="搜索文章、算法、标签，或 LaTeX 如 \sum、\frac{n}{2}…" autocomplete="off" aria-label="搜索文章、算法、标签或 LaTeX 公式"></div>
     <div id="search-results" aria-live="polite"><p class="search-hint">输入关键词以搜索</p></div>
     <div class="search-footer"><span>本地全文搜索 · 不追踪，不上传</span><kbd>ESC 关闭</kbd></div>
   </dialog>
