@@ -1245,6 +1245,23 @@
   let previewLoadPending = false;
   const previewFrame = $("#post-preview");
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
+  // 像洛谷编辑器一样允许「滑过文末」：不往正文里塞空行，只给 textarea 加
+  // 一块随编辑区高度计算的底部留白。这样滚到尽头时，最后一行正好停在
+  // 编辑区顶部，写结尾时不用一直贴着底部看字。
+  const updateEditorOverscroll = () => {
+    const ta = el.f.body;
+    if (!ta) return;
+    const style = window.getComputedStyle(ta);
+    const fontSize = parseFloat(style.fontSize) || 12.5;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.9;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const height = Number.isFinite(ta.clientHeight) ? ta.clientHeight : 0;
+    const bottom = height > 0
+      ? Math.max(lineHeight, height - paddingTop - lineHeight)
+      : lineHeight;
+    ta.style.paddingBottom = `${Math.round(bottom)}px`;
+    scrollAnchorsDirty = true;
+  };
   const ensureLineMirror = () => {
     if (lineMirror) return lineMirror;
     const mirror = document.createElement("div");
@@ -1344,7 +1361,12 @@
     syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
   };
   el.f.body.addEventListener("scroll", queuePreviewSync, { passive: true });
-  window.addEventListener("resize", () => { scrollAnchorsDirty = true; });
+  updateEditorOverscroll();
+  try { document.fonts?.ready?.then(() => updateEditorOverscroll()); } catch { /* 字体接口不可用时忽略 */ }
+  window.addEventListener("resize", () => {
+    scrollAnchorsDirty = true;
+    updateEditorOverscroll();
+  });
   // 预览里拖动图节点后，把坐标写回第 graphIndex 个 ```graph 块的 node 行：
   // 已有 node 行保留 label/color/size 等其它选项，只替换 x/y；边里隐式出现的点
   // 补一行 node: ID ; x=.. ; y=..。positions 为 null 表示重置（删掉所有 x/y）。
@@ -1496,14 +1518,16 @@
     $$('[data-editor-mode]').forEach((item) => {
       item.setAttribute("aria-pressed", String(item.dataset.editorMode === mode));
     });
+    updateEditorOverscroll();
     renderPostPreview();
     if (!previewLoadPending) previewFrame.style.visibility = "";
     // 从纯编辑切回带预览的模式时，按编辑区当前滚动位置把预览对齐过来，
-    // 不能让预览从最前端开始；布局刚变，行锚点也要重算。
+    // 不能让预览从最前端开始；布局刚变，行锚点与文末留白也要重算。
     scrollAnchorsDirty = true;
-    if (mode === "split" || mode === "preview" || mode === "zen") {
-      scheduleFrame(() => syncPreviewScroll());
-    }
+    scheduleFrame(() => {
+      updateEditorOverscroll();
+      syncPreviewScroll();
+    });
     if (mode === "zen") el.f.body.focus();
   };
   $$('[data-editor-mode]').forEach((button) => {
@@ -1999,6 +2023,8 @@
     previewNeedsReset = true;
     el.viewApp.hidden = true;
     el.viewEditor.hidden = false;
+    updateEditorOverscroll();
+    scheduleFrame(() => updateEditorOverscroll());
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function hideEditor() {
