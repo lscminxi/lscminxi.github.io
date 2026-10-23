@@ -1292,8 +1292,11 @@
       mirror.append(div);
     }
   };
-  // 每次同步都按当前文档现算锚点：只取最外层标注块，行位置取镜像层 offsetTop，
-  // 预览位置取块相对预览视口的偏移；非单调的锚点（折叠/表格内的嵌套块）跳过。
+  // 每次同步都按当前文档现算块级锚点（仿洛谷编辑器的按块对齐）：锚点记下
+  // 每个块的源码起止行与预览上下沿。普通文本块在块内按行插值；折叠框、
+  // 函数图、关系图、独立图片这类「源码行数与渲染高度不成比例」的块整块
+  // 对齐——编辑光标落在块源码范围内时预览就停在块顶，不按行数硬摊比例。
+  // 折叠框展开时改用其内部块的锚点逐块对齐；未展开时内部块一律跳过。
   const collectScrollAnchors = (doc, scroll) => {
     if (scrollAnchorsDirty) {
       try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
@@ -1301,17 +1304,40 @@
     }
     const anchors = [];
     if (!lineMirror?.children?.length) return anchors;
+    const mirrorLineTop = (lineNo) => {
+      const kids = lineMirror.children;
+      if (lineNo <= 1) return kids[0].offsetTop || 0;
+      if (lineNo <= kids.length) return kids[lineNo - 1].offsetTop || 0;
+      const last = kids[kids.length - 1];
+      return (last.offsetTop || 0) + (last.offsetHeight || 0);
+    };
+    const isAtomicBlock = (block) => {
+      if (block.classList?.contains('md-plot') || block.classList?.contains('md-graph')) return true;
+      if (block.classList?.contains('fold-box')) return !block.open;
+      if (block.querySelector?.(':scope > img')) return true;
+      return false;
+    };
     for (const block of doc.querySelectorAll("[data-source-line]")) {
-      if (block.parentElement?.closest?.("[data-source-line]")) continue;
+      const parentFold = block.parentElement?.closest?.('details.fold-box');
+      if (parentFold && !parentFold.open) continue;
+      if (!block.classList?.contains('fold-box')
+        && block.parentElement?.closest?.('[data-source-line]') && !parentFold) continue;
       const line = Number(block.dataset.sourceLine);
-      const lineEl = lineMirror.children[line - 1];
-      if (!Number.isInteger(line) || line < 1 || !lineEl) continue;
-      const taY = lineEl.offsetTop;
-      const pvY = block.getBoundingClientRect().top + (scroll.scrollTop || 0);
-      if (!Number.isFinite(taY) || !Number.isFinite(pvY)) continue;
+      if (!Number.isInteger(line) || line < 1 || !lineMirror.children[line - 1]) continue;
+      const endLine = Number(block.dataset.sourceEndLine) || line + 1;
+      const rect = block.getBoundingClientRect();
+      const ta = mirrorLineTop(line);
+      const pv = rect.top + (scroll.scrollTop || 0);
+      if (!Number.isFinite(ta) || !Number.isFinite(pv)) continue;
       const prev = anchors[anchors.length - 1];
-      if (prev && (taY <= prev.ta || pvY <= prev.pv)) continue;
-      anchors.push({ ta: taY, pv: pvY });
+      if (prev && (ta <= prev.ta || pv <= prev.pv)) continue;
+      anchors.push({
+        ta,
+        taEnd: Math.max(mirrorLineTop(endLine), ta),
+        pv,
+        pvBottom: pv + Math.max(0, rect.height || 0),
+        atomic: isAtomicBlock(block),
+      });
     }
     return anchors;
   };
@@ -1336,29 +1362,35 @@
     }
     const anchors = collectScrollAnchors(doc, scroll);
     const y = Math.min(ta.scrollTop || 0, maxTa);
-    // 只保留编辑区实际能滚到的锚点；更靠下的锚点只可能出现在视口下部。
-    const usable = anchors.filter((anchor) => anchor.ta < maxTa - 0.5);
     let target;
-    if (!usable.length) {
+    if (!anchors.length) {
+      // 没有可用锚点时退回按正文总高度比例同步（同样不含文末留白）。
       target = (y / maxTa) * maxPv;
-    } else if (y <= usable[0].ta) {
-      target = usable[0].ta > 0 ? (y / usable[0].ta) * usable[0].pv : usable[0].pv;
+    } else if (y < anchors[0].ta) {
+      target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
     } else {
-      const last = usable[usable.length - 1];
-      if (y >= last.ta) {
-        // 最后一个可达锚点到末尾：平滑过渡到两侧同时见底。
-        const span = maxTa - last.ta;
-        target = span < 1
-          ? (y >= maxTa - 0.5 ? maxPv : last.pv)
-          : last.pv + ((y - last.ta) / span) * (maxPv - last.pv);
-      } else {
-        let lo = 0; let hi = usable.length - 1;
-        while (hi - lo > 1) {
-          const mid = (lo + hi) >> 1;
-          if (usable[mid].ta <= y) lo = mid; else hi = mid;
+      let i = anchors.length - 1;
+      while (i > 0 && anchors[i].ta > y) i -= 1;
+      const a = anchors[i];
+      if (y < a.taEnd) {
+        // 块内部：整块对齐的块停在块顶；普通块按行位置摊到块的渲染高度。
+        if (a.atomic) {
+          target = a.pv;
+        } else {
+          const span = a.taEnd - a.ta;
+          target = span > 0 ? a.pv + ((y - a.ta) / span) * (a.pvBottom - a.pv) : a.pv;
         }
-        const a = usable[lo]; const b = usable[hi];
-        target = a.pv + ((y - a.ta) / (b.ta - a.ta)) * (b.pv - a.pv);
+      } else if (i + 1 < anchors.length) {
+        // 块之间的空行区：从上一块下沿过渡到下一块上沿。
+        const b = anchors[i + 1];
+        const span = b.ta - a.taEnd;
+        target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
+      } else {
+        // 最后一块之后：平滑过渡到两侧同时见底。
+        const span = maxTa - a.taEnd;
+        target = span > 0.5
+          ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
+          : (y >= maxTa - 0.5 ? maxPv : a.pvBottom);
       }
     }
     // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放

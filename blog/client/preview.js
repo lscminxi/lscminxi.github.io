@@ -47,20 +47,33 @@ window.MinxiPreview = {
       ADD_TAGS: ['annotation'], FORBID_TAGS: ['style', 'iframe', 'form', 'input'],
       FORBID_ATTR: ['id', 'name'],
     });
-    // 给每个顶层块标上它在 Markdown 源码里的起始行号，供后台编辑器做
-    // 「源码行 ↔ 预览块」的锚点滚动同步（参考行锚点同步法：两边按内容对齐，
-    // 而不是按总高度百分比硬拉，所以长图/表格/代码块也不会错位抖动）。
+    // 给每个块标上它在 Markdown 源码里的起止行号，供后台编辑器做「源码行 ↔
+    // 预览块」的块级滚动同步：普通块按行内插，折叠框（展开时含内部块）、
+    // 函数图、关系图这类源码行数与渲染高度不成比例的块按整块对齐。
     try {
-      const sourceLines = [];
-      let line = 1;
-      for (const token of markdown.lexer(body)) {
-        const raw = token.raw || '';
-        if (token.type !== 'space' && token.type !== 'def') sourceLines.push(line);
-        line += (raw.match(/\n/g) || []).length;
-      }
-      [...fragment.children].forEach((el, index) => {
-        if (sourceLines[index]) el.dataset.sourceLine = String(sourceLines[index]);
-      });
+      const stampTokenBlocks = (elements, tokens, firstLine) => {
+        let line = firstLine;
+        let index = 0;
+        for (const token of tokens) {
+          const raw = token.raw || '';
+          const newlines = (raw.match(/\n/g) || []).length;
+          if (token.type !== 'space' && token.type !== 'def') {
+            const el = elements[index];
+            index += 1;
+            if (el) {
+              const occupied = Math.max(1, raw.split('\n').length - (raw.endsWith('\n') ? 1 : 0));
+              el.dataset.sourceLine = String(line);
+              el.dataset.sourceEndLine = String(line + occupied);
+              if (token.type === 'foldContainer' && Array.isArray(token.tokens)) {
+                const bodyEl = el.querySelector(':scope > .fold-box-body');
+                if (bodyEl) stampTokenBlocks([...bodyEl.children], token.tokens, line + 1);
+              }
+            }
+          }
+          line += newlines;
+        }
+      };
+      stampTokenBlocks([...fragment.children], markdown.lexer(body), 1);
     } catch { /* 行号只是同步辅助，标不上不影响预览本身 */ }
     // Native <details> remains clickable in the script-free iframe. Give each
     // fold a stable key so the editor can preserve its state across live updates.

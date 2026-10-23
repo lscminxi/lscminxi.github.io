@@ -215,6 +215,27 @@ test('live preview preserves fold states with stable keys, including duplicate a
   assert.equal(fresh.querySelectorAll('details[open]').length, 0, 'New articles start folded');
 });
 
+test('blocks carry source start and end lines, including fold interiors', () => {
+  const md = '段一\n\n:::info[提示]\n内部一\n\n内部二\n:::\n\n```plot\ny = x\n```\n\n```graph\nnode: A\n```\n\n尾段';
+  const doc = preview(md);
+  const blocks = [...doc.querySelector('.article-content').children];
+  const fold = blocks.find((el) => el.classList.contains('fold-box'));
+  const plot = blocks.find((el) => el.classList.contains('md-plot'));
+  const graph = blocks.find((el) => el.classList.contains('md-graph'));
+  assert.equal(fold.dataset.sourceLine, '3', '折叠框起始行');
+  assert.ok(Number(fold.dataset.sourceEndLine) > 7, '折叠框带结束行（覆盖内部全部源码）');
+  assert.deepEqual(
+    [...fold.querySelectorAll('.fold-box-body > *')].map((el) => el.dataset.sourceLine),
+    ['4', '6'],
+    '折叠框内部块也标了源码行，展开时可逐块对齐',
+  );
+  assert.equal(plot.dataset.sourceLine, '9', '函数图起始行');
+  assert.equal(graph.dataset.sourceLine, '13', '关系图起始行');
+  for (const el of [plot, graph]) {
+    assert.ok(Number(el.dataset.sourceEndLine) > Number(el.dataset.sourceLine), '图块带结束行，供整块对齐判定范围');
+  }
+});
+
 test('preview typography matches the published article reading size', () => {
   const html = dom.window.MinxiPreview.document({ title: '标题', body: '正文' });
   assert.ok(html.includes('.article-content{font-size:16px!important;line-height:2'), '预览正文强制与前台文章相同的 16px/2 字号行高，不受 iframe 窄宽断点缩小');
@@ -698,6 +719,94 @@ test('overscroll blank space is excluded from scroll sync percentages', async ()
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(previewTop, 1400, '留白行程被钳到文末，预览直接到底');
+  editor.window.close();
+});
+
+test('fold boxes and graphs align as whole blocks during scroll sync', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  // 镜像层每行 24px：用行号在兄弟中的序号模拟 offsetTop（JSDOM 无布局）。
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetTop', {
+    configurable: true,
+    get() {
+      const parent = this.parentElement;
+      if (parent?.getAttribute?.('aria-hidden') === 'true') {
+        const index = [...parent.children].indexOf(this);
+        if (index >= 0) return index * 24;
+      }
+      return 0;
+    },
+  });
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  const md = '段一\n\n:::info[提示]\n内部甲\n\n内部乙\n:::\n\n```graph\nnode: A\nedge: A - A\n```\n\n尾段';
+  field.value = md;
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  metric(field, 336, 100, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px';
+  const doc = frame.contentDocument;
+  doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content">'
+    + '<p data-source-line="1" data-source-end-line="2">段一</p>'
+    + '<details class="fold-box" data-source-line="3" data-source-end-line="8"><summary>提示</summary><div class="fold-box-body">'
+    + '<p data-source-line="4" data-source-end-line="5">内部甲</p><p data-source-line="6" data-source-end-line="7">内部乙</p></div></details>'
+    + '<figure class="md-graph" data-source-line="9" data-source-end-line="13"></figure>'
+    + '<p data-source-line="14" data-source-end-line="15">尾段</p></div>';
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1000, 200, () => previewTop, (value) => { previewTop = value; });
+  const place = (selector, top, height) => {
+    const el = doc.querySelector(selector);
+    el.__pv = top; el.__h = height;
+    return el;
+  };
+  place('.article-content > p', 0, 24);
+  const fold = place('.fold-box', 48, 56);
+  place('.md-graph', 200, 480);
+  doc.defaultView.HTMLElement.prototype.getBoundingClientRect = function rect() {
+    return {
+      top: (this.__pv || 0) - previewTop, bottom: (this.__pv || 0) - previewTop + (this.__h || 0),
+      height: this.__h || 0, left: 0, right: 100, width: 100, x: 0, y: (this.__pv || 0) - previewTop, toJSON() {},
+    };
+  };
+
+  // 编辑位置落在折叠框源码内部（第 5 行）：折叠状态下预览应停在折叠框顶部，
+  // 而不是按几十行源码摊到那一行高上慢慢爬。
+  editorTop = 96;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 48, '折叠框未展开时整块对齐到块顶');
+
+  // 编辑位置落在 graph 源码内部：预览停在图块顶部，不按源码行快速划过整张图。
+  editorTop = 210;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 200, '关系图整块对齐到块顶');
+
+  // 折叠框展开后改用内部块锚点：编辑到内部第一块时对齐到该块。
+  fold.open = true;
+  fold.__h = 200;
+  place('.fold-box-body > p', 104, 40);
+  editorTop = 72;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 104, '折叠框展开时按内部块对齐');
   editor.window.close();
 });
 
