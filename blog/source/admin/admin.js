@@ -1321,11 +1321,21 @@
     const scroll = doc?.scrollingElement;
     if (!doc || !scroll) return;
     if ($("#writing-workspace")?.dataset.mode === "edit") return;
-    const maxTa = ta.scrollHeight - ta.clientHeight;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    if (!(maxTa > 0) || !(maxPv > 0)) return;
+    if (!(maxPv > 0)) return;
+    // 文末留白（滑过文末的 padding-bottom）不能算进同步行程：同步只按正文
+    // 本身的可滚范围算百分比与锚点尾段，否则必须把最后一行拉到编辑区最
+    // 顶端、滑完整段空白，预览才肯翻到底。留白行程内的滚动一律钳到文末。
+    const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
+    const maxTa = Math.max(0, (ta.scrollHeight - ta.clientHeight) - overscrollBottom);
+    if (!(maxTa > 0)) {
+      // 正文短到本身不用滚：预览直接对齐顶部。
+      if (scroll.style) scroll.style.scrollBehavior = "auto";
+      scroll.scrollTop = 0;
+      return;
+    }
     const anchors = collectScrollAnchors(doc, scroll);
-    const y = ta.scrollTop || 0;
+    const y = Math.min(ta.scrollTop || 0, maxTa);
     // 只保留编辑区实际能滚到的锚点；更靠下的锚点只可能出现在视口下部。
     const usable = anchors.filter((anchor) => anchor.ta < maxTa - 0.5);
     let target;

@@ -315,6 +315,7 @@ test('editor and preview stay aligned and synced without jumping back to the top
   let editorTop = 400;
   let previewTop = 0;
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px'; // 本用例的几何不含文末留白；留白排除另有专门用例
   metric(previewScroll, 1600, 200, () => previewTop, (value) => { previewTop = value; });
 
   // 预览块带源码行号，编辑区按行锚点同步（无锚点时才退回比例）。
@@ -429,6 +430,7 @@ test('preview scrolling stays independent and re-render re-aligns to the editor'
   let editorTop = 0;
   let previewTop = 0;
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px'; // 本用例的几何不含文末留白；留白排除另有专门用例
   const doc = frame.contentDocument;
   if (!doc.scrollingElement) {
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
@@ -597,6 +599,7 @@ test('editor-lead scrolling syncs the preview and re-render does not jump to the
   let editorTop = 0;
   let previewTop = 0;
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px'; // 本用例的几何不含文末留白；留白排除另有专门用例
   const doc = frame.contentDocument;
   if (!doc.scrollingElement) {
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
@@ -648,6 +651,53 @@ test('editor can scroll past the end until the last line reaches the top', async
   Object.defineProperty(field, 'clientHeight', { configurable: true, get: () => 220 });
   w.dispatchEvent(new w.Event('resize'));
   assert.equal(field.style.paddingBottom, '190px', '高度变化后文末留白同步重算');
+  editor.window.close();
+});
+
+test('overscroll blank space is excluded from scroll sync percentages', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  // 物理可滚范围 1200 = 正文 830 + 文末留白 370（编辑区高 200 时留白约一屏）。
+  metric(field, 1400, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '370px';
+  const doc = frame.contentDocument;
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+
+  // 正文滚到一半（415 / 830）：预览必须到一半，而不是被留白稀释到 415/1200。
+  editorTop = 415;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 700, '百分比按正文范围算，不含文末留白');
+
+  // 继续滑进留白区（正文早已到底）：预览停在底部，不需要把最后一行拉到最顶端才翻完。
+  editorTop = 1200;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 1400, '留白行程被钳到文末，预览直接到底');
   editor.window.close();
 });
 
