@@ -556,6 +556,15 @@ test('Shift+ArrowUp opens a searchable LaTeX symbol picker and inserts at the sa
   const previewRule = adminCss.match(/\.latex-symbol-preview \{[^}]*\}/)?.[0] || '';
   assert.ok(!nameRule.includes('ellipsis') && !nameRule.includes('nowrap'), '符号命令名不再单行省略截断');
   assert.ok(previewRule.includes('overflow: visible') && !previewRule.includes('nowrap'), '符号预览不再裁切高/宽公式');
+  // 分类栏等固定条不可被卡片的纵向弹性布局压扁，只有符号网格能伸缩滚动
+  const tabsRule = adminCss.match(/\.latex-category-tabs \{[^}]*\}/)?.[0] || '';
+  const gridRule = adminCss.match(/\.latex-symbol-grid \{[^}]*\}/)?.[0] || '';
+  assert.ok(tabsRule.includes('flex: none'), '分类栏保持自身高度，不被弹性收缩压扁');
+  assert.ok(gridRule.includes('flex: 1 1 auto'), '符号网格是唯一可伸缩区域');
+  for (const fixedBar of ['.latex-picker-head', '.latex-picker-search', '.latex-picker-foot']) {
+    const rule = adminCss.match(new RegExp(`\\${fixedBar} \\{[^}]*\\}`))?.[0] || '';
+    assert.ok(rule.includes('flex: none'), `${fixedBar} 保持自身高度`);
+  }
   openWithShortcut();
   const matrixCards = searchFor('矩阵');
   const matrixCard = matrixCards.find((card) => card.querySelector('.latex-symbol-name')?.textContent.includes('begin{matrix}'));

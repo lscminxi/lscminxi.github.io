@@ -487,6 +487,7 @@ html[data-wallpaper="on"] .admin-topbar {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
 }
 .latex-picker-head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -498,6 +499,7 @@ html[data-wallpaper="on"] .admin-topbar {
   font: 600 15px var(--mono);
 }
 .latex-picker-search {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -531,6 +533,7 @@ html[data-wallpaper="on"] .admin-topbar {
   font: 10px var(--mono);
 }
 .latex-category-tabs {
+  flex: none;
   display: flex;
   gap: 6px;
   overflow-x: auto;
@@ -544,6 +547,8 @@ html[data-wallpaper="on"] .admin-topbar {
   color: var(--muted);
   padding: 5px 10px;
   font: 11px var(--sans);
+  line-height: 1.5;
+  white-space: nowrap;
   cursor: pointer;
 }
 .latex-category-tabs button.active {
@@ -551,7 +556,8 @@ html[data-wallpaper="on"] .admin-topbar {
   color: var(--accent);
 }
 .latex-symbol-grid {
-  min-height: 160px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -614,6 +620,7 @@ html[data-wallpaper="on"] .admin-topbar {
   font-size: 13px;
 }
 .latex-picker-foot {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
