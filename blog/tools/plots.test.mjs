@@ -549,6 +549,57 @@ test('plot shows coordinates and equations as soon as hover selects a target, wi
   } finally { page.window.close(); }
 });
 
+test('plot and graph figures can download the current SVG view as PNG', async () => {
+  const cases = [
+    { kind: 'plot', selector: '.md-plot', markdown: `${FENCE}plot\ntitle: 下载测试函数\nf: x\nx: -5, 5\ny: -5, 5\n${FENCE}` },
+    { kind: 'graph', selector: '.md-graph', markdown: `${FENCE}graph\ntitle: 下载测试图\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` },
+  ];
+  for (const item of cases) {
+    const page = await interactiveDom(render(item.markdown));
+    try {
+      const figure = page.window.document.querySelector(item.selector);
+      const button = figure.querySelector('[data-download-figure]');
+      assert.ok(button, `${item.kind} 有下载 PNG 按钮`);
+      assert.equal(button.dataset.downloadFigure, item.kind);
+      const captured = { blobs: [], drawn: false, download: '' };
+      page.window.URL.createObjectURL = (blob) => {
+        captured.blobs.push(blob);
+        return `blob:figure-${captured.blobs.length}`;
+      };
+      page.window.URL.revokeObjectURL = () => {};
+      page.window.Image = class {
+        set src(_value) { queueMicrotask(() => this.onload?.()); }
+      };
+      page.window.HTMLCanvasElement.prototype.getContext = () => ({
+        fillStyle: '',
+        fillRect() {},
+        drawImage() { captured.drawn = true; },
+      });
+      page.window.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
+        captured.canvas = { width: this.width, height: this.height };
+        callback(new page.window.Blob(['png'], { type: 'image/png' }));
+      };
+      page.window.HTMLAnchorElement.prototype.click = function click() {
+        captured.download = this.download;
+      };
+      button.click();
+      await new Promise((resolve) => { setTimeout(resolve, 40); });
+      assert.equal(captured.drawn, true, `${item.kind} 已把 SVG 画到画布`);
+      assert.ok(captured.canvas.width >= 1000 && captured.canvas.height >= 300, `${item.kind} PNG 使用高清尺寸`);
+      assert.match(captured.download, /下载测试.*\.png$/, `${item.kind} 下载文件名包含图题`);
+      const svgText = await new Promise((resolve, reject) => {
+        const reader = new page.window.FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(captured.blobs[0]);
+      });
+      assert.match(svgText, /<rect[^>]+fill=/, `${item.kind} PNG 带背景色`);
+      assert.match(svgText, /style="[^"]*(fill|stroke):/, `${item.kind} 导出 SVG 已内联主题样式`);
+      assert.equal(button.textContent, '已下载 PNG', `${item.kind} 下载后有完成反馈`);
+    } finally { page.window.close(); }
+  }
+});
+
 test('interactive graph zooms and reports node coordinates', async () => {
   const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
   try {

@@ -2120,7 +2120,9 @@ body.search-open {
 
 /* 交互控件：无脚本（后台预览）时隐藏工具栏，静态坐标与方程仍直接可见 */
 .article-content .plot-toolbar { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-.article-content .md-plot:not(.is-interactive) .plot-toolbar,
+.article-content .figure-download-tools { margin-left: auto; }
+.article-content .md-plot:not(.is-interactive) .plot-toolbar { justify-content: flex-end; }
+.article-content .md-plot:not(.is-interactive) .plot-toolbar .plot-tools:not(.figure-download-tools),
 .article-content .md-plot:not(.is-interactive) .plot-readout,
 .article-content .md-graph:not(.is-interactive) .plot-toolbar,
 .article-content .md-graph:not(.is-interactive) .plot-readout { display: none; }

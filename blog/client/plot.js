@@ -9,9 +9,176 @@ const number = (value) => {
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const raf = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : window.setTimeout(callback, 0));
 
+/* ---------------- 图形下载为 PNG ----------------
+   导出的是用户当前看到的视图（平移/缩放后的范围、图算法高亮都会保留）。
+   页面里的 SVG 大量样式来自主题 CSS 与 CSS 变量，直接序列化会丢色；
+   因此先把每个 SVG 元素最终生效的计算样式内联，再交给画布转 PNG。 */
+const FIGURE_PNG_STYLE_PROPERTIES = [
+  'fill', 'fill-opacity', 'stroke', 'stroke-opacity', 'stroke-width',
+  'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin',
+  'stroke-miterlimit', 'opacity', 'visibility', 'display', 'color',
+  'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing',
+  'text-anchor', 'paint-order', 'dominant-baseline',
+];
+
+function figurePngFilename(figure) {
+  const doc = figure.ownerDocument;
+  const typeLabel = figure.classList.contains('md-graph') ? '可视化图' : '函数图像';
+  const title = figure.querySelector('figcaption')?.textContent?.trim()
+    || figure.querySelector('svg')?.getAttribute('aria-label')?.trim()
+    || typeLabel;
+  const figures = [...doc.querySelectorAll('.md-plot, .md-graph')];
+  const index = Math.max(1, figures.indexOf(figure) + 1);
+  const base = title.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || typeLabel;
+  return `${base}-${index}.png`;
+}
+
+function downloadFigureAsPng(figure, button = null) {
+  const doc = figure?.ownerDocument;
+  const view = doc?.defaultView;
+  const svg = figure?.querySelector('svg');
+  if (!doc || !view || !svg) return false;
+  const restoreButton = () => {
+    if (!button) return;
+    button.disabled = false;
+    button.textContent = '下载 PNG';
+  };
+  if (button) {
+    button.disabled = true;
+    button.textContent = '生成中…';
+  }
+  let objectUrl = '';
+  try {
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const viewBox = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    const [minX, minY, width, height] = viewBox.length === 4 && viewBox.every(Number.isFinite)
+      ? viewBox
+      : [0, 0, Number(svg.getAttribute('width')) || 680, Number(svg.getAttribute('height')) || 420];
+    if (!(width > 0) || !(height > 0)) throw new Error('图形尺寸不可用');
+
+    const sourceNodes = [svg, ...svg.querySelectorAll('*')];
+    const cloneNodes = [clone, ...clone.querySelectorAll('*')];
+    sourceNodes.forEach((source, index) => {
+      const target = cloneNodes[index];
+      if (!target) return;
+      const computed = view.getComputedStyle(source);
+      const styles = FIGURE_PNG_STYLE_PROPERTIES
+        .map((property) => {
+          const value = computed?.getPropertyValue(property);
+          return value ? `${property}:${value}` : '';
+        })
+        .filter(Boolean);
+      if (styles.length) target.setAttribute('style', styles.join(';'));
+      target.removeAttribute('class');
+    });
+
+    const stage = figure.querySelector('.plot-stage');
+    const background = [figure, stage, doc.body]
+      .map((element) => {
+        if (!element) return '';
+        try { return view.getComputedStyle(element).backgroundColor || ''; } catch { return ''; }
+      })
+      .find((color) => color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') || '#11151d';
+    const rect = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', String(minX));
+    rect.setAttribute('y', String(minY));
+    rect.setAttribute('width', String(width));
+    rect.setAttribute('height', String(height));
+    rect.setAttribute('fill', background);
+    clone.insertBefore(rect, clone.firstChild);
+
+    const scale = Math.min(3, Math.max(1.5, 1600 / width));
+    const outputWidth = Math.max(1, Math.round(width * scale));
+    const outputHeight = Math.max(1, Math.round(height * scale));
+    clone.setAttribute('width', String(outputWidth));
+    clone.setAttribute('height', String(outputHeight));
+
+    // 导出用的图片/画布/下载链接统一在脚本所在的主页面窗口创建：后台预览
+    // 的图位于沙盒 iframe 中，若用 iframe 的窗口加载 blob: 图片会被其 CSP
+    // 拦截，下载也会被沙盒拦下；样式计算仍用图所在文档的窗口，不受影响。
+    const svgText = new window.XMLSerializer().serializeToString(clone);
+    objectUrl = window.URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' }));
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('浏览器无法创建画布');
+        context.fillStyle = background;
+        context.fillRect(0, 0, outputWidth, outputHeight);
+        context.drawImage(image, 0, 0, outputWidth, outputHeight);
+        canvas.toBlob((blob) => {
+          try {
+            if (!blob) throw new Error('PNG 生成失败');
+            const pngUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = pngUrl;
+            link.download = figurePngFilename(figure);
+            document.body.append(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => window.URL.revokeObjectURL(pngUrl), 1000);
+            if (button) {
+              button.disabled = false;
+              button.textContent = '已下载 PNG';
+              window.setTimeout(restoreButton, 1600);
+            }
+          } catch {
+            if (button) button.textContent = '下载失败';
+            window.setTimeout(restoreButton, 1600);
+          } finally {
+            if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+          }
+        }, 'image/png');
+      } catch {
+        if (button) button.textContent = '下载失败';
+        window.setTimeout(restoreButton, 1600);
+        if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+      }
+    };
+    image.onerror = () => {
+      if (button) button.textContent = '下载失败';
+      window.setTimeout(restoreButton, 1600);
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+    };
+    image.src = objectUrl;
+    return true;
+  } catch {
+    if (objectUrl) {
+      try { window.URL.revokeObjectURL(objectUrl); } catch { /* 忽略回收失败 */ }
+    }
+    if (button) button.textContent = '下载失败';
+    window.setTimeout(restoreButton, 1600);
+    return false;
+  }
+}
+
+function addFigureDownloadButton(figure, toolbar) {
+  if (!toolbar || toolbar.querySelector('[data-download-figure]')) return null;
+  const doc = figure.ownerDocument;
+  const group = doc.createElement('div');
+  group.className = 'plot-tools figure-download-tools';
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', '下载图像');
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.dataset.downloadFigure = figure.classList.contains('md-graph') ? 'graph' : 'plot';
+  button.textContent = '下载 PNG';
+  button.title = '把当前图形下载为 PNG 图片';
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', () => downloadFigureAsPng(figure, button));
+  group.append(button);
+  toolbar.append(group);
+  return button;
+}
+
 /* ---------------- 函数图像：拖动平移 / 滚轮与双指缩放 / 坐标读数 ---------------- */
 
 function initPlot(figure) {
+  addFigureDownloadButton(figure, figure.querySelector(':scope > .plot-toolbar'));
   if (figure.dataset.plotInteractive !== 'true' || figure.classList.contains('is-interactive')) return;
   const source = figure.dataset.plotSource || '';
   const stage = figure.querySelector('.plot-stage');
@@ -594,6 +761,7 @@ function initGraph(figure) {
     adjustTools.append(adjustButton, savePositionsButton, resetPositionButton);
     toolbar.append(adjustTools);
   }
+  addFigureDownloadButton(figure, toolbar);
   figure.insertBefore(toolbar, stage);
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
@@ -1223,4 +1391,4 @@ function initPlots(root = document) {
 
 initPlots(document);
 
-window.MinxiPlots = { initPlot, initGraph, initPlots };
+window.MinxiPlots = { initPlot, initGraph, initPlots, downloadFigureAsPng };

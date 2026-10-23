@@ -885,6 +885,59 @@ test('editor autosaves drafts locally, counts characters, and still warns before
   editor.window.close();
 });
 
+test('category and tag fields use a searchable multi-select with create support', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Taxonomy picker must stay local'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const doc = w.document;
+  doc.querySelector('#new-post-button').click();
+  assert.match(doc.querySelector('#f-categories-control').textContent, /学习笔记/, '新建文章默认分类显示为已选 chip');
+
+  // 没有文章索引时，当前已填写的值也必须出现在弹窗里供多选维护。
+  const tagsInput = doc.querySelector('#f-tags');
+  tagsInput.value = '旧标签, 算法';
+  doc.querySelector('#f-tags-control').click();
+  assert.equal(doc.querySelector('#taxonomy-picker').hidden, false, '点击标签字段打开选择弹窗');
+  assert.equal(doc.querySelector('#taxonomy-picker-title').textContent, '选择标签（可多选）');
+  const optionNames = () => [...doc.querySelectorAll('[data-taxonomy-option]')].map((button) => button.dataset.taxonomyOption);
+  assert.deepEqual(new Set(optionNames()), new Set(['旧标签', '算法']), '弹窗列出当前已有标签');
+  assert.equal(doc.querySelector('[data-taxonomy-option="旧标签"]').getAttribute('aria-pressed'), 'true', '已有标签默认已选');
+
+  // 搜索不到时按 Enter 新建并选中，弹窗保持打开以便继续多选。
+  const search = doc.querySelector('#taxonomy-search');
+  search.value = '动态规划';
+  search.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.match(doc.querySelector('#taxonomy-create').textContent, /新建并选中「动态规划」/);
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(search.value, '', '新建后清空搜索框，方便继续选择');
+  assert.equal(doc.querySelector('[data-taxonomy-option="动态规划"]').getAttribute('aria-pressed'), 'true', '新建标签立即选中');
+
+  // 点选可反复切换；完成才写回隐藏字段和 chips。
+  doc.querySelector('[data-taxonomy-option="旧标签"]').click();
+  assert.equal(doc.querySelector('[data-taxonomy-option="旧标签"]').getAttribute('aria-pressed'), 'false', '再次点击取消选择');
+  doc.querySelector('[data-taxonomy-option="旧标签"]').click();
+  doc.querySelector('#done-taxonomy-picker').click();
+  assert.deepEqual(new Set(tagsInput.value.split(',').map((item) => item.trim())), new Set(['旧标签', '算法', '动态规划']), '多选结果写回标签字段');
+  assert.equal(doc.querySelector('#taxonomy-picker').hidden, true, '完成后关闭弹窗');
+  assert.match(doc.querySelector('#f-tags-control').textContent, /动态规划/, '字段 chips 同步显示新标签');
+
+  // 取消不写回临时选择；字段上的 × 可直接移除单个标签。
+  doc.querySelector('#f-categories-control').click();
+  search.value = '临时分类';
+  search.dispatchEvent(new w.Event('input', { bubbles: true }));
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  doc.querySelector('#cancel-taxonomy-picker').click();
+  assert.equal(doc.querySelector('#f-categories').value, '学习笔记', '取消弹窗不改变原分类');
+  doc.querySelector('#f-tags-control [data-taxonomy-remove="算法"]').click();
+  assert.equal(tagsInput.value.includes('算法'), false, 'chip 上的 × 直接移除标签');
+  editor.window.close();
+});
+
 test('editor guide is folded and visibility uses pin-style toggle buttons', async () => {
   const html = await readFile('source/admin/index.html', 'utf8');
   assert.match(html, /<details class="editor-guide">/, '写作介绍应放进折叠框');

@@ -8,16 +8,16 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css?v=card-link-1">
-  <link rel="stylesheet" href="./admin.css?v=draft-stats-1">
+  <link rel="stylesheet" href="/css/main.css?v=figure-png-1">
+  <link rel="stylesheet" href="./admin.css?v=taxonomy-picker-1">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
        不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
-  <script src="./preview.js?v=block-sync-2" defer></script>
+  <script src="./preview.js?v=figure-png-1" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=draft-stats-1" defer></script>
+  <script src="./admin.js?v=taxonomy-picker-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -260,8 +260,8 @@
         <label class="field"><span>标题</span><input id="f-title" type="text" placeholder="例如：二分查找笔记"></label>
         <label class="field"><span>文件名（英文短名，决定 URL）</span><input id="f-slug" type="text" placeholder="binary-search" spellcheck="false"></label>
         <label class="field"><span>日期</span><input id="f-date" type="datetime-local" step="60"></label>
-        <label class="field"><span>分类（多个用逗号分隔）</span><input id="f-categories" type="text" placeholder="学习笔记"></label>
-        <label class="field"><span>标签（多个用逗号分隔）</span><input id="f-tags" type="text" placeholder="二分, C++"></label>
+        <div class="field taxonomy-field"><span id="f-categories-label">分类（可多选）</span><input id="f-categories" type="hidden"><div id="f-categories-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="f-categories-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有分类，也可在弹窗里搜索或新建。</p></div>
+        <div class="field taxonomy-field"><span id="f-tags-label">标签（可多选）</span><input id="f-tags" type="hidden"><div id="f-tags-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="f-tags-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有标签，也可在弹窗里搜索或新建。</p></div>
         <label class="field"><span>强调色</span>
           <select id="f-accent">
             <option value="">默认</option>
@@ -358,6 +358,31 @@
       <div class="latex-picker-foot">
         <code id="latex-symbol-command">选择一个符号</code>
         <span id="latex-symbol-detail">方向键选择，Enter 或点击插入</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="latex-picker taxonomy-picker" id="taxonomy-picker" hidden>
+    <div class="latex-picker-backdrop" id="taxonomy-picker-backdrop"></div>
+    <section class="latex-picker-card taxonomy-picker-card" role="dialog" aria-modal="true" aria-labelledby="taxonomy-picker-title">
+      <div class="latex-picker-head">
+        <h2 id="taxonomy-picker-title">选择标签</h2>
+        <button class="btn ghost small" id="close-taxonomy-picker" type="button" aria-label="取消选择">关闭</button>
+      </div>
+      <label class="latex-picker-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="taxonomy-search" type="search" placeholder="搜索已有项，或输入新名称后按 Enter 新建" autocomplete="off" aria-label="搜索或新建分类/标签">
+        <kbd>Enter 新建</kbd>
+      </label>
+      <div class="taxonomy-selected" id="taxonomy-selected" aria-live="polite"></div>
+      <div class="taxonomy-options" id="taxonomy-options" aria-live="polite"></div>
+      <button class="taxonomy-create" id="taxonomy-create" type="button" hidden></button>
+      <div class="latex-picker-foot taxonomy-picker-foot">
+        <span id="taxonomy-count">已选 0 个</span>
+        <div class="taxonomy-actions">
+          <button class="btn ghost small" id="cancel-taxonomy-picker" type="button">取消</button>
+          <button class="btn primary small" id="done-taxonomy-picker" type="button">完成</button>
+        </div>
       </div>
     </section>
   </div>
