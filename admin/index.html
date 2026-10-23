@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
   <link rel="stylesheet" href="/css/main.css?v=card-link-1">
-  <link rel="stylesheet" href="./admin.css?v=picker-tabs-1">
+  <link rel="stylesheet" href="./admin.css?v=draft-stats-1">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
@@ -17,7 +17,7 @@
   <script src="/js/theme.js?v=theme-1"></script>
   <script src="./preview.js?v=block-sync-2" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=block-sync-2" defer></script>
+  <script src="./admin.js?v=draft-stats-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -335,6 +335,7 @@
         <button class="btn danger small" id="delete-post" type="button" hidden>删除这篇文章</button>
         <button class="btn primary" id="save-post" type="button">保存并提交</button>
       </div>
+      <p class="muted small editor-stats" id="editor-stats" role="status">正文共 0 字 · 0 行</p>
     </section>
   </main>
 

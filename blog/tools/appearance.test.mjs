@@ -587,8 +587,8 @@ test("leaving the editor with unsaved changes asks before throwing the draft awa
     await wait(() => !$("#modal").hidden, "有未保存改动时返回列表必须先确认");
     assert.equal($("#modal-title").textContent, "还有未保存的修改");
     assert($("#modal-text").textContent.includes("测试文章"), `确认框应点名是哪一篇：${$("#modal-text").textContent}`);
-    assert($("#modal-text").textContent.includes("返回列表后会丢失"));
-    assert.equal($("#modal-ok").textContent, "放弃修改");
+    assert($("#modal-text").textContent.includes("还没提交到 GitHub"));
+    assert.equal($("#modal-ok").textContent, "仍然离开");
 
     // 点「取消」→ 留在编辑器，草稿一个字都不能少
     $("#modal-cancel").click();
@@ -596,7 +596,7 @@ test("leaving the editor with unsaved changes asks before throwing the draft awa
     assert.equal($("#view-editor").hidden, false, "取消后必须留在编辑器里");
     assert(body().value.includes("还没保存的一段"), "取消后草稿必须还在");
 
-    // 再点返回 →「放弃修改」→ 回列表
+    // 再点返回 →「仍然离开」→ 回列表
     $("#cancel-edit").click();
     await wait(() => !$("#modal").hidden);
     $("#modal-ok").click();

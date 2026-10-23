@@ -753,7 +753,7 @@ test('overscroll blank space is excluded from scroll sync percentages', async ()
   editor.window.close();
 });
 
-test('fold boxes and graphs align as whole blocks during scroll sync', async () => {
+test('folds drift proportionally and graphs align as whole blocks during scroll sync', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',
   });
@@ -817,12 +817,19 @@ test('fold boxes and graphs align as whole blocks during scroll sync', async () 
     };
   };
 
-  // 编辑位置落在折叠框源码内部（第 5 行）：折叠状态下预览应停在折叠框顶部，
-  // 而不是按几十行源码摊到那一行高上慢慢爬。
-  editorTop = 96;
+  // 编辑位置落在折叠框源码范围内：预览不再钉在块顶，而是按「在折叠框内
+  // 的行位置比例」映射到它的渲染高度上缓慢下移（仿洛谷）。折叠框源码
+  // 第 3~8 行（镜像 48~168px）、渲染占 48~104px：滚到源码中点（108px，
+  // 比例 0.5）时预览应漂移过渲染高度的一半（76px），而不是停在 48px。
+  editorTop = 108;
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.equal(previewTop, 48, '折叠框未展开时整块对齐到块顶');
+  assert.equal(previewTop, 76, '折叠框内按位置比例缓慢下移');
+  // 刚进入折叠框时仍对齐块顶。
+  editorTop = 48;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 48, '折叠框起点对齐块顶');
 
   // 编辑位置落在 graph 源码内部：预览停在图块顶部，不按源码行快速划过整张图。
   editorTop = 210;
@@ -838,6 +845,43 @@ test('fold boxes and graphs align as whole blocks during scroll sync', async () 
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(previewTop, 104, '折叠框展开时按内部块对齐');
+  editor.window.close();
+});
+
+test('editor autosaves drafts locally, counts characters, and still warns before leaving', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Autosave must stay local'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const doc = w.document;
+  doc.querySelector('#new-post-button').click();
+  const field = doc.querySelector('#f-body');
+  field.value = '你好世界\n\n第二段 abc';
+  field.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.match(doc.querySelector('#editor-stats').textContent, /正文共 10 字 · 3 行/, '底部即时统计正文字数（不含空白）与行数');
+  await new Promise((resolve) => setTimeout(resolve, 1100)); // 等防抖落盘
+  const draft = JSON.parse(w.localStorage.getItem('minxi.admin.draft.__new__') || 'null');
+  assert.ok(draft && JSON.parse(draft.snapshot).body.includes('第二段'), '草稿已自动保存到本机');
+  assert.match(doc.querySelector('#editor-stats').textContent, /已自动保存/, '底部显示最近自动保存时刻');
+  // 自动保存不算已保存：关页面前照样拦截提示。
+  const leaveEvent = new w.Event('beforeunload', { cancelable: true });
+  w.dispatchEvent(leaveEvent);
+  assert.equal(leaveEvent.defaultPrevented, true, '有自动保存草稿时退出仍提示未保存');
+  // 重新打开新建编辑器：草稿被恢复，并明确还没提交。
+  doc.querySelector('#new-post-button').click();
+  assert.equal(field.value, '你好世界\n\n第二段 abc', '重开后恢复自动保存的草稿');
+  assert.match(doc.querySelector('#editor-status').textContent, /已恢复 .*自动保存的草稿（还没提交/, '恢复时说明还没提交');
+  // 返回列表也要先问一句，而不是因为有草稿就直接放行。
+  doc.querySelector('#cancel-edit').click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(doc.querySelector('#modal').hidden, false, '返回列表前弹未保存确认');
+  assert.match(doc.querySelector('#modal-text').textContent, /还没提交到 GitHub/);
+  assert.equal(doc.querySelector('#modal-ok').textContent, '仍然离开');
+  doc.querySelector('#modal-cancel').click();
   editor.window.close();
 });
 

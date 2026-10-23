@@ -40,6 +40,9 @@
   let postIndex = new Map(); // path -> { sha, title, date, categories, tags, description, size }
   let imageIndex = new Map(); // path -> { sha, name, size }
   let editing = null; // { path, sha, isNew }
+  // 正文自动保存（本机草稿）状态：防抖计时器与最近一次自动保存的时刻说明。
+  let draftTimer = 0;
+  let draftSavedAt = "";
   let aboutState = { sha: "", text: "" };
   let appearanceState = { sha: "", loaded: false };
   // 「可选背景」列表草稿：改动先留在页面里，点「保存并提交」才写进 appearance.json。
@@ -125,6 +128,7 @@
     savePost: $("#save-post"),
     deletePost: $("#delete-post"),
     editorStatus: $("#editor-status"),
+    editorStats: $("#editor-stats"),
     urlPreview: $("#url-preview"),
     slugWarning: $("#slug-warning"),
     insertImage: $("#insert-image"),
@@ -479,7 +483,10 @@
         : "普通文章，按日期排序。";
   }
   pinButtons.forEach((button) =>
-    button.addEventListener("click", () => setPinned(button.dataset.pin === "on")),
+    button.addEventListener("click", () => {
+      setPinned(button.dataset.pin === "on");
+      scheduleDraftSave();
+    }),
   );
 
   // 可见性按钮：与置顶一样二选一，状态保存在 visibility 变量里，
@@ -503,6 +510,7 @@
     button.addEventListener("click", () => {
       setVisibility(button.dataset.visibility);
       updatePreview();
+      scheduleDraftSave();
     }),
   );
   setVisibility("public");
@@ -961,6 +969,7 @@
       }
       postsRevision++; // Invalidate refreshes begun before the delete.
       postIndex.delete(path);
+      clearDraft(`${DRAFT_KEY_PREFIX}${path}`); // 文章已删，本机草稿一并清掉
       renderPosts();
       if (editing?.path === path) hideEditor();
       watchBuild(result?.commit?.sha || "");
@@ -1202,6 +1211,7 @@
     textarea.focus();
     textarea.selectionStart = textarea.selectionEnd = start + text.length;
     updatePreview();
+    scheduleDraftSave();
   }
 
   function updatePreview() {
@@ -1294,10 +1304,12 @@
     }
   };
   // 每次同步都按当前文档现算块级锚点（仿洛谷编辑器的按块对齐）：锚点记下
-  // 每个块的源码起止行与预览上下沿。普通文本块在块内按行插值；折叠框、
-  // 函数图、关系图、独立图片这类「源码行数与渲染高度不成比例」的块整块
-  // 对齐——编辑光标落在块源码范围内时预览就停在块顶，不按行数硬摊比例。
-  // 折叠框展开时改用其内部块的锚点逐块对齐；未展开时内部块一律跳过。
+  // 每个块的源码起止行与预览上下沿。普通文本块在块内按行插值；函数图、
+  // 关系图、独立图片这类「源码行数与渲染高度不成比例」的块整块对齐——
+  // 编辑光标落在块源码范围内时预览就停在块顶，不按行数硬摊比例。
+  // 折叠框不钉在块顶：编辑位置在折叠框源码范围内的比例，映射到它当前
+  // 渲染高度上缓慢下移（同样仿洛谷）；展开时内部块还有各自的锚点，
+  // 编辑落到内部块上时由内部锚点接管。未展开时内部块一律跳过。
   const collectScrollAnchors = (doc, scroll) => {
     if (scrollAnchorsDirty) {
       try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
@@ -1314,7 +1326,7 @@
     };
     const isAtomicBlock = (block) => {
       if (block.classList?.contains('md-plot') || block.classList?.contains('md-graph')) return true;
-      if (block.classList?.contains('fold-box')) return !block.open;
+      // 折叠框不算整块：按源码内位置比例映射到渲染高度上缓慢下移。
       if (block.querySelector?.(':scope > img')) return true;
       return false;
     };
@@ -2130,6 +2142,7 @@
       snapshots.editor = editorSnapshotValue();
       el.editorStatus.textContent = `已加载 ${path}（${(file.size / 1024).toFixed(1)} KB）`;
       log(`打开编辑：${path}`);
+      restoreDraftIfAny();
       updatePreview();
     } catch (error) {
       el.editorStatus.textContent = describeError(error);
@@ -2155,6 +2168,7 @@
     delete el.f.slug.dataset.touched;
     snapshots.editor = editorSnapshotValue();
     el.editorStatus.textContent = "填写后点「保存并提交」。";
+    restoreDraftIfAny();
     showEditor();
     el.f.title.focus();
     updatePreview();
@@ -2192,6 +2206,7 @@
 
   async function savePost() {
     if (el.savePost.disabled || deletingPosts.size) return;
+    const draftKeyBefore = draftKey();
     const fields = readForm();
     if (fields.errors.length) {
       el.editorStatus.textContent = fields.errors.join("；");
@@ -2239,6 +2254,11 @@
           "ok",
         );
       }
+      // 已提交成功，本机草稿使命完成：旧键（新建/改名）与新键一并清掉。
+      clearDraft(draftKeyBefore);
+      clearDraft();
+      draftSavedAt = "";
+      updateEditorStats();
       el.editorTitle.textContent = `编辑：${fields.title}`;
       el.deletePost.hidden = false;
       el.editorStatus.textContent = fields.visibility === "private"
@@ -2260,7 +2280,8 @@
 
   el.newPostButton.addEventListener("click", openNewPost);
   el.savePost.addEventListener("click", savePost);
-  /** 「← 返回列表」会把编辑器里的草稿丢掉，所以有改动时先问一句。
+  /** 「← 返回列表」会离开编辑器：哪怕已经自动保存到本机草稿，只要还没
+     点「保存并提交」，离开前都要先问一句（自动保存不等于已保存）。
      这是唯一「站内离开编辑器」的入口（删除文章那条路径自己也确认过）。 */
   async function leaveEditor() {
     if (editorDirty()) {
@@ -2268,10 +2289,10 @@
       const label = title ? `「${title}」` : editing?.isNew ? "这篇新建的文章" : "当前文章";
       const ok = await confirmDialog(
         "还有未保存的修改",
-        `${label}的改动还没提交，返回列表后会丢失。确定要放弃吗？`,
-        "放弃修改",
+        `${label}的改动还没提交到 GitHub。内容已自动保存为本机草稿，之后重新打开这篇文章可以恢复，但现在离开仍算未保存。确定要离开吗？`,
+        "仍然离开",
       );
-      if (!ok) return; // 留在编辑器里，草稿还在
+      if (!ok) return; // 留在编辑器里，内容还在
     }
     hideEditor();
   }
@@ -2357,6 +2378,114 @@
     );
   }
 
+  /* ---------------- 正文自动保存（本机草稿）与字数统计 ----------------
+     照洛谷编辑器：编辑时自动把整篇内容存到这台设备的 localStorage，
+     刷新、误关、浏览器崩溃后重新打开同一篇文章，会自动恢复草稿；
+     编辑器底部同时显示正文字数与自动保存时刻。
+     注意：草稿只是本机副本，自动保存不等于已保存——没有点「保存并
+     提交」之前，editorDirty 仍按「最后一次读取/提交的内容」判定，
+     关闭、刷新、返回列表时照样弹提示，不会因为有草稿就放行。 */
+
+  const DRAFT_KEY_PREFIX = "minxi.admin.draft.";
+  const draftKey = () =>
+    editing ? `${DRAFT_KEY_PREFIX}${editing.isNew ? "__new__" : editing.path}` : "";
+
+  function formatDraftTime(iso) {
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime())
+      ? ""
+      : date.toLocaleTimeString("zh-CN", { hour12: false });
+  }
+
+  function clearDraft(key = draftKey()) {
+    if (!key) return;
+    try { window.localStorage.removeItem(key); } catch { /* 隐私模式等场景忽略 */ }
+  }
+
+  function saveDraftNow() {
+    if (!editing || el.viewEditor.hidden) return;
+    const key = draftKey();
+    if (!key) return;
+    try {
+      const snapshot = editorSnapshotValue();
+      if (snapshots.editor !== null && snapshot === snapshots.editor) {
+        // 和已读取/已提交的内容一字不差：没有保留草稿的必要。
+        clearDraft(key);
+        draftSavedAt = "";
+      } else {
+        const savedAt = new Date().toISOString();
+        window.localStorage.setItem(key, JSON.stringify({ savedAt, snapshot }));
+        draftSavedAt = formatDraftTime(savedAt);
+      }
+    } catch { /* 存储不可用时静默：不影响正常编辑与手动保存 */ }
+    updateEditorStats();
+  }
+
+  function scheduleDraftSave() {
+    if (draftTimer) window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => { draftTimer = 0; saveDraftNow(); }, 800);
+  }
+
+  function readDraft(key) {
+    try {
+      const draft = JSON.parse(window.localStorage.getItem(key) || "null");
+      return draft && typeof draft.snapshot === "string" ? draft : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function applyDraftSnapshot(snapshot) {
+    let data;
+    try { data = JSON.parse(snapshot); } catch { return false; }
+    if (!data || typeof data !== "object") return false;
+    el.f.title.value = String(data.title ?? "");
+    el.f.slug.value = String(data.slug ?? "");
+    el.f.date.value = String(data.date ?? "");
+    el.f.categories.value = String(data.categories ?? "");
+    el.f.tags.value = String(data.tags ?? "");
+    el.f.accent.value = String(data.accent ?? "");
+    el.f.description.value = String(data.description ?? "");
+    el.f.sample.checked = Boolean(data.sample);
+    setVisibility(data.visibility);
+    setPinned(data.pinned);
+    el.f.body.value = String(data.body ?? "");
+    if (el.f.slug.value) el.f.slug.dataset.touched = "1";
+    return true;
+  }
+
+  /** 打开文章/新建文章后调用：有更新的本机草稿就恢复，并说明还没提交。 */
+  function restoreDraftIfAny() {
+    draftSavedAt = "";
+    const draft = readDraft(draftKey());
+    if (draft && snapshots.editor !== null && draft.snapshot !== snapshots.editor
+      && applyDraftSnapshot(draft.snapshot)) {
+      draftSavedAt = formatDraftTime(draft.savedAt);
+      el.editorStatus.textContent = draftSavedAt
+        ? `已恢复 ${draftSavedAt} 自动保存的草稿（还没提交到 GitHub，离开前仍会提醒）`
+        : "已恢复自动保存的草稿（还没提交到 GitHub，离开前仍会提醒）";
+      updatePreview();
+    } else if (draft && draft.snapshot === snapshots.editor) {
+      clearDraft(); // 草稿和已保存内容相同，留着只会误报恢复
+    }
+    updateEditorStats();
+  }
+
+  /** 编辑器底部统计：正文字数（不含空白）、行数与最近自动保存时刻。 */
+  function updateEditorStats() {
+    if (!el.editorStats) return;
+    const body = el.f.body.value || "";
+    const chars = [...body.replace(/\s/g, "")].length;
+    const lines = body ? body.split("\n").length : 0;
+    const note = draftSavedAt ? ` · 已自动保存 ${draftSavedAt}` : "";
+    el.editorStats.textContent = `正文共 ${chars.toLocaleString("zh-CN")} 字 · ${lines} 行${note}`;
+  }
+
+  // 打字、改任意表单字段都会刷新统计并防抖自动保存；离开页面前再存一次，
+  // 保证最近几秒的改动也有草稿（但仍会弹未保存提示，见 beforeunload）。
+  el.viewEditor.addEventListener("input", () => { updateEditorStats(); scheduleDraftSave(); });
+  el.viewEditor.addEventListener("change", () => { updateEditorStats(); scheduleDraftSave(); });
+
   /** 有未保存内容时返回简短说明（例如「文章「二分查找笔记」」），没有则返回空数组。 */
   function unsavedWork() {
     const pending = [];
@@ -2374,11 +2503,12 @@
   }
 
   window.addEventListener("beforeunload", (event) => {
+    saveDraftNow(); // 先把最新改动落成草稿，但下面的提示一条都不能少
     const pending = unsavedWork();
     if (!pending.length) return undefined;
     // 现代浏览器只显示自带的提示语（"更改可能不会保存"），但两个字段都要设：
     // preventDefault() 是标准做法，returnValue 兼容旧浏览器。
-    const message = `你有未保存的修改（${pending.join("、")}），离开或关闭页面后会丢失，确定要离开吗？`;
+    const message = `你有未提交的修改（${pending.join("、")}）：草稿已自动保存到本机，但还没提交到 GitHub。确定要离开吗？`;
     event.preventDefault();
     event.returnValue = message;
     return message;
