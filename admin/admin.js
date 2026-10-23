@@ -40,6 +40,9 @@
   let postIndex = new Map(); // path -> { sha, title, date, categories, tags, description, size }
   let imageIndex = new Map(); // path -> { sha, name, size }
   let editing = null; // { path, sha, isNew }
+  // 正文自动保存（本机草稿）状态：防抖计时器与最近一次自动保存的时刻说明。
+  let draftTimer = 0;
+  let draftSavedAt = "";
   let aboutState = { sha: "", text: "" };
   let appearanceState = { sha: "", loaded: false };
   // 「可选背景」列表草稿：改动先留在页面里，点「保存并提交」才写进 appearance.json。
@@ -125,6 +128,7 @@
     savePost: $("#save-post"),
     deletePost: $("#delete-post"),
     editorStatus: $("#editor-status"),
+    editorStats: $("#editor-stats"),
     urlPreview: $("#url-preview"),
     slugWarning: $("#slug-warning"),
     insertImage: $("#insert-image"),
@@ -479,7 +483,10 @@
         : "普通文章，按日期排序。";
   }
   pinButtons.forEach((button) =>
-    button.addEventListener("click", () => setPinned(button.dataset.pin === "on")),
+    button.addEventListener("click", () => {
+      setPinned(button.dataset.pin === "on");
+      scheduleDraftSave();
+    }),
   );
 
   // 可见性按钮：与置顶一样二选一，状态保存在 visibility 变量里，
@@ -503,6 +510,7 @@
     button.addEventListener("click", () => {
       setVisibility(button.dataset.visibility);
       updatePreview();
+      scheduleDraftSave();
     }),
   );
   setVisibility("public");
@@ -961,6 +969,7 @@
       }
       postsRevision++; // Invalidate refreshes begun before the delete.
       postIndex.delete(path);
+      clearDraft(`${DRAFT_KEY_PREFIX}${path}`); // 文章已删，本机草稿一并清掉
       renderPosts();
       if (editing?.path === path) hideEditor();
       watchBuild(result?.commit?.sha || "");
@@ -1202,6 +1211,7 @@
     textarea.focus();
     textarea.selectionStart = textarea.selectionEnd = start + text.length;
     updatePreview();
+    scheduleDraftSave();
   }
 
   function updatePreview() {
@@ -1276,6 +1286,7 @@
     const mirror = ensureLineMirror();
     const style = window.getComputedStyle(ta);
     mirror.style.width = `${ta.clientWidth}px`;
+    mirror.style.tabSize = style.tabSize || '2';
     mirror.style.font = style.font;
     mirror.style.lineHeight = style.lineHeight;
     mirror.style.letterSpacing = style.letterSpacing;
@@ -1292,8 +1303,13 @@
       mirror.append(div);
     }
   };
-  // 每次同步都按当前文档现算锚点：只取最外层标注块，行位置取镜像层 offsetTop，
-  // 预览位置取块相对预览视口的偏移；非单调的锚点（折叠/表格内的嵌套块）跳过。
+  // 每次同步都按当前文档现算块级锚点（仿洛谷编辑器的按块对齐）：锚点记下
+  // 每个块的源码起止行与预览上下沿。普通文本块在块内按行插值；函数图、
+  // 关系图、独立图片这类「源码行数与渲染高度不成比例」的块整块对齐——
+  // 编辑光标落在块源码范围内时预览就停在块顶，不按行数硬摊比例。
+  // 折叠框不钉在块顶：编辑位置在折叠框源码范围内的比例，映射到它当前
+  // 渲染高度上缓慢下移（同样仿洛谷）；展开时内部块还有各自的锚点，
+  // 编辑落到内部块上时由内部锚点接管。未展开时内部块一律跳过。
   const collectScrollAnchors = (doc, scroll) => {
     if (scrollAnchorsDirty) {
       try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
@@ -1301,17 +1317,40 @@
     }
     const anchors = [];
     if (!lineMirror?.children?.length) return anchors;
+    const mirrorLineTop = (lineNo) => {
+      const kids = lineMirror.children;
+      if (lineNo <= 1) return kids[0].offsetTop || 0;
+      if (lineNo <= kids.length) return kids[lineNo - 1].offsetTop || 0;
+      const last = kids[kids.length - 1];
+      return (last.offsetTop || 0) + (last.offsetHeight || 0);
+    };
+    const isAtomicBlock = (block) => {
+      if (block.classList?.contains('md-plot') || block.classList?.contains('md-graph')) return true;
+      // 折叠框不算整块：按源码内位置比例映射到渲染高度上缓慢下移。
+      if (block.querySelector?.(':scope > img')) return true;
+      return false;
+    };
     for (const block of doc.querySelectorAll("[data-source-line]")) {
-      if (block.parentElement?.closest?.("[data-source-line]")) continue;
+      const parentFold = block.parentElement?.closest?.('details.fold-box');
+      if (parentFold && !parentFold.open) continue;
+      if (!block.classList?.contains('fold-box')
+        && block.parentElement?.closest?.('[data-source-line]') && !parentFold) continue;
       const line = Number(block.dataset.sourceLine);
-      const lineEl = lineMirror.children[line - 1];
-      if (!Number.isInteger(line) || line < 1 || !lineEl) continue;
-      const taY = lineEl.offsetTop;
-      const pvY = block.getBoundingClientRect().top + (scroll.scrollTop || 0);
-      if (!Number.isFinite(taY) || !Number.isFinite(pvY)) continue;
+      if (!Number.isInteger(line) || line < 1 || !lineMirror.children[line - 1]) continue;
+      const endLine = Number(block.dataset.sourceEndLine) || line + 1;
+      const rect = block.getBoundingClientRect();
+      const ta = mirrorLineTop(line);
+      const pv = rect.top + (scroll.scrollTop || 0);
+      if (!Number.isFinite(ta) || !Number.isFinite(pv)) continue;
       const prev = anchors[anchors.length - 1];
-      if (prev && (taY <= prev.ta || pvY <= prev.pv)) continue;
-      anchors.push({ ta: taY, pv: pvY });
+      if (prev && (ta <= prev.ta || pv <= prev.pv)) continue;
+      anchors.push({
+        ta,
+        taEnd: Math.max(mirrorLineTop(endLine), ta),
+        pv,
+        pvBottom: pv + Math.max(0, rect.height || 0),
+        atomic: isAtomicBlock(block),
+      });
     }
     return anchors;
   };
@@ -1321,34 +1360,50 @@
     const scroll = doc?.scrollingElement;
     if (!doc || !scroll) return;
     if ($("#writing-workspace")?.dataset.mode === "edit") return;
-    const maxTa = ta.scrollHeight - ta.clientHeight;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
-    if (!(maxTa > 0) || !(maxPv > 0)) return;
+    if (!(maxPv > 0)) return;
+    // 文末留白（滑过文末的 padding-bottom）不能算进同步行程：同步只按正文
+    // 本身的可滚范围算百分比与锚点尾段，否则必须把最后一行拉到编辑区最
+    // 顶端、滑完整段空白，预览才肯翻到底。留白行程内的滚动一律钳到文末。
+    const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
+    const maxTa = Math.max(0, (ta.scrollHeight - ta.clientHeight) - overscrollBottom);
+    if (!(maxTa > 0)) {
+      // 正文短到本身不用滚：预览直接对齐顶部。
+      if (scroll.style) scroll.style.scrollBehavior = "auto";
+      scroll.scrollTop = 0;
+      return;
+    }
     const anchors = collectScrollAnchors(doc, scroll);
-    const y = ta.scrollTop || 0;
-    // 只保留编辑区实际能滚到的锚点；更靠下的锚点只可能出现在视口下部。
-    const usable = anchors.filter((anchor) => anchor.ta < maxTa - 0.5);
+    const y = Math.min(ta.scrollTop || 0, maxTa);
     let target;
-    if (!usable.length) {
+    if (!anchors.length) {
+      // 没有可用锚点时退回按正文总高度比例同步（同样不含文末留白）。
       target = (y / maxTa) * maxPv;
-    } else if (y <= usable[0].ta) {
-      target = usable[0].ta > 0 ? (y / usable[0].ta) * usable[0].pv : usable[0].pv;
+    } else if (y < anchors[0].ta) {
+      target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
     } else {
-      const last = usable[usable.length - 1];
-      if (y >= last.ta) {
-        // 最后一个可达锚点到末尾：平滑过渡到两侧同时见底。
-        const span = maxTa - last.ta;
-        target = span < 1
-          ? (y >= maxTa - 0.5 ? maxPv : last.pv)
-          : last.pv + ((y - last.ta) / span) * (maxPv - last.pv);
-      } else {
-        let lo = 0; let hi = usable.length - 1;
-        while (hi - lo > 1) {
-          const mid = (lo + hi) >> 1;
-          if (usable[mid].ta <= y) lo = mid; else hi = mid;
+      let i = anchors.length - 1;
+      while (i > 0 && anchors[i].ta > y) i -= 1;
+      const a = anchors[i];
+      if (y < a.taEnd) {
+        // 块内部：整块对齐的块停在块顶；普通块按行位置摊到块的渲染高度。
+        if (a.atomic) {
+          target = a.pv;
+        } else {
+          const span = a.taEnd - a.ta;
+          target = span > 0 ? a.pv + ((y - a.ta) / span) * (a.pvBottom - a.pv) : a.pv;
         }
-        const a = usable[lo]; const b = usable[hi];
-        target = a.pv + ((y - a.ta) / (b.ta - a.ta)) * (b.pv - a.pv);
+      } else if (i + 1 < anchors.length) {
+        // 块之间的空行区：从上一块下沿过渡到下一块上沿。
+        const b = anchors[i + 1];
+        const span = b.ta - a.taEnd;
+        target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
+      } else {
+        // 最后一块之后：平滑过渡到两侧同时见底。
+        const span = maxTa - a.taEnd;
+        target = span > 0.5
+          ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
+          : (y >= maxTa - 0.5 ? maxPv : a.pvBottom);
       }
     }
     // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放
@@ -1898,6 +1953,8 @@
       button.setAttribute("aria-label", `插入 ${symbol.command}，${symbol.aliases.join("、")}`);
       const preview = document.createElement("span");
       preview.className = "latex-symbol-preview";
+      // 矩阵/分段/对齐等宽预览加 is-wide，CSS 缩小一号完整显示。
+      if (!symbol.glyph && String(symbol.preview || "").length > 22) preview.classList.add("is-wide");
       if (symbol.glyph) preview.textContent = symbol.glyph;
       else {
         const html = latexPreviewHtml(symbol);
@@ -2085,6 +2142,7 @@
       snapshots.editor = editorSnapshotValue();
       el.editorStatus.textContent = `已加载 ${path}（${(file.size / 1024).toFixed(1)} KB）`;
       log(`打开编辑：${path}`);
+      restoreDraftIfAny();
       updatePreview();
     } catch (error) {
       el.editorStatus.textContent = describeError(error);
@@ -2110,6 +2168,7 @@
     delete el.f.slug.dataset.touched;
     snapshots.editor = editorSnapshotValue();
     el.editorStatus.textContent = "填写后点「保存并提交」。";
+    restoreDraftIfAny();
     showEditor();
     el.f.title.focus();
     updatePreview();
@@ -2147,6 +2206,7 @@
 
   async function savePost() {
     if (el.savePost.disabled || deletingPosts.size) return;
+    const draftKeyBefore = draftKey();
     const fields = readForm();
     if (fields.errors.length) {
       el.editorStatus.textContent = fields.errors.join("；");
@@ -2194,6 +2254,11 @@
           "ok",
         );
       }
+      // 已提交成功，本机草稿使命完成：旧键（新建/改名）与新键一并清掉。
+      clearDraft(draftKeyBefore);
+      clearDraft();
+      draftSavedAt = "";
+      updateEditorStats();
       el.editorTitle.textContent = `编辑：${fields.title}`;
       el.deletePost.hidden = false;
       el.editorStatus.textContent = fields.visibility === "private"
@@ -2215,7 +2280,8 @@
 
   el.newPostButton.addEventListener("click", openNewPost);
   el.savePost.addEventListener("click", savePost);
-  /** 「← 返回列表」会把编辑器里的草稿丢掉，所以有改动时先问一句。
+  /** 「← 返回列表」会离开编辑器：哪怕已经自动保存到本机草稿，只要还没
+     点「保存并提交」，离开前都要先问一句（自动保存不等于已保存）。
      这是唯一「站内离开编辑器」的入口（删除文章那条路径自己也确认过）。 */
   async function leaveEditor() {
     if (editorDirty()) {
@@ -2223,10 +2289,10 @@
       const label = title ? `「${title}」` : editing?.isNew ? "这篇新建的文章" : "当前文章";
       const ok = await confirmDialog(
         "还有未保存的修改",
-        `${label}的改动还没提交，返回列表后会丢失。确定要放弃吗？`,
-        "放弃修改",
+        `${label}的改动还没提交到 GitHub。内容已自动保存为本机草稿，之后重新打开这篇文章可以恢复，但现在离开仍算未保存。确定要离开吗？`,
+        "仍然离开",
       );
-      if (!ok) return; // 留在编辑器里，草稿还在
+      if (!ok) return; // 留在编辑器里，内容还在
     }
     hideEditor();
   }
@@ -2312,6 +2378,114 @@
     );
   }
 
+  /* ---------------- 正文自动保存（本机草稿）与字数统计 ----------------
+     照洛谷编辑器：编辑时自动把整篇内容存到这台设备的 localStorage，
+     刷新、误关、浏览器崩溃后重新打开同一篇文章，会自动恢复草稿；
+     编辑器底部同时显示正文字数与自动保存时刻。
+     注意：草稿只是本机副本，自动保存不等于已保存——没有点「保存并
+     提交」之前，editorDirty 仍按「最后一次读取/提交的内容」判定，
+     关闭、刷新、返回列表时照样弹提示，不会因为有草稿就放行。 */
+
+  const DRAFT_KEY_PREFIX = "minxi.admin.draft.";
+  const draftKey = () =>
+    editing ? `${DRAFT_KEY_PREFIX}${editing.isNew ? "__new__" : editing.path}` : "";
+
+  function formatDraftTime(iso) {
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime())
+      ? ""
+      : date.toLocaleTimeString("zh-CN", { hour12: false });
+  }
+
+  function clearDraft(key = draftKey()) {
+    if (!key) return;
+    try { window.localStorage.removeItem(key); } catch { /* 隐私模式等场景忽略 */ }
+  }
+
+  function saveDraftNow() {
+    if (!editing || el.viewEditor.hidden) return;
+    const key = draftKey();
+    if (!key) return;
+    try {
+      const snapshot = editorSnapshotValue();
+      if (snapshots.editor !== null && snapshot === snapshots.editor) {
+        // 和已读取/已提交的内容一字不差：没有保留草稿的必要。
+        clearDraft(key);
+        draftSavedAt = "";
+      } else {
+        const savedAt = new Date().toISOString();
+        window.localStorage.setItem(key, JSON.stringify({ savedAt, snapshot }));
+        draftSavedAt = formatDraftTime(savedAt);
+      }
+    } catch { /* 存储不可用时静默：不影响正常编辑与手动保存 */ }
+    updateEditorStats();
+  }
+
+  function scheduleDraftSave() {
+    if (draftTimer) window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => { draftTimer = 0; saveDraftNow(); }, 800);
+  }
+
+  function readDraft(key) {
+    try {
+      const draft = JSON.parse(window.localStorage.getItem(key) || "null");
+      return draft && typeof draft.snapshot === "string" ? draft : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function applyDraftSnapshot(snapshot) {
+    let data;
+    try { data = JSON.parse(snapshot); } catch { return false; }
+    if (!data || typeof data !== "object") return false;
+    el.f.title.value = String(data.title ?? "");
+    el.f.slug.value = String(data.slug ?? "");
+    el.f.date.value = String(data.date ?? "");
+    el.f.categories.value = String(data.categories ?? "");
+    el.f.tags.value = String(data.tags ?? "");
+    el.f.accent.value = String(data.accent ?? "");
+    el.f.description.value = String(data.description ?? "");
+    el.f.sample.checked = Boolean(data.sample);
+    setVisibility(data.visibility);
+    setPinned(data.pinned);
+    el.f.body.value = String(data.body ?? "");
+    if (el.f.slug.value) el.f.slug.dataset.touched = "1";
+    return true;
+  }
+
+  /** 打开文章/新建文章后调用：有更新的本机草稿就恢复，并说明还没提交。 */
+  function restoreDraftIfAny() {
+    draftSavedAt = "";
+    const draft = readDraft(draftKey());
+    if (draft && snapshots.editor !== null && draft.snapshot !== snapshots.editor
+      && applyDraftSnapshot(draft.snapshot)) {
+      draftSavedAt = formatDraftTime(draft.savedAt);
+      el.editorStatus.textContent = draftSavedAt
+        ? `已恢复 ${draftSavedAt} 自动保存的草稿（还没提交到 GitHub，离开前仍会提醒）`
+        : "已恢复自动保存的草稿（还没提交到 GitHub，离开前仍会提醒）";
+      updatePreview();
+    } else if (draft && draft.snapshot === snapshots.editor) {
+      clearDraft(); // 草稿和已保存内容相同，留着只会误报恢复
+    }
+    updateEditorStats();
+  }
+
+  /** 编辑器底部统计：正文字数（不含空白）、行数与最近自动保存时刻。 */
+  function updateEditorStats() {
+    if (!el.editorStats) return;
+    const body = el.f.body.value || "";
+    const chars = [...body.replace(/\s/g, "")].length;
+    const lines = body ? body.split("\n").length : 0;
+    const note = draftSavedAt ? ` · 已自动保存 ${draftSavedAt}` : "";
+    el.editorStats.textContent = `正文共 ${chars.toLocaleString("zh-CN")} 字 · ${lines} 行${note}`;
+  }
+
+  // 打字、改任意表单字段都会刷新统计并防抖自动保存；离开页面前再存一次，
+  // 保证最近几秒的改动也有草稿（但仍会弹未保存提示，见 beforeunload）。
+  el.viewEditor.addEventListener("input", () => { updateEditorStats(); scheduleDraftSave(); });
+  el.viewEditor.addEventListener("change", () => { updateEditorStats(); scheduleDraftSave(); });
+
   /** 有未保存内容时返回简短说明（例如「文章「二分查找笔记」」），没有则返回空数组。 */
   function unsavedWork() {
     const pending = [];
@@ -2329,11 +2503,12 @@
   }
 
   window.addEventListener("beforeunload", (event) => {
+    saveDraftNow(); // 先把最新改动落成草稿，但下面的提示一条都不能少
     const pending = unsavedWork();
     if (!pending.length) return undefined;
     // 现代浏览器只显示自带的提示语（"更改可能不会保存"），但两个字段都要设：
     // preventDefault() 是标准做法，returnValue 兼容旧浏览器。
-    const message = `你有未保存的修改（${pending.join("、")}），离开或关闭页面后会丢失，确定要离开吗？`;
+    const message = `你有未提交的修改（${pending.join("、")}）：草稿已自动保存到本机，但还没提交到 GitHub。确定要离开吗？`;
     event.preventDefault();
     event.returnValue = message;
     return message;

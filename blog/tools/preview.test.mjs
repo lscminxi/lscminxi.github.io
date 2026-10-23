@@ -215,6 +215,34 @@ test('live preview preserves fold states with stable keys, including duplicate a
   assert.equal(fresh.querySelectorAll('details[open]').length, 0, 'New articles start folded');
 });
 
+test('blocks carry source start and end lines, including fold interiors', () => {
+  const md = '段一\n\n:::info[提示]\n内部一\n\n内部二\n:::\n\n```plot\ny = x\n```\n\n```graph\nnode: A\n```\n\n尾段';
+  const doc = preview(md);
+  const blocks = [...doc.querySelector('.article-content').children];
+  const fold = blocks.find((el) => el.classList.contains('fold-box'));
+  const plot = blocks.find((el) => el.classList.contains('md-plot'));
+  const graph = blocks.find((el) => el.classList.contains('md-graph'));
+  assert.equal(fold.dataset.sourceLine, '3', '折叠框起始行');
+  assert.ok(Number(fold.dataset.sourceEndLine) > 7, '折叠框带结束行（覆盖内部全部源码）');
+  assert.deepEqual(
+    [...fold.querySelectorAll('.fold-box-body > *')].map((el) => el.dataset.sourceLine),
+    ['4', '6'],
+    '折叠框内部块也标了源码行，展开时可逐块对齐',
+  );
+  assert.equal(plot.dataset.sourceLine, '9', '函数图起始行');
+  assert.equal(graph.dataset.sourceLine, '13', '关系图起始行');
+  for (const el of [plot, graph]) {
+    assert.ok(Number(el.dataset.sourceEndLine) > Number(el.dataset.sourceLine), '图块带结束行，供整块对齐判定范围');
+  }
+  // 不产生 DOM 的内容（<!-- more -->、链接定义）不能让后面块的行号错位
+  const invisible = [...preview('第一段\n\n<!-- more -->\n\n第二段\n\n[ref]: https://example.com\n\n第三段 [ref]').querySelector('.article-content').children];
+  assert.deepEqual(
+    invisible.map((el) => el.dataset.sourceLine),
+    ['1', '5', '9'],
+    '注释与链接定义之后，每块仍标真实源码行',
+  );
+});
+
 test('preview typography matches the published article reading size', () => {
   const html = dom.window.MinxiPreview.document({ title: '标题', body: '正文' });
   assert.ok(html.includes('.article-content{font-size:16px!important;line-height:2'), '预览正文强制与前台文章相同的 16px/2 字号行高，不受 iframe 窄宽断点缩小');
@@ -315,6 +343,7 @@ test('editor and preview stay aligned and synced without jumping back to the top
   let editorTop = 400;
   let previewTop = 0;
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px'; // 本用例的几何不含文末留白；留白排除另有专门用例
   metric(previewScroll, 1600, 200, () => previewTop, (value) => { previewTop = value; });
 
   // 预览块带源码行号，编辑区按行锚点同步（无锚点时才退回比例）。
@@ -429,6 +458,7 @@ test('preview scrolling stays independent and re-render re-aligns to the editor'
   let editorTop = 0;
   let previewTop = 0;
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px'; // 本用例的几何不含文末留白；留白排除另有专门用例
   const doc = frame.contentDocument;
   if (!doc.scrollingElement) {
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
@@ -520,6 +550,30 @@ test('Shift+ArrowUp opens a searchable LaTeX symbol picker and inserts at the sa
   assert.equal(field.selectionStart, 1, '取消后恢复原选区起点');
   assert.equal(field.selectionEnd, 6, '取消后恢复原选区终点');
 
+  // 长命令与宽预览必须完整显示：命令名可换行、宽公式走缩小预览，不被省略号/裁切吃掉。
+  const adminCss = await readFile('source/admin/admin.css', 'utf8');
+  const nameRule = adminCss.match(/\.latex-symbol-name \{[^}]*\}/)?.[0] || '';
+  const previewRule = adminCss.match(/\.latex-symbol-preview \{[^}]*\}/)?.[0] || '';
+  assert.ok(!nameRule.includes('ellipsis') && !nameRule.includes('nowrap'), '符号命令名不再单行省略截断');
+  assert.ok(previewRule.includes('overflow: visible') && !previewRule.includes('nowrap'), '符号预览不再裁切高/宽公式');
+  // 分类栏等固定条不可被卡片的纵向弹性布局压扁，只有符号网格能伸缩滚动
+  const tabsRule = adminCss.match(/\.latex-category-tabs \{[^}]*\}/)?.[0] || '';
+  const gridRule = adminCss.match(/\.latex-symbol-grid \{[^}]*\}/)?.[0] || '';
+  assert.ok(tabsRule.includes('flex: none'), '分类栏保持自身高度，不被弹性收缩压扁');
+  assert.ok(gridRule.includes('flex: 1 1 auto'), '符号网格是唯一可伸缩区域');
+  for (const fixedBar of ['.latex-picker-head', '.latex-picker-search', '.latex-picker-foot']) {
+    const rule = adminCss.match(new RegExp(`\\${fixedBar} \\{[^}]*\\}`))?.[0] || '';
+    assert.ok(rule.includes('flex: none'), `${fixedBar} 保持自身高度`);
+  }
+  openWithShortcut();
+  const matrixCards = searchFor('矩阵');
+  const matrixCard = matrixCards.find((card) => card.querySelector('.latex-symbol-name')?.textContent.includes('begin{matrix}'));
+  assert.ok(matrixCard, '能搜到矩阵符号');
+  assert.equal(matrixCard.querySelector('.latex-symbol-name').textContent, '\\begin{matrix}…\\end{matrix}', '卡片显示完整命令名');
+  assert.ok(matrixCard.querySelector('.latex-symbol-preview').classList.contains('is-wide'), '矩阵宽预览用缩小字号完整显示');
+  assert.ok(matrixCard.querySelector('.latex-symbol-preview').innerHTML.length > 0, '矩阵预览已渲染');
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
   // 纯净模式里 Esc 应先关符号面板，不能顺手退出纯净模式。
   w.document.querySelector('[data-editor-mode="zen"]').click();
   field.focus();
@@ -597,6 +651,7 @@ test('editor-lead scrolling syncs the preview and re-render does not jump to the
   let editorTop = 0;
   let previewTop = 0;
   metric(field, 1000, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px'; // 本用例的几何不含文末留白；留白排除另有专门用例
   const doc = frame.contentDocument;
   if (!doc.scrollingElement) {
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
@@ -648,6 +703,185 @@ test('editor can scroll past the end until the last line reaches the top', async
   Object.defineProperty(field, 'clientHeight', { configurable: true, get: () => 220 });
   w.dispatchEvent(new w.Event('resize'));
   assert.equal(field.style.paddingBottom, '190px', '高度变化后文末留白同步重算');
+  editor.window.close();
+});
+
+test('overscroll blank space is excluded from scroll sync percentages', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = '第一段\n\n第二段\n\n第三段';
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  // 物理可滚范围 1200 = 正文 830 + 文末留白 370（编辑区高 200 时留白约一屏）。
+  metric(field, 1400, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '370px';
+  const doc = frame.contentDocument;
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+
+  // 正文滚到一半（415 / 830）：预览必须到一半，而不是被留白稀释到 415/1200。
+  editorTop = 415;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 700, '百分比按正文范围算，不含文末留白');
+
+  // 继续滑进留白区（正文早已到底）：预览停在底部，不需要把最后一行拉到最顶端才翻完。
+  editorTop = 1200;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 1400, '留白行程被钳到文末，预览直接到底');
+  editor.window.close();
+});
+
+test('folds drift proportionally and graphs align as whole blocks during scroll sync', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  // 镜像层每行 24px：用行号在兄弟中的序号模拟 offsetTop（JSDOM 无布局）。
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetTop', {
+    configurable: true,
+    get() {
+      const parent = this.parentElement;
+      if (parent?.getAttribute?.('aria-hidden') === 'true') {
+        const index = [...parent.children].indexOf(this);
+        if (index >= 0) return index * 24;
+      }
+      return 0;
+    },
+  });
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  const md = '段一\n\n:::info[提示]\n内部甲\n\n内部乙\n:::\n\n```graph\nnode: A\nedge: A - A\n```\n\n尾段';
+  field.value = md;
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  metric(field, 336, 100, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '0px';
+  const doc = frame.contentDocument;
+  doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content">'
+    + '<p data-source-line="1" data-source-end-line="2">段一</p>'
+    + '<details class="fold-box" data-source-line="3" data-source-end-line="8"><summary>提示</summary><div class="fold-box-body">'
+    + '<p data-source-line="4" data-source-end-line="5">内部甲</p><p data-source-line="6" data-source-end-line="7">内部乙</p></div></details>'
+    + '<figure class="md-graph" data-source-line="9" data-source-end-line="13"></figure>'
+    + '<p data-source-line="14" data-source-end-line="15">尾段</p></div>';
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1000, 200, () => previewTop, (value) => { previewTop = value; });
+  const place = (selector, top, height) => {
+    const el = doc.querySelector(selector);
+    el.__pv = top; el.__h = height;
+    return el;
+  };
+  place('.article-content > p', 0, 24);
+  const fold = place('.fold-box', 48, 56);
+  place('.md-graph', 200, 480);
+  doc.defaultView.HTMLElement.prototype.getBoundingClientRect = function rect() {
+    return {
+      top: (this.__pv || 0) - previewTop, bottom: (this.__pv || 0) - previewTop + (this.__h || 0),
+      height: this.__h || 0, left: 0, right: 100, width: 100, x: 0, y: (this.__pv || 0) - previewTop, toJSON() {},
+    };
+  };
+
+  // 编辑位置落在折叠框源码范围内：预览不再钉在块顶，而是按「在折叠框内
+  // 的行位置比例」映射到它的渲染高度上缓慢下移（仿洛谷）。折叠框源码
+  // 第 3~8 行（镜像 48~168px）、渲染占 48~104px：滚到源码中点（108px，
+  // 比例 0.5）时预览应漂移过渲染高度的一半（76px），而不是停在 48px。
+  editorTop = 108;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 76, '折叠框内按位置比例缓慢下移');
+  // 刚进入折叠框时仍对齐块顶。
+  editorTop = 48;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 48, '折叠框起点对齐块顶');
+
+  // 编辑位置落在 graph 源码内部：预览停在图块顶部，不按源码行快速划过整张图。
+  editorTop = 210;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 200, '关系图整块对齐到块顶');
+
+  // 折叠框展开后改用内部块锚点：编辑到内部第一块时对齐到该块。
+  fold.open = true;
+  fold.__h = 200;
+  place('.fold-box-body > p', 104, 40);
+  editorTop = 72;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 104, '折叠框展开时按内部块对齐');
+  editor.window.close();
+});
+
+test('editor autosaves drafts locally, counts characters, and still warns before leaving', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Autosave must stay local'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const doc = w.document;
+  doc.querySelector('#new-post-button').click();
+  const field = doc.querySelector('#f-body');
+  field.value = '你好世界\n\n第二段 abc';
+  field.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.match(doc.querySelector('#editor-stats').textContent, /正文共 10 字 · 3 行/, '底部即时统计正文字数（不含空白）与行数');
+  await new Promise((resolve) => setTimeout(resolve, 1100)); // 等防抖落盘
+  const draft = JSON.parse(w.localStorage.getItem('minxi.admin.draft.__new__') || 'null');
+  assert.ok(draft && JSON.parse(draft.snapshot).body.includes('第二段'), '草稿已自动保存到本机');
+  assert.match(doc.querySelector('#editor-stats').textContent, /已自动保存/, '底部显示最近自动保存时刻');
+  // 自动保存不算已保存：关页面前照样拦截提示。
+  const leaveEvent = new w.Event('beforeunload', { cancelable: true });
+  w.dispatchEvent(leaveEvent);
+  assert.equal(leaveEvent.defaultPrevented, true, '有自动保存草稿时退出仍提示未保存');
+  // 重新打开新建编辑器：草稿被恢复，并明确还没提交。
+  doc.querySelector('#new-post-button').click();
+  assert.equal(field.value, '你好世界\n\n第二段 abc', '重开后恢复自动保存的草稿');
+  assert.match(doc.querySelector('#editor-status').textContent, /已恢复 .*自动保存的草稿（还没提交/, '恢复时说明还没提交');
+  // 返回列表也要先问一句，而不是因为有草稿就直接放行。
+  doc.querySelector('#cancel-edit').click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(doc.querySelector('#modal').hidden, false, '返回列表前弹未保存确认');
+  assert.match(doc.querySelector('#modal-text').textContent, /还没提交到 GitHub/);
+  assert.equal(doc.querySelector('#modal-ok').textContent, '仍然离开');
+  doc.querySelector('#modal-cancel').click();
   editor.window.close();
 });
 

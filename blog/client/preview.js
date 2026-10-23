@@ -47,20 +47,62 @@ window.MinxiPreview = {
       ADD_TAGS: ['annotation'], FORBID_TAGS: ['style', 'iframe', 'form', 'input'],
       FORBID_ATTR: ['id', 'name'],
     });
-    // 给每个顶层块标上它在 Markdown 源码里的起始行号，供后台编辑器做
-    // 「源码行 ↔ 预览块」的锚点滚动同步（参考行锚点同步法：两边按内容对齐，
-    // 而不是按总高度百分比硬拉，所以长图/表格/代码块也不会错位抖动）。
+    // 给每个块标上它在 Markdown 源码里的起止行号，供后台编辑器做「源码行 ↔
+    // 预览块」的块级滚动同步：普通块按行内插，折叠框（展开时含内部块）、
+    // 函数图、关系图这类源码行数与渲染高度不成比例的块按整块对齐。
     try {
-      const sourceLines = [];
-      let line = 1;
-      for (const token of markdown.lexer(body)) {
+      // 按 token 标注行号有两个坑，都不能靠「第几个 token 对第几个元素」硬对：
+      // 1) 有些 token 不产生 DOM（被净化掉的 HTML、注释），占下标会让后面全错位；
+      // 2) 链接定义会被 lexer 整段吞掉、不出现在任何 token.raw 里，靠累加
+      //    raw 的行数会少算。所以：行号 = 在原文里顺序定位 token.raw 出现
+      //    位置数出来的行；每个 token 实际产出了几个顶层元素，就标几个。
+      const producedCountCache = new Map();
+      const producedCount = (token) => {
         const raw = token.raw || '';
-        if (token.type !== 'space' && token.type !== 'def') sourceLines.push(line);
-        line += (raw.match(/\n/g) || []).length;
-      }
-      [...fragment.children].forEach((el, index) => {
-        if (sourceLines[index]) el.dataset.sourceLine = String(sourceLines[index]);
-      });
+        if (producedCountCache.has(raw)) return producedCountCache.get(raw);
+        let count = 1;
+        try {
+          const sub = DOMPurify.sanitize(markdown.parse(raw), {
+            RETURN_DOM_FRAGMENT: true,
+            ADD_TAGS: ['annotation'],
+            FORBID_TAGS: ['style', 'iframe', 'form', 'input'],
+            FORBID_ATTR: ['id', 'name'],
+          });
+          count = (sub.children ? [...sub.children] : [...sub.childNodes].filter((node) => node.nodeType === 1)).length;
+        } catch { /* 退回按 1 个元素标 */ }
+        if (producedCountCache.size > 400) producedCountCache.clear();
+        producedCountCache.set(raw, count);
+        return count;
+      };
+      const stampTokenBlocks = (elements, tokens, sourceText, firstLine) => {
+        let index = 0;
+        let cursor = 0;
+        let cursorLine = firstLine;
+        for (const token of tokens) {
+          const raw = token.raw || '';
+          if (!raw) continue;
+          const at = sourceText.indexOf(raw, cursor);
+          const startLine = at >= 0
+            ? firstLine + ((sourceText.slice(0, at).match(/\n/g) || []).length)
+            : cursorLine;
+          if (at >= 0) { cursor = at + raw.length; cursorLine = startLine + ((raw.match(/\n/g) || []).length); }
+          if (token.type === 'space' || token.type === 'def') continue;
+          const occupied = Math.max(1, raw.split('\n').length - (raw.endsWith('\n') ? 1 : 0));
+          const count = producedCount(token);
+          for (let k = 0; k < count; k += 1) {
+            const el = elements[index];
+            index += 1;
+            if (!el) break;
+            el.dataset.sourceLine = String(startLine);
+            el.dataset.sourceEndLine = String(startLine + occupied);
+            if (k === 0 && token.type === 'foldContainer' && Array.isArray(token.tokens)) {
+              const bodyEl = el.querySelector(':scope > .fold-box-body');
+              if (bodyEl) stampTokenBlocks([...bodyEl.children], token.tokens, raw, startLine);
+            }
+          }
+        }
+      };
+      stampTokenBlocks([...fragment.children], markdown.lexer(body), body, 1);
     } catch { /* 行号只是同步辅助，标不上不影响预览本身 */ }
     // Native <details> remains clickable in the script-free iframe. Give each
     // fold a stable key so the editor can preserve its state across live updates.
