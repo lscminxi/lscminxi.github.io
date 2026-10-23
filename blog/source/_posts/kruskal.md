@@ -64,7 +64,6 @@ node: 9 ; x=-91.31 ; y=131.33
 ## [P1967](https://www.luogu.com.cn/problem/P1967)
 
 :::info[简化题意]
+:::
 
 板子题，先预处理出 kruskal 重构树，对于每个询问，先判断 $x,y$ 是否在一棵树上，然后求出 $\operatorname{lca}(u,v)$ 的点权即可。
-
-
