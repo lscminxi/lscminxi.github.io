@@ -234,6 +234,13 @@ test('blocks carry source start and end lines, including fold interiors', () => 
   for (const el of [plot, graph]) {
     assert.ok(Number(el.dataset.sourceEndLine) > Number(el.dataset.sourceLine), '图块带结束行，供整块对齐判定范围');
   }
+  // 不产生 DOM 的内容（<!-- more -->、链接定义）不能让后面块的行号错位
+  const invisible = [...preview('第一段\n\n<!-- more -->\n\n第二段\n\n[ref]: https://example.com\n\n第三段 [ref]').querySelector('.article-content').children];
+  assert.deepEqual(
+    invisible.map((el) => el.dataset.sourceLine),
+    ['1', '5', '9'],
+    '注释与链接定义之后，每块仍标真实源码行',
+  );
 });
 
 test('preview typography matches the published article reading size', () => {

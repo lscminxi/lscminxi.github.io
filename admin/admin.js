@@ -1276,6 +1276,7 @@
     const mirror = ensureLineMirror();
     const style = window.getComputedStyle(ta);
     mirror.style.width = `${ta.clientWidth}px`;
+    mirror.style.tabSize = style.tabSize || '2';
     mirror.style.font = style.font;
     mirror.style.lineHeight = style.lineHeight;
     mirror.style.letterSpacing = style.letterSpacing;
