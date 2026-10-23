@@ -1940,6 +1940,8 @@
       button.setAttribute("aria-label", `插入 ${symbol.command}，${symbol.aliases.join("、")}`);
       const preview = document.createElement("span");
       preview.className = "latex-symbol-preview";
+      // 矩阵/分段/对齐等宽预览加 is-wide，CSS 缩小一号完整显示。
+      if (!symbol.glyph && String(symbol.preview || "").length > 22) preview.classList.add("is-wide");
       if (symbol.glyph) preview.textContent = symbol.glyph;
       else {
         const html = latexPreviewHtml(symbol);

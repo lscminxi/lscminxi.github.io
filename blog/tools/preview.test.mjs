@@ -543,6 +543,21 @@ test('Shift+ArrowUp opens a searchable LaTeX symbol picker and inserts at the sa
   assert.equal(field.selectionStart, 1, '取消后恢复原选区起点');
   assert.equal(field.selectionEnd, 6, '取消后恢复原选区终点');
 
+  // 长命令与宽预览必须完整显示：命令名可换行、宽公式走缩小预览，不被省略号/裁切吃掉。
+  const adminCss = await readFile('source/admin/admin.css', 'utf8');
+  const nameRule = adminCss.match(/\.latex-symbol-name \{[^}]*\}/)?.[0] || '';
+  const previewRule = adminCss.match(/\.latex-symbol-preview \{[^}]*\}/)?.[0] || '';
+  assert.ok(!nameRule.includes('ellipsis') && !nameRule.includes('nowrap'), '符号命令名不再单行省略截断');
+  assert.ok(previewRule.includes('overflow: visible') && !previewRule.includes('nowrap'), '符号预览不再裁切高/宽公式');
+  openWithShortcut();
+  const matrixCards = searchFor('矩阵');
+  const matrixCard = matrixCards.find((card) => card.querySelector('.latex-symbol-name')?.textContent.includes('begin{matrix}'));
+  assert.ok(matrixCard, '能搜到矩阵符号');
+  assert.equal(matrixCard.querySelector('.latex-symbol-name').textContent, '\\begin{matrix}…\\end{matrix}', '卡片显示完整命令名');
+  assert.ok(matrixCard.querySelector('.latex-symbol-preview').classList.contains('is-wide'), '矩阵宽预览用缩小字号完整显示');
+  assert.ok(matrixCard.querySelector('.latex-symbol-preview').innerHTML.length > 0, '矩阵预览已渲染');
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
   // 纯净模式里 Esc 应先关符号面板，不能顺手退出纯净模式。
   w.document.querySelector('[data-editor-mode="zen"]').click();
   field.focus();
