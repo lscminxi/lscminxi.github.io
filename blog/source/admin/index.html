@@ -8,16 +8,16 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css?v=card-link-1">
-  <link rel="stylesheet" href="./admin.css?v=draft-stats-1">
+  <link rel="stylesheet" href="/css/main.css?v=graph-sync-3">
+  <link rel="stylesheet" href="./admin.css?v=graph-sync-3">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
        不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
-  <script src="./preview.js?v=block-sync-2" defer></script>
+  <script src="./preview.js?v=graph-sync-3" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=draft-stats-1" defer></script>
+  <script src="./admin.js?v=bottom-sync-1" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -260,8 +260,8 @@
         <label class="field"><span>标题</span><input id="f-title" type="text" placeholder="例如：二分查找笔记"></label>
         <label class="field"><span>文件名（英文短名，决定 URL）</span><input id="f-slug" type="text" placeholder="binary-search" spellcheck="false"></label>
         <label class="field"><span>日期</span><input id="f-date" type="datetime-local" step="60"></label>
-        <label class="field"><span>分类（多个用逗号分隔）</span><input id="f-categories" type="text" placeholder="学习笔记"></label>
-        <label class="field"><span>标签（多个用逗号分隔）</span><input id="f-tags" type="text" placeholder="二分, C++"></label>
+        <div class="field taxonomy-field"><span id="f-categories-label">分类（可多选）</span><input id="f-categories" type="hidden"><div id="f-categories-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="f-categories-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有分类，也可在弹窗里搜索或新建。</p></div>
+        <div class="field taxonomy-field"><span id="f-tags-label">标签（可多选）</span><input id="f-tags" type="hidden"><div id="f-tags-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="f-tags-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有标签，也可在弹窗里搜索或新建。</p></div>
         <label class="field"><span>强调色</span>
           <select id="f-accent">
             <option value="">默认</option>
@@ -316,12 +316,54 @@
       <details class="editor-guide">
         <summary>写作说明与语法速查（点开查看）</summary>
         <div class="editor-guide-body">
-          <p>实时预览仅在本地浏览器生成，不会保存或发布。</p>
+          <p>实时预览仅在本地浏览器生成，不会保存或发布。函数图与关系图都是「每行一条指令」：一行写错只会忽略那一行，不会让整篇文章发布失败；<code>#</code> 或 <code>//</code> 开头是注释，附加选项写在分号 <code>;</code> 后面。</p>
           <ul>
             <li>公式：行内 <code>$a_i^2$</code>；独立公式用 <code>$$</code> 单独成行。正文区按 <kbd>Shift</kbd>+<kbd>↑</kbd> 可搜索并插入 LaTeX 符号（可搜 <code>\pm</code>、正负、积分、分数等中文叫法）。</li>
-            <li>折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</li>
-            <li>函数图像：<code>```plot</code> 里写 <code>f: x^2 ; color=red</code>、<code>points: (0,1), (1,2) ; connect=true</code>。</li>
-            <li>可视化图：<code>```graph</code> 里写 <code>node: A ; color=blue</code>、<code>edge: A -&gt; B</code>（有向）或 <code>edge: A -- B</code>（无向）；<code>algo: mst</code> 这类一行可预设图算法，<code>algo: reader</code> 让读者自选，<code>algo: none</code> 不显示算法（「插入可视化图」下拉会帮你写好）。预览里的图还能点「调整点位」拖动节点写回坐标。</li>
+            <li>折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。编辑区滚过折叠框、函数图或关系图源码时，预览会按块内进度缓慢下移对齐。</li>
+          </ul>
+
+          <h4>函数图 ```plot：画曲线、点与线段</h4>
+          <pre><code>```plot
+title: 抛物线与直线
+f: x^2 - 2x + 1 ; color=red ; width=3
+f: -x + 3 ; color=green ; dash=true
+points: (1, 0), (3, 2) ; connect=true ; color=blue ; size=5
+line: (-2, 4), (4, -2) ; color=purple
+x: -3, 5
+y: -2, 10
+grid: on
+coords: on
+intersections: on
+interactive: on
+```</code></pre>
+          <ul>
+            <li><code>f: 表达式</code> 画一条函数曲线；也可以把表达式单独写一行。支持 <code>+ - * / ^</code>、括号、隐式乘法（如 <code>2x</code>、<code>2(x+1)</code>）、常数 <code>pi</code>、<code>e</code>、<code>tau</code>，以及 <code>sin cos tan asin acos atan sqrt abs exp ln log log10 floor ceil round</code>。选项：<code>color=</code> 颜色、<code>width=1~6</code> 线宽、<code>dash=true</code> 虚线。</li>
+            <li><code>points: (x,y), ...</code> 画散点；加 <code>connect=true</code> 依次连成折线，可配 <code>color=</code> 与 <code>size=2~9</code>。<code>line: (x1,y1), (x2,y2), ...</code> 是必然连线的简写。</li>
+            <li><code>x: 最小值, 最大值</code>、<code>y: 最小值, 最大值</code> 固定坐标范围；不写 <code>y:</code> 时按曲线和点的范围自动留边距。<code>title:</code> 是图下方标题。</li>
+            <li><code>grid: on/off</code> 控制网格；<code>coords: on/off</code> 控制选中点或交点后是否显示坐标；<code>intersections: on/off</code> 控制是否标出交点；<code>interactive: off</code> 生成静态图（仍可下载 PNG）。平时图中不写方程，选中曲线或线段时才显示方程式，选中点或交点时显示坐标。</li>
+            <li>颜色可写英文或中文名（<code>red</code>、<code>红色</code>、<code>blue</code>、<code>green</code>、<code>orange</code>、<code>purple</code>、<code>pink</code>、<code>teal</code>、<code>gray</code>、<code>black</code>、<code>yellow</code>、<code>brown</code>）或 <code>#RRGGBB</code>。</li>
+          </ul>
+
+          <h4>关系图 ```graph：点、边、边权与算法</h4>
+          <pre><code>```graph
+title: 带权示例图
+directed: true
+algo: reader
+node: A ; label=起点 ; color=red ; weight=5 ; x=0 ; y=0
+node: B ; 点权=3 ; x=120 ; y=0
+node: C[2] ; x=60 ; y=100
+edge: A -&gt; B ; label=直达 ; weight=3 ; color=blue
+edge: B -&gt; C ; 边权=2
+edge: C -- A ; weight: 5
+edge: A -[4]- C
+```</code></pre>
+          <ul>
+            <li><code>node: 点名</code> 声明点；点名可用字母、数字、下划线、连字符或中文。选项有 <code>label=显示文字</code>、<code>color=</code> 颜色、<code>size=10~34</code> 半径、<code>x=</code> / <code>y=</code> 坐标（y 越大越靠下）。<strong>点权</strong>可写 <code>node: A ; weight=5</code>、<code>点权=5</code>、<code>权重=5</code>，或直接写 <code>node: A[5]</code>、<code>node: A(5)</code>；点权数字会显示在点的右上角小圆角标里，悬停或点击点时也会读出，可写小数或负数。边里出现但没声明的点会自动创建，位置自动布局；写了坐标就按坐标摆放。后台预览里点「调整点位」可拖动节点，最后点「保存点位」一次性写回坐标；也可以在调整模式下点选一个点，在图工具栏的「点权」框里填数字并点「设置点权」直接写回源码（「清除点权」会删掉它），不必手写语法。</li>
+            <li><code>edge: A -&gt; B</code> 是有向边（需同时写 <code>directed: true</code> 才画箭头），<code>edge: A -- B</code> 或 <code>edge: A - B</code> 是无向边；也可以把 <code>A -&gt; B</code> 单独写一行。边选项有 <code>label=名称</code>、<code>color=</code> 颜色、<code>dash=true</code> 虚线。同一对点可写多条边，会自动画成弧线错开；<code>edge: A -&gt; A</code> 是自环。</li>
+            <li><strong>边权（重点）</strong>：推荐写 <code>edge: A -- B ; weight=5</code>；也支持 <code>w=5</code>、<code>边权=5</code>、<code>权重=5</code>、<code>weight: 5</code>，或直接把数字写进边里：<code>A -[5]- B</code>、<code>A --[5]-- B</code>、<code>A -[5]-&gt; B</code>，还可以用 <code>label=5</code> 把纯数字标注当边权。边权可写小数或负数，图上的权重数字会以更大的粗体显示；同时写名称和边权时会显示「名称 · 边权 5」。不写边权时算法按 1 计算，最小生成树会使用这些边权。</li>
+            <li><code>directed: true/false</code> 决定 <code>-&gt;</code> 是否按有向边处理；<code>title:</code> 是图下方标题。</li>
+            <li><code>algo:</code> 决定图算法展示：<code>reader</code>（默认）让读者自选；<code>components</code> 连通分量、<code>bridges</code> 桥与割点、<code>mst</code> 最小生成树、<code>bipartite</code> 二分图、<code>vbcc</code> 点双连通分量、<code>ebcc</code> 边双连通分量、<code>dfs</code> DFS 树（返祖边）表示作者指定，打开页面就显示结果；<code>none</code> 不显示算法。也可写中文，如 <code>算法：最小生成树</code>。上方「插入可视化图」下拉可直接生成带算法设置的新图。</li>
+            <li>函数图和关系图右上角都有「下载 PNG」，会把当前缩放/平移及算法高亮后的画面导成图片；编辑时也可以先在预览里调好再下载。</li>
           </ul>
         </div>
       </details>
@@ -358,6 +400,31 @@
       <div class="latex-picker-foot">
         <code id="latex-symbol-command">选择一个符号</code>
         <span id="latex-symbol-detail">方向键选择，Enter 或点击插入</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="latex-picker taxonomy-picker" id="taxonomy-picker" hidden>
+    <div class="latex-picker-backdrop" id="taxonomy-picker-backdrop"></div>
+    <section class="latex-picker-card taxonomy-picker-card" role="dialog" aria-modal="true" aria-labelledby="taxonomy-picker-title">
+      <div class="latex-picker-head">
+        <h2 id="taxonomy-picker-title">选择标签</h2>
+        <button class="btn ghost small" id="close-taxonomy-picker" type="button" aria-label="取消选择">关闭</button>
+      </div>
+      <label class="latex-picker-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="taxonomy-search" type="search" placeholder="搜索已有项，或输入新名称后按 Enter 新建" autocomplete="off" aria-label="搜索或新建分类/标签">
+        <kbd>Enter 新建</kbd>
+      </label>
+      <div class="taxonomy-selected" id="taxonomy-selected" aria-live="polite"></div>
+      <div class="taxonomy-options" id="taxonomy-options" aria-live="polite"></div>
+      <button class="taxonomy-create" id="taxonomy-create" type="button" hidden></button>
+      <div class="latex-picker-foot taxonomy-picker-foot">
+        <span id="taxonomy-count">已选 0 个</span>
+        <div class="taxonomy-actions">
+          <button class="btn ghost small" id="cancel-taxonomy-picker" type="button">取消</button>
+          <button class="btn primary small" id="done-taxonomy-picker" type="button">完成</button>
+        </div>
       </div>
     </section>
   </div>

@@ -606,7 +606,7 @@ test('admin writes dragged graph positions back into the matching graph fence', 
     '```',
     '',
     '```graph',
-    'node: A ; label=起点 ; color=red',
+    'node: A[7] ; label=起点 ; color=red',
     'edge: A - C',
     '```',
   ].join('\n');
@@ -618,11 +618,45 @@ test('admin writes dragged graph positions back into the matching graph fence', 
     doc.dispatchEvent(new frame.contentWindow.CustomEvent('minxi:graph-positions', { detail }));
   };
   fire({ graphIndex: 1, reset: false, positions: { A: { x: 12.5, y: -3 }, C: { x: 40, y: 50 } } });
-  assert.match(field.value, /node: A ; label=起点 ; color=red ; x=12\.5 ; y=-3/, '已有 node 行保留其它选项并写回坐标');
+  assert.match(field.value, /node: A\[7\] ; label=起点 ; color=red ; x=12\.5 ; y=-3/, '已有 node 行保留点权与其它选项并写回坐标');
   assert.match(field.value, /node: C ; x=40 ; y=50/, '边里隐式出现的点补一行坐标');
   assert.match(field.value, /node: A ; x=0 ; y=0/, '第一张图的源码不被改动');
   fire({ graphIndex: 1, reset: true, positions: {} });
   assert.doesNotMatch(field.value.split('```graph')[2], /x=|y=/, '重置会删掉该图的 x/y 坐标恢复自动布局');
+  editor.window.close();
+});
+
+test('admin writes graph node weights set from the preview back into source', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Graph node weight commit must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = [
+    '```graph',
+    'node: A[7] ; label=起点 ; color=red ; x=1 ; y=2',
+    'edge: A - C',
+    '```',
+  ].join('\n');
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const doc = frame.contentDocument;
+  const fire = (detail) => {
+    doc.dispatchEvent(new frame.contentWindow.CustomEvent('minxi:graph-node-weight', { detail }));
+  };
+  fire({ graphIndex: 0, nodeId: 'A', weight: 9.5 });
+  assert.match(field.value, /node: A ; label=起点 ; color=red ; x=1 ; y=2 ; weight=9\.5/, '已有 node 行更新点权并保留坐标与其它选项');
+  fire({ graphIndex: 0, nodeId: 'C', weight: 3 });
+  assert.match(field.value, /node: C ; weight=3/, '边里隐式出现的点补一行点权');
+  fire({ graphIndex: 0, nodeId: 'A', weight: null });
+  assert.doesNotMatch(field.value.split('\n')[1], /weight|7/, '清除点权删掉选项和方括号写法');
+  assert.match(w.document.querySelector('#preview-status').textContent, /点权已从源码清除/, '清除后状态栏有提示');
   editor.window.close();
 });
 
@@ -753,7 +787,89 @@ test('overscroll blank space is excluded from scroll sync percentages', async ()
   editor.window.close();
 });
 
-test('folds drift proportionally and graphs align as whole blocks during scroll sync', async () => {
+test('scroll sync keeps following near the bottom instead of freezing at the overscroll boundary', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  // 镜像层每行 24px（行高也 24px），模拟真实长文的行坐标。
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetTop', {
+    configurable: true,
+    get() {
+      const parent = this.parentElement;
+      if (parent?.getAttribute?.('aria-hidden') === 'true') {
+        const index = [...parent.children].indexOf(this);
+        if (index >= 0) return index * 24;
+      }
+      return 0;
+    },
+  });
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get() {
+      const parent = this.parentElement;
+      return parent?.getAttribute?.('aria-hidden') === 'true' ? 24 : 0;
+    },
+  });
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = Array.from({ length: 70 }, (_, index) => `第 ${index + 1} 行`).join('\n');
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  // 物理行程 1680 = 正文行程 1310 + 文末留白 370；旧逻辑把位置钳到 1310，
+  // 滚过 1310 后预览就冻住，最后一程完全不跟随。
+  metric(field, 1880, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '370px';
+  const doc = frame.contentDocument;
+  doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content">'
+    + '<p data-source-line="1" data-source-end-line="2">开头</p>'
+    + '<p data-source-line="65" data-source-end-line="70">结尾</p></div>';
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  const place = (selector, top, height) => {
+    const el = doc.querySelector(selector);
+    el.__pv = top; el.__h = height;
+    return el;
+  };
+  place('.article-content > p', 0, 24);
+  place('.article-content > p:last-child', 1200, 200);
+  doc.defaultView.HTMLElement.prototype.getBoundingClientRect = function rect() {
+    return {
+      top: (this.__pv || 0) - previewTop, bottom: (this.__pv || 0) - previewTop + (this.__h || 0),
+      height: this.__h || 0, left: 0, right: 100, width: 100, x: 0, y: (this.__pv || 0) - previewTop, toJSON() {},
+    };
+  };
+
+  // 滚过「扣除留白」的边界（1310）之后，预览仍应继续向下跟随。
+  editorTop = 1600;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.ok(previewTop > 1250, `接近底部时预览应继续跟随，实际 ${previewTop}`);
+
+  // 编辑区真正到底时，预览必须同时到底。
+  editorTop = 1680;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 1400, '编辑区到底时预览同时到底');
+  editor.window.close();
+});
+
+test('folds, graphs and plots drift proportionally during scroll sync', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',
   });
@@ -776,7 +892,7 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   });
   const field = w.document.querySelector('#f-body');
   const frame = w.document.querySelector('#post-preview');
-  const md = '段一\n\n:::info[提示]\n内部甲\n\n内部乙\n:::\n\n```graph\nnode: A\nedge: A - A\n```\n\n尾段';
+  const md = '段一\n\n:::info[提示]\n内部甲\n\n内部乙\n:::\n\n```graph\nnode: A\nedge: A - A\n```\n\n尾段\n\n```plot\nf: x\n```\n\n末尾';
   field.value = md;
   field.dispatchEvent(new w.Event('input'));
   await new Promise((resolve) => setTimeout(resolve, 260));
@@ -789,7 +905,7 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   };
   let editorTop = 0;
   let previewTop = 0;
-  metric(field, 336, 100, () => editorTop, (value) => { editorTop = value; });
+  metric(field, 480, 20, () => editorTop, (value) => { editorTop = value; });
   field.style.paddingBottom = '0px';
   const doc = frame.contentDocument;
   doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content">'
@@ -797,11 +913,13 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
     + '<details class="fold-box" data-source-line="3" data-source-end-line="8"><summary>提示</summary><div class="fold-box-body">'
     + '<p data-source-line="4" data-source-end-line="5">内部甲</p><p data-source-line="6" data-source-end-line="7">内部乙</p></div></details>'
     + '<figure class="md-graph" data-source-line="9" data-source-end-line="13"></figure>'
-    + '<p data-source-line="14" data-source-end-line="15">尾段</p></div>';
+    + '<p data-source-line="14" data-source-end-line="15">尾段</p>'
+    + '<figure class="md-plot" data-source-line="16" data-source-end-line="19"></figure>'
+    + '<p data-source-line="20" data-source-end-line="21">末尾</p></div>';
   if (!doc.scrollingElement) {
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
   }
-  metric(doc.scrollingElement, 1000, 200, () => previewTop, (value) => { previewTop = value; });
+  metric(doc.scrollingElement, 1300, 200, () => previewTop, (value) => { previewTop = value; });
   const place = (selector, top, height) => {
     const el = doc.querySelector(selector);
     el.__pv = top; el.__h = height;
@@ -810,6 +928,7 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   place('.article-content > p', 0, 24);
   const fold = place('.fold-box', 48, 56);
   place('.md-graph', 200, 480);
+  place('.md-plot', 760, 240);
   doc.defaultView.HTMLElement.prototype.getBoundingClientRect = function rect() {
     return {
       top: (this.__pv || 0) - previewTop, bottom: (this.__pv || 0) - previewTop + (this.__h || 0),
@@ -831,11 +950,23 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(previewTop, 48, '折叠框起点对齐块顶');
 
-  // 编辑位置落在 graph 源码内部：预览停在图块顶部，不按源码行快速划过整张图。
-  editorTop = 210;
+  // 编辑位置落在 graph 源码内部：与折叠框一样按块内行位置比例映射到
+  // 图的渲染高度。图源码 192~288px、渲染 200~680px：源码中点 240px
+  // 应漂移到渲染中点 440px，而不是一直钉在图顶 200px。
+  editorTop = 240;
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.equal(previewTop, 200, '关系图整块对齐到块顶');
+  assert.equal(previewTop, 440, '关系图按块内进度缓慢下移');
+  editorTop = 192;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 200, '刚进入关系图时仍对齐图顶');
+
+  // 函数图同理：源码 360~432px、渲染 760~1000px，中点 396px 对应 880px。
+  editorTop = 396;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 880, '函数图按块内进度缓慢下移');
 
   // 折叠框展开后改用内部块锚点：编辑到内部第一块时对齐到该块。
   fold.open = true;
@@ -885,10 +1016,65 @@ test('editor autosaves drafts locally, counts characters, and still warns before
   editor.window.close();
 });
 
+test('category and tag fields use a searchable multi-select with create support', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Taxonomy picker must stay local'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const doc = w.document;
+  doc.querySelector('#new-post-button').click();
+  assert.match(doc.querySelector('#f-categories-control').textContent, /学习笔记/, '新建文章默认分类显示为已选 chip');
+
+  // 没有文章索引时，当前已填写的值也必须出现在弹窗里供多选维护。
+  const tagsInput = doc.querySelector('#f-tags');
+  tagsInput.value = '旧标签, 算法';
+  doc.querySelector('#f-tags-control').click();
+  assert.equal(doc.querySelector('#taxonomy-picker').hidden, false, '点击标签字段打开选择弹窗');
+  assert.equal(doc.querySelector('#taxonomy-picker-title').textContent, '选择标签（可多选）');
+  const optionNames = () => [...doc.querySelectorAll('[data-taxonomy-option]')].map((button) => button.dataset.taxonomyOption);
+  assert.deepEqual(new Set(optionNames()), new Set(['旧标签', '算法']), '弹窗列出当前已有标签');
+  assert.equal(doc.querySelector('[data-taxonomy-option="旧标签"]').getAttribute('aria-pressed'), 'true', '已有标签默认已选');
+
+  // 搜索不到时按 Enter 新建并选中，弹窗保持打开以便继续多选。
+  const search = doc.querySelector('#taxonomy-search');
+  search.value = '动态规划';
+  search.dispatchEvent(new w.Event('input', { bubbles: true }));
+  assert.match(doc.querySelector('#taxonomy-create').textContent, /新建并选中「动态规划」/);
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(search.value, '', '新建后清空搜索框，方便继续选择');
+  assert.equal(doc.querySelector('[data-taxonomy-option="动态规划"]').getAttribute('aria-pressed'), 'true', '新建标签立即选中');
+
+  // 点选可反复切换；完成才写回隐藏字段和 chips。
+  doc.querySelector('[data-taxonomy-option="旧标签"]').click();
+  assert.equal(doc.querySelector('[data-taxonomy-option="旧标签"]').getAttribute('aria-pressed'), 'false', '再次点击取消选择');
+  doc.querySelector('[data-taxonomy-option="旧标签"]').click();
+  doc.querySelector('#done-taxonomy-picker').click();
+  assert.deepEqual(new Set(tagsInput.value.split(',').map((item) => item.trim())), new Set(['旧标签', '算法', '动态规划']), '多选结果写回标签字段');
+  assert.equal(doc.querySelector('#taxonomy-picker').hidden, true, '完成后关闭弹窗');
+  assert.match(doc.querySelector('#f-tags-control').textContent, /动态规划/, '字段 chips 同步显示新标签');
+
+  // 取消不写回临时选择；字段上的 × 可直接移除单个标签。
+  doc.querySelector('#f-categories-control').click();
+  search.value = '临时分类';
+  search.dispatchEvent(new w.Event('input', { bubbles: true }));
+  search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  doc.querySelector('#cancel-taxonomy-picker').click();
+  assert.equal(doc.querySelector('#f-categories').value, '学习笔记', '取消弹窗不改变原分类');
+  doc.querySelector('#f-tags-control [data-taxonomy-remove="算法"]').click();
+  assert.equal(tagsInput.value.includes('算法'), false, 'chip 上的 × 直接移除标签');
+  editor.window.close();
+});
+
 test('editor guide is folded and visibility uses pin-style toggle buttons', async () => {
   const html = await readFile('source/admin/index.html', 'utf8');
   assert.match(html, /<details class="editor-guide">/, '写作介绍应放进折叠框');
   assert.ok(!/<details class="editor-guide" open/.test(html), '介绍折叠框默认收起');
+  assert.ok(html.includes('函数图 ```plot') && html.includes('points: (x,y)'), '写作说明详细写函数图语法');
+  assert.ok(html.includes('关系图 ```graph') && html.includes('weight=5') && html.includes('A -[5]- B') && html.includes('边权（重点）'), '写作说明详细写关系图与边权写法');
   assert.equal(html.includes('id="f-visibility"'), false, '可见性不再用下拉框');
   assert.ok(html.includes('data-visibility="public"') && html.includes('data-visibility="private"'), '可见性是公开/私密按钮组');
   const editor = new JSDOM(html, { url: 'https://preview.example/admin/', runScripts: 'outside-only' });

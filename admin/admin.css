@@ -174,6 +174,153 @@ html[data-wallpaper="on"] .admin-topbar {
   margin-top: 4px;
   accent-color: var(--accent);
 }
+/* 分类 / 标签多选：字段本身是可点击的已选 chips 区，弹窗里搜索旧项或新建。 */
+.taxonomy-control {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0e131b;
+  color: var(--text);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.taxonomy-control:hover,
+.taxonomy-control:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+.taxonomy-placeholder {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 3px 4px;
+}
+.taxonomy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border: 1px solid #2f4a44;
+  border-radius: 999px;
+  background: #17352e;
+  color: var(--text);
+  padding: 3px 5px 3px 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.taxonomy-chip button {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.taxonomy-chip button:hover { color: var(--text); background: rgba(255, 255, 255, 0.16); }
+.taxonomy-open-label {
+  margin-left: auto;
+  flex: none;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 3px 4px;
+}
+.taxonomy-hint {
+  margin: 6px 1px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.taxonomy-picker-card { width: min(680px, 100%); }
+.taxonomy-selected {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 38px;
+  margin: 0 17px;
+  padding: 8px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.taxonomy-options {
+  flex: 1 1 auto;
+  min-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 17px 16px;
+}
+.taxonomy-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 10px;
+  cursor: pointer;
+  font: 12px var(--sans);
+  line-height: 1.45;
+}
+.taxonomy-option:hover { border-color: var(--accent); }
+.taxonomy-option.selected {
+  border-color: var(--accent);
+  background: #17352e;
+  color: var(--accent);
+}
+.taxonomy-option .taxonomy-option-check {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+}
+.taxonomy-option .taxonomy-option-count { color: var(--muted); font-size: 10.5px; }
+.taxonomy-option.selected .taxonomy-option-count { color: inherit; opacity: 0.75; }
+.taxonomy-empty {
+  width: 100%;
+  margin: 36px 8px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+.taxonomy-create {
+  flex: none;
+  margin: 0 17px 13px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: rgba(92, 224, 196, 0.08);
+  color: var(--accent);
+  padding: 9px 12px;
+  cursor: pointer;
+  font: 12px var(--sans);
+}
+.taxonomy-create[hidden] { display: none; }
+.taxonomy-picker-foot { justify-content: space-between; }
+.taxonomy-actions { display: flex; gap: 8px; flex: none; }
+html[data-theme="light"] .taxonomy-control { background: #fff; }
+html[data-theme="light"] .taxonomy-chip { background: #e7f5f1; border-color: #9ec9bc; }
+html[data-theme="light"] .taxonomy-chip button { background: rgba(23, 35, 58, 0.08); }
+html[data-theme="light"] .taxonomy-chip button:hover { background: rgba(23, 35, 58, 0.16); }
+html[data-theme="light"] .taxonomy-option.selected { background: #e7f5f1; }
+html[data-theme="light"] .taxonomy-create { background: #e7f5f1; }
+html[data-theme="light"] .editor-guide-body pre { background: #f2f5f7; }
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -898,6 +1045,23 @@ body.zen-editing .admin-main { max-width: 1440px; padding-top: 14px; }
 .editor-guide-body ul {
   margin: 0;
   padding-left: 20px;
+}
+.editor-guide-body h4 {
+  margin: 14px 0 6px;
+  color: var(--text);
+  font-size: 13px;
+}
+.editor-guide-body pre {
+  margin: 6px 0 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b0f16;
+  line-height: 1.65;
+}
+.editor-guide-body pre code {
+  white-space: pre;
 }
 
 /* ------------------------------------------------------------------

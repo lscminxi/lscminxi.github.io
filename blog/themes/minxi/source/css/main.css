@@ -228,7 +228,7 @@ html.header-open .header-hint {
   font-size: 22px;
 }
 .brand-suffix {
-  font-size: 15px;
+  font-size: 17px;
   color: var(--muted);
   font-weight: 400;
   margin-left: 3px;
@@ -880,7 +880,7 @@ html.header-open .header-hint {
   margin-bottom: 15px;
 }
 .sidebar-section h2 .section-icon {
-  font-size: 15px;
+  font-size: 17px;
 }
 .subtle-label {
   margin-left: auto;
@@ -1168,7 +1168,7 @@ html.header-open .header-hint {
 }
 .article-content h4 {
   margin: 22px 0 12px;
-  font-size: 15px;
+  font-size: 17px;
 }
 .article-content p {
   margin: 17px 0;
@@ -2110,6 +2110,16 @@ body.search-open {
 .article-content .graph-node-label { fill: var(--text); font-size: 12px; font-weight: 600; }
 .article-content .graph-node-label.on-color { fill: #ffffff; }
 .article-content .graph-node-sub { fill: var(--muted); font-size: 10px; }
+.article-content .graph-node-weight-badge {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 1.6;
+}
+.article-content .graph-node-weight-text {
+  fill: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
 .article-content .graph-edge-label {
   fill: var(--text);
   font-size: 11px;
@@ -2117,10 +2127,16 @@ body.search-open {
   stroke: var(--panel);
   stroke-width: 3px;
 }
+.article-content .graph-edge-weight {
+  font-size: 17px;
+  font-weight: 700;
+}
 
 /* 交互控件：无脚本（后台预览）时隐藏工具栏，静态坐标与方程仍直接可见 */
 .article-content .plot-toolbar { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-.article-content .md-plot:not(.is-interactive) .plot-toolbar,
+.article-content .figure-download-tools { margin-left: auto; }
+.article-content .md-plot:not(.is-interactive) .plot-toolbar { justify-content: flex-end; }
+.article-content .md-plot:not(.is-interactive) .plot-toolbar .plot-tools:not(.figure-download-tools),
 .article-content .md-plot:not(.is-interactive) .plot-readout,
 .article-content .md-graph:not(.is-interactive) .plot-toolbar,
 .article-content .md-graph:not(.is-interactive) .plot-readout { display: none; }
@@ -2134,6 +2150,15 @@ body.search-open {
   border-color: var(--accent); color: var(--text);
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
+.article-content .graph-weight-tools { align-items: center; }
+.article-content .graph-weight-tools[hidden] { display: none; }
+.article-content .graph-weight-target { color: var(--muted); font-size: 12px; }
+.article-content .graph-weight-tools input {
+  width: 84px; border: 1px solid var(--line); background: var(--panel-raised); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; line-height: 1.5;
+}
+.article-content .graph-weight-tools input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.article-content .graph-weight-tools button:disabled { opacity: 0.45; cursor: default; }
 .article-content .plot-stage { touch-action: none; cursor: grab; border-radius: 6px; }
 .article-content .plot-stage.is-dragging { cursor: grabbing; }
 .article-content .plot-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -3403,6 +3428,9 @@ html[data-theme="light"] .article-content .fold-box--success {
 }
 /* 染色点上的文字在浅色下同样用白色（点本身的颜色不变） */
 html[data-theme="light"] .article-content .graph-node-label.on-color {
+  fill: #ffffff;
+}
+html[data-theme="light"] .article-content .graph-node-weight-text {
   fill: #ffffff;
 }
 /* 坐标显示框在浅色下用更柔和的阴影 */

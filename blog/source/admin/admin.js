@@ -542,6 +542,272 @@
       .map((item) => item.trim())
       .filter(Boolean);
 
+  /* ---------------- 分类 / 标签多选 ----------------
+     字段在页面上是「已选 chips + 点击打开选择器」的多选控件，隐藏 input
+     继续保存逗号分隔值，沿用原有保存、快照与自动草稿逻辑。弹窗像 LaTeX
+     符号搜索一样可搜索：已有项来自全部文章的分类/标签并标注使用次数，
+     点按切换选中（可多选）；搜索框输入新名称后按 Enter（或点新建按钮）
+     即可新建并选中。点「完成」才写回字段，取消/Esc 不改原选择。 */
+  const taxonomyPicker = $("#taxonomy-picker");
+  const taxonomyTitle = $("#taxonomy-picker-title");
+  const taxonomySearch = $("#taxonomy-search");
+  const taxonomyOptionsBox = $("#taxonomy-options");
+  const taxonomySelectedBox = $("#taxonomy-selected");
+  const taxonomyCount = $("#taxonomy-count");
+  const taxonomyCreate = $("#taxonomy-create");
+  const taxonomyFields = {
+    categories: { input: el.f.categories, control: $("#f-categories-control"), label: "分类" },
+    tags: { input: el.f.tags, control: $("#f-tags-control"), label: "标签" },
+  };
+  let taxonomyTarget = null;
+  let taxonomySelection = [];
+  let taxonomyReturnFocus = null;
+
+  const uniqueTaxonomy = (values) => {
+    const seen = new Set();
+    const result = [];
+    for (const raw of values || []) {
+      const name = String(raw || "").trim().replace(/\s+/g, " ");
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      result.push(name);
+    }
+    return result;
+  };
+  const taxonomyValues = (target) => uniqueTaxonomy(splitList(taxonomyFields[target].input.value));
+  const taxonomyCounts = (target) => {
+    const counts = new Map();
+    for (const post of postIndex.values()) {
+      for (const name of uniqueTaxonomy(asList(post[target]))) {
+        counts.set(name, (counts.get(name) || 0) + 1);
+      }
+    }
+    return counts;
+  };
+  const taxonomyOptions = (target) => {
+    const counts = taxonomyCounts(target);
+    for (const name of taxonomyValues(target)) {
+      if (!counts.has(name)) counts.set(name, 0);
+    }
+    // 弹窗里刚新建、尚未点「完成」写回的选项也要继续显示，可再次点选取消。
+    if (taxonomyTarget === target) {
+      for (const name of taxonomySelection) {
+        if (!counts.has(name)) counts.set(name, 0);
+      }
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-CN"));
+  };
+
+  function syncTaxonomyControl(target) {
+    const field = taxonomyFields[target];
+    if (!field?.control) return;
+    const values = taxonomyValues(target);
+    field.control.replaceChildren();
+    if (!values.length) {
+      const placeholder = document.createElement("span");
+      placeholder.className = "taxonomy-placeholder";
+      placeholder.textContent = `点击选择${field.label}…`;
+      field.control.append(placeholder);
+    } else {
+      for (const name of values) {
+        const chip = document.createElement("span");
+        chip.className = "taxonomy-chip";
+        const text = document.createElement("span");
+        text.textContent = name;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.title = `移除${field.label}「${name}」`;
+        remove.setAttribute("aria-label", remove.title);
+        remove.dataset.taxonomyRemove = name;
+        remove.dataset.taxonomyTarget = target;
+        chip.append(text, remove);
+        field.control.append(chip);
+      }
+    }
+    const openLabel = document.createElement("span");
+    openLabel.className = "taxonomy-open-label";
+    openLabel.textContent = values.length ? `已选 ${values.length} · 选择` : "选择";
+    field.control.append(openLabel);
+    field.control.setAttribute(
+      "aria-label",
+      `${field.label}：${values.length ? values.join("、") : "未选择"}。点击打开${field.label}多选`,
+    );
+  }
+  function syncTaxonomyControls() {
+    Object.keys(taxonomyFields).forEach(syncTaxonomyControl);
+  }
+  function setTaxonomyValues(target, values, emit = true) {
+    const field = taxonomyFields[target];
+    field.input.value = uniqueTaxonomy(values).join(", ");
+    syncTaxonomyControl(target);
+    if (emit) {
+      field.input.dispatchEvent(new window.Event("input", { bubbles: true }));
+      field.input.dispatchEvent(new window.Event("change", { bubbles: true }));
+    }
+  }
+
+  function renderTaxonomyPicker(focusOption = "") {
+    if (!taxonomyTarget) return;
+    const field = taxonomyFields[taxonomyTarget];
+    const query = taxonomySearch.value.trim().replace(/\s+/g, " ");
+    const folded = query.toLocaleLowerCase();
+    const options = taxonomyOptions(taxonomyTarget)
+      .filter((option) => !folded || option.name.toLocaleLowerCase().includes(folded))
+      .sort((a, b) =>
+        Number(taxonomySelection.includes(b.name)) - Number(taxonomySelection.includes(a.name))
+        || b.count - a.count
+        || a.name.localeCompare(b.name, "zh-CN"));
+    taxonomySelectedBox.replaceChildren();
+    const selectedLabel = document.createElement("span");
+    selectedLabel.textContent = taxonomySelection.length ? `已选 ${taxonomySelection.length} 个${field.label}：` : `尚未选择${field.label}`;
+    taxonomySelectedBox.append(selectedLabel);
+    for (const name of taxonomySelection) {
+      const chip = document.createElement("span");
+      chip.className = "taxonomy-chip";
+      chip.textContent = name;
+      taxonomySelectedBox.append(chip);
+    }
+    taxonomyOptionsBox.replaceChildren();
+    if (!options.length) {
+      const empty = document.createElement("p");
+      empty.className = "taxonomy-empty";
+      empty.textContent = query
+        ? `没有找到「${query}」，可按 Enter 直接新建。`
+        : `还没有用过的${field.label}，在上方输入名称后按 Enter 新建。`;
+      taxonomyOptionsBox.append(empty);
+    } else {
+      for (const option of options) {
+        const selected = taxonomySelection.includes(option.name);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `taxonomy-option${selected ? " selected" : ""}`;
+        button.dataset.taxonomyOption = option.name;
+        button.setAttribute("aria-pressed", String(selected));
+        const check = document.createElement("span");
+        check.className = "taxonomy-option-check";
+        check.textContent = selected ? "✓" : "+";
+        const name = document.createElement("span");
+        name.textContent = option.name;
+        const count = document.createElement("span");
+        count.className = "taxonomy-option-count";
+        count.textContent = selected ? "已选" : option.count ? `${option.count} 篇` : "当前填写";
+        button.append(check, name, count);
+        taxonomyOptionsBox.append(button);
+      }
+    }
+    const splitQuery = uniqueTaxonomy(splitList(query));
+    const hasExact = splitQuery.length
+      && splitQuery.every((name) => taxonomyOptions(taxonomyTarget)
+        .some((option) => option.name.toLocaleLowerCase() === name.toLocaleLowerCase()));
+    const allSelected = splitQuery.length
+      && splitQuery.every((name) => taxonomySelection.some((item) => item.toLocaleLowerCase() === name.toLocaleLowerCase()));
+    taxonomyCreate.hidden = !(query && (!hasExact || !allSelected));
+    taxonomyCreate.textContent = query
+      ? (hasExact && !allSelected ? `＋ 选中「${query}」` : `＋ 新建并选中「${query}」`)
+      : "";
+    taxonomyCount.textContent = `已选 ${taxonomySelection.length} 个${field.label}，可继续多选`;
+    if (focusOption) {
+      [...taxonomyOptionsBox.querySelectorAll("[data-taxonomy-option]")]
+        .find((button) => button.dataset.taxonomyOption === focusOption)?.focus();
+    }
+  }
+
+  function openTaxonomyPicker(target, control) {
+    syncTaxonomyControl(target);
+    taxonomyTarget = target;
+    taxonomySelection = taxonomyValues(target);
+    taxonomyReturnFocus = control || taxonomyFields[target].control;
+    const field = taxonomyFields[target];
+    taxonomyTitle.textContent = `选择${field.label}（可多选）`;
+    taxonomySearch.value = "";
+    taxonomySearch.placeholder = `搜索已有${field.label}，或输入新${field.label}后按 Enter 新建`;
+    taxonomySearch.setAttribute("aria-label", `搜索或新建${field.label}`);
+    taxonomyPicker.hidden = false;
+    renderTaxonomyPicker();
+    setTimeout(() => taxonomySearch.focus(), 0);
+  }
+  function closeTaxonomyPicker(commit) {
+    if (taxonomyPicker.hidden) return;
+    if (commit && taxonomyTarget) setTaxonomyValues(taxonomyTarget, taxonomySelection);
+    taxonomyPicker.hidden = true;
+    taxonomyTarget = null;
+    taxonomySelection = [];
+    taxonomyReturnFocus?.focus?.({ preventScroll: true });
+    taxonomyReturnFocus = null;
+  }
+  function createTaxonomyFromSearch() {
+    if (!taxonomyTarget) return;
+    const names = uniqueTaxonomy(splitList(taxonomySearch.value.trim().replace(/\s+/g, " ")));
+    if (!names.length) return;
+    const options = taxonomyOptions(taxonomyTarget);
+    for (const raw of names) {
+      const existing = options.find((option) => option.name.toLocaleLowerCase() === raw.toLocaleLowerCase());
+      const name = existing?.name || raw;
+      if (!taxonomySelection.includes(name)) taxonomySelection.push(name);
+    }
+    taxonomySearch.value = "";
+    renderTaxonomyPicker();
+    taxonomySearch.focus();
+  }
+
+  Object.entries(taxonomyFields).forEach(([target, field]) => {
+    if (!field.control) return;
+    field.control.addEventListener("click", (event) => {
+      const remove = event.target.closest?.("[data-taxonomy-remove]");
+      if (remove?.dataset.taxonomyTarget === target) {
+        event.stopPropagation();
+        setTaxonomyValues(target, taxonomyValues(target).filter((name) => name !== remove.dataset.taxonomyRemove));
+        field.control.focus({ preventScroll: true });
+        return;
+      }
+      openTaxonomyPicker(target, field.control);
+    });
+    field.control.addEventListener("keydown", (event) => {
+      if (event.target !== field.control) return; // 焦点在单个 × 移除按钮上时，不打开弹窗
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openTaxonomyPicker(target, field.control);
+      }
+    });
+  });
+  taxonomyOptionsBox.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-taxonomy-option]");
+    if (!button || !taxonomyTarget) return;
+    const name = button.dataset.taxonomyOption;
+    taxonomySelection = taxonomySelection.includes(name)
+      ? taxonomySelection.filter((item) => item !== name)
+      : [...taxonomySelection, name];
+    renderTaxonomyPicker(name);
+  });
+  taxonomySelectedBox.addEventListener("click", () => taxonomySearch.focus());
+  taxonomySearch.addEventListener("input", () => renderTaxonomyPicker());
+  taxonomySearch.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeTaxonomyPicker(false);
+    } else if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      createTaxonomyFromSearch();
+    }
+  });
+  taxonomyCreate.addEventListener("click", createTaxonomyFromSearch);
+  $("#done-taxonomy-picker").addEventListener("click", () => closeTaxonomyPicker(true));
+  $("#cancel-taxonomy-picker").addEventListener("click", () => closeTaxonomyPicker(false));
+  $("#close-taxonomy-picker").addEventListener("click", () => closeTaxonomyPicker(false));
+  $("#taxonomy-picker-backdrop").addEventListener("click", () => closeTaxonomyPicker(false));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !taxonomyPicker.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTaxonomyPicker(false);
+    }
+  }, true);
+  syncTaxonomyControls();
+
   function toDatetimeLocal(date) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
       date.getHours(),
@@ -1304,12 +1570,10 @@
     }
   };
   // 每次同步都按当前文档现算块级锚点（仿洛谷编辑器的按块对齐）：锚点记下
-  // 每个块的源码起止行与预览上下沿。普通文本块在块内按行插值；函数图、
-  // 关系图、独立图片这类「源码行数与渲染高度不成比例」的块整块对齐——
-  // 编辑光标落在块源码范围内时预览就停在块顶，不按行数硬摊比例。
-  // 折叠框不钉在块顶：编辑位置在折叠框源码范围内的比例，映射到它当前
-  // 渲染高度上缓慢下移（同样仿洛谷）；展开时内部块还有各自的锚点，
-  // 编辑落到内部块上时由内部锚点接管。未展开时内部块一律跳过。
+  // 每个块的源码起止行与预览上下沿。普通文本块、折叠框、函数图与关系图
+  // 都在块内按源码行位置比例映射到当前渲染高度上缓慢下移；只有独立图片
+  // 这类没有内部行进度的块才整块对齐到块顶。折叠框展开时内部块还有各自
+  // 的锚点，编辑落到内部块上时由内部锚点接管；未展开时内部块一律跳过。
   const collectScrollAnchors = (doc, scroll) => {
     if (scrollAnchorsDirty) {
       try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
@@ -1324,11 +1588,13 @@
       const last = kids[kids.length - 1];
       return (last.offsetTop || 0) + (last.offsetHeight || 0);
     };
+    // 锚点的编辑区坐标以第一行行首为 0：textarea 的 scrollTop 同样以第一行
+    // 能滚到的位置为基准，直接拿镜像的绝对 offsetTop 会多出顶部内边距。
+    const mirrorBaseTop = mirrorLineTop(1);
     const isAtomicBlock = (block) => {
-      if (block.classList?.contains('md-plot') || block.classList?.contains('md-graph')) return true;
-      // 折叠框不算整块：按源码内位置比例映射到渲染高度上缓慢下移。
-      if (block.querySelector?.(':scope > img')) return true;
-      return false;
+      // 函数图/关系图不再整块钉在顶部：和折叠框一样按块内进度缓慢下移。
+      // 独立图片没有可对应的源码内部进度，仍整块对齐。
+      return Boolean(block.querySelector?.(':scope > img'));
     };
     for (const block of doc.querySelectorAll("[data-source-line]")) {
       const parentFold = block.parentElement?.closest?.('details.fold-box');
@@ -1339,14 +1605,14 @@
       if (!Number.isInteger(line) || line < 1 || !lineMirror.children[line - 1]) continue;
       const endLine = Number(block.dataset.sourceEndLine) || line + 1;
       const rect = block.getBoundingClientRect();
-      const ta = mirrorLineTop(line);
+      const ta = Math.max(0, mirrorLineTop(line) - mirrorBaseTop);
       const pv = rect.top + (scroll.scrollTop || 0);
       if (!Number.isFinite(ta) || !Number.isFinite(pv)) continue;
       const prev = anchors[anchors.length - 1];
       if (prev && (ta <= prev.ta || pv <= prev.pv)) continue;
       anchors.push({
         ta,
-        taEnd: Math.max(mirrorLineTop(endLine), ta),
+        taEnd: Math.max(mirrorLineTop(endLine) - mirrorBaseTop, ta),
         pv,
         pvBottom: pv + Math.max(0, rect.height || 0),
         atomic: isAtomicBlock(block),
@@ -1362,23 +1628,30 @@
     if ($("#writing-workspace")?.dataset.mode === "edit") return;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
     if (!(maxPv > 0)) return;
-    // 文末留白（滑过文末的 padding-bottom）不能算进同步行程：同步只按正文
-    // 本身的可滚范围算百分比与锚点尾段，否则必须把最后一行拉到编辑区最
-    // 顶端、滑完整段空白，预览才肯翻到底。留白行程内的滚动一律钳到文末。
+    // 编辑区的可滚行程以物理行程为准：底部留白正是让最后一行能继续滚到
+    // 编辑区顶部的那段距离，锚点坐标也按完整行程计算。若在这里先把位置
+    // 钳到「扣除留白后的行程」，滚到最后约一屏时位置会被提前冻住，预览
+    // 还没到底就不再跟随。只有完全没有锚点、退回百分比同步时，才按扣除
+    // 留白后的行程算，避免留白把百分比稀释。
     const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
-    const maxTa = Math.max(0, (ta.scrollHeight - ta.clientHeight) - overscrollBottom);
-    if (!(maxTa > 0)) {
+    const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+    const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
+    if (!(physicalMaxTa > 0)) {
       // 正文短到本身不用滚：预览直接对齐顶部。
       if (scroll.style) scroll.style.scrollBehavior = "auto";
       scroll.scrollTop = 0;
       return;
     }
     const anchors = collectScrollAnchors(doc, scroll);
-    const y = Math.min(ta.scrollTop || 0, maxTa);
+    const rawY = ta.scrollTop || 0;
+    const y = Math.min(rawY, anchors.length ? physicalMaxTa : effectiveMaxTa);
     let target;
     if (!anchors.length) {
-      // 没有可用锚点时退回按正文总高度比例同步（同样不含文末留白）。
-      target = (y / maxTa) * maxPv;
+      // 没有可用锚点时退回按正文总高度比例同步（不含文末留白）。
+      target = effectiveMaxTa > 0 ? (y / effectiveMaxTa) * maxPv : maxPv;
+    } else if (rawY >= physicalMaxTa - 0.5) {
+      // 编辑区真正到底：预览必须同时到底，不能停在最后一块的内部映射上。
+      target = maxPv;
     } else if (y < anchors[0].ta) {
       target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
     } else {
@@ -1386,7 +1659,8 @@
       while (i > 0 && anchors[i].ta > y) i -= 1;
       const a = anchors[i];
       if (y < a.taEnd) {
-        // 块内部：整块对齐的块停在块顶；普通块按行位置摊到块的渲染高度。
+        // 块内部：独立图片停在块顶；其余块（含图与折叠框）按行位置
+        // 比例摊到当前渲染高度，随编辑滚动缓慢下移。
         if (a.atomic) {
           target = a.pv;
         } else {
@@ -1400,10 +1674,10 @@
         target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
       } else {
         // 最后一块之后：平滑过渡到两侧同时见底。
-        const span = maxTa - a.taEnd;
+        const span = physicalMaxTa - a.taEnd;
         target = span > 0.5
           ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
-          : (y >= maxTa - 0.5 ? maxPv : a.pvBottom);
+          : (y >= physicalMaxTa - 0.5 ? maxPv : a.pvBottom);
       }
     }
     // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放
@@ -1441,7 +1715,10 @@
       const bodyLines = lines.slice(i + 1, end).map((line) => {
         const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
         if (!match) return line;
-        const id = match[2].trim();
+        const idSegment = match[2].trim();
+        // 点名后可能跟点权（A[5] / A(5)）：识别真实点名，写回时原样保留这一段。
+        const idMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)(?:\s*(?:\[[^\]]+\]|\([^)]+\)))?$/.exec(idSegment);
+        const id = idMatch?.[1] || '';
         if (!graphNodeId.test(id)) return line;
         seen.add(id);
         const options = (match[3] || "")
@@ -1453,7 +1730,7 @@
         if (pos && Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.y))) {
           options.push(`x=${formatGraphCoord(pos.x)}`, `y=${formatGraphCoord(pos.y)}`);
         }
-        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+        return options.length ? `${match[1]}${idSegment} ; ${options.join(" ; ")}` : `${match[1]}${idSegment}`;
       });
       if (positions) {
         for (const [id, pos] of Object.entries(positions)) {
@@ -1465,6 +1742,59 @@
       return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
     }
     return null;
+  };
+  const formatGraphWeight = (value) => String(Number(Number(value).toFixed(4)));
+  const rewriteGraphBlockNodeWeight = (markdown, graphIndex, nodeId, weight) => {
+    if (!/^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/.test(String(nodeId || ''))) return null;
+    if (weight !== null && !Number.isFinite(Number(weight))) return null;
+    const lines = String(markdown).split("\n");
+    let current = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^```graph\s*$/.test(lines[i].trim())) continue;
+      current += 1;
+      let end = i + 1;
+      while (end < lines.length && !/^```\s*$/.test(lines[end].trim())) end += 1;
+      if (current !== graphIndex) { i = end; continue; }
+      if (end >= lines.length) return null;
+      let seen = false;
+      const bodyLines = lines.slice(i + 1, end).map((line) => {
+        const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
+        if (!match) return line;
+        const idSegment = match[2].trim();
+        const idMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)(?:\s*(?:\[[^\]]+\]|\([^)]+\)))?$/.exec(idSegment);
+        const id = idMatch?.[1] || '';
+        if (id !== nodeId) return line;
+        seen = true;
+        const options = (match[3] || "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item) => !/^(weight|w|点权|权重)\s*(?:=|[:：])/i.test(item));
+        if (weight !== null) options.push(`weight=${formatGraphWeight(weight)}`);
+        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+      });
+      if (!seen && weight !== null) {
+        bodyLines.push(`node: ${nodeId} ; weight=${formatGraphWeight(weight)}`);
+      }
+      return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
+    }
+    return null;
+  };
+  const handleGraphNodeWeight = (event) => {
+    const detail = event.detail || {};
+    const graphIndex = Number(detail.graphIndex || 0);
+    const weight = detail.weight === null ? null : Number(detail.weight);
+    if (detail.weight !== null && !Number.isFinite(weight)) return;
+    const next = rewriteGraphBlockNodeWeight(el.f.body.value, graphIndex, detail.nodeId, weight);
+    if (next === null || next === el.f.body.value) return;
+    const cursor = Math.min(el.f.body.selectionStart ?? next.length, next.length);
+    el.f.body.value = next;
+    el.f.body.selectionStart = el.f.body.selectionEnd = cursor;
+    el.f.body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    updatePreview();
+    $("#preview-status").textContent = weight === null
+      ? "图点权已从源码清除（记得保存文章）"
+      : "图点权已写回源码（记得保存文章）";
   };
   const handleGraphPositions = (event) => {
     const detail = event.detail || {};
@@ -1491,6 +1821,7 @@
     scrollAnchorsDirty = true;
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
     try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
+    try { previewFrame.contentDocument?.addEventListener("minxi:graph-node-weight", handleGraphNodeWeight); } catch { /* 预览未就绪时忽略 */ }
     // 新文档先保持隐藏，对齐完成后再显示，避免用户先看到最前端、再被滚到目标位置。
     // 后续两次校准都已关闭平滑滚动，只会直接落位，不产生物理滚动特效。
     syncPreviewScroll();
@@ -2092,7 +2423,7 @@
   $("#insert-graph").addEventListener("change", (event) => {
     const mode = ["reader", "none", "components", "bridges", "mst", "bipartite", "vbcc", "ebcc", "dfs"].includes(event.target.value) ? event.target.value : "";
     if (!mode) return;
-    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -- A ; weight=5\n```\n\n");
+    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red ; weight=6\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -[5]- A\n```\n\n");
     event.target.value = "";
   });
 
@@ -2140,6 +2471,7 @@
       setPinned(Number(data.sticky) > 0);
       el.f.body.value = body.replace(/^\n+/, "");
       snapshots.editor = editorSnapshotValue();
+      syncTaxonomyControls();
       el.editorStatus.textContent = `已加载 ${path}（${(file.size / 1024).toFixed(1)} KB）`;
       log(`打开编辑：${path}`);
       restoreDraftIfAny();
@@ -2167,6 +2499,7 @@
     el.f.body.value = "";
     delete el.f.slug.dataset.touched;
     snapshots.editor = editorSnapshotValue();
+    syncTaxonomyControls();
     el.editorStatus.textContent = "填写后点「保存并提交」。";
     restoreDraftIfAny();
     showEditor();
@@ -2451,6 +2784,7 @@
     setPinned(data.pinned);
     el.f.body.value = String(data.body ?? "");
     if (el.f.slug.value) el.f.slug.dataset.touched = "1";
+    syncTaxonomyControls();
     return true;
   }
 

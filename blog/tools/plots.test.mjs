@@ -135,6 +135,50 @@ test('graph algorithms find components, bridges, cut vertices, MST and bipartite
   assert.ok(svg.includes('data-edge-index="0"') && svg.includes('data-weight="5"'), '边组带编号和权重供前端算法定位');
 });
 
+test('graph accepts several edge-weight spellings and renders weights larger', () => {
+  const spec = plots.parseGraphSpec([
+    'directed: true',
+    'node: A', 'node: B', 'node: C', 'node: D',
+    'edge: A - B ; weight=5',
+    'edge: B - C ; 边权：2.5',
+    'edge: C -[3]-> D',
+    'edge: D - A ; label=路线 ; weight=-1',
+    'A -[4]- B',
+  ].join('\n'));
+  assert.deepEqual(spec.edges.map((edge) => edge.weight), [5, 2.5, 3, -1, 4], 'weight=、边权：、-[n]- 与简写都能解析边权');
+  assert.equal(spec.edges[2].directed, true, '-[3]-> 保持有向');
+  assert.equal(spec.edges[4].directed, false, '-[4]- 是无向带权边');
+  assert.ok(spec.edges.every((edge) => edge.hasWeight && edge.weightLabel), '每条边都记录可单独排版的权重数字');
+  const svg = plots.renderGraphSvg(spec);
+  assert.ok(svg.includes('<tspan class="graph-edge-weight" font-size="17" font-weight="700">5</tspan>'), '纯边权以 17px 粗体显示');
+  assert.ok(svg.includes('路线 · 边权 <tspan class="graph-edge-weight" font-size="17" font-weight="700">-1</tspan>'), '名称保持普通字号，权重数字单独放大');
+});
+
+test('graph node weights parse from options or brackets and render as badges', async () => {
+  const spec = plots.parseGraphSpec([
+    'node: A ; weight=5',
+    'node: B ; 点权：2.5',
+    'node: C[-1]',
+    'node: D(4)',
+    'node: E',
+    'edge: A - B',
+  ].join('\n'));
+  assert.deepEqual([...spec.nodes.values()].map((node) => node.weight), [5, 2.5, -1, 4, null], 'weight=、点权：、A[n]、A(n) 都能解析点权');
+  const svg = plots.renderGraphSvg(spec);
+  assert.ok(svg.includes('data-node-weight="5"'), '点组带点权供交互读数');
+  assert.ok(svg.includes('class="graph-node-weight"') && svg.includes('>2.5</text>'), '点权以右上角角标显示');
+  assert.ok(svg.includes('>-1</text>') && svg.includes('>4</text>'), '负数与括号写法也显示');
+  const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0 ; weight=5\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-graph');
+    const group = figure.querySelector('.graph-node-group[data-node-id="A"]');
+    pointer(page, group, 'pointermove', 100, 100);
+    assert.equal(figure.querySelector('.plot-readout').textContent, '点 A：点权 5', '悬停点时读数带点权');
+    pointer(page, group, 'click', 100, 100);
+    assert.equal(figure.querySelector('.plot-readout').textContent, '点 A：点权 5', '点击点时读数带点权');
+  } finally { page.window.close(); }
+});
+
 test('graph algorithms find vertex/edge biconnected components and a DFS tree with back edges', () => {
   const result = plots.analyzeGraphData(['A', 'B', 'C', 'D', 'E', 'F', 'G'], [
     { from: 'A', to: 'B' }, { from: 'B', to: 'C' }, { from: 'C', to: 'A' },
@@ -472,7 +516,7 @@ test('plot selection also works when the click lands near (not exactly on) a poi
 
 test('named graph edges still show their weight', async () => {
   const svg = plots.renderGraphSvg(plots.parseGraphSpec('node: A\nnode: B\nedge: A - B ; label=路径 ; weight=3'));
-  assert.ok(svg.includes('路径 · 边权 3'), '图上标注同时显示名称与边权');
+  assert.ok(svg.includes('路径 · 边权 <tspan class="graph-edge-weight" font-size="17" font-weight="700">3</tspan>'), '图上标注同时显示名称与放大后的边权');
   assert.ok(svg.includes('data-label="路径"') && svg.includes('data-weight="3"'), '边组保留名称与边权供交互读数');
   const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B ; label=路径 ; weight=3\n${FENCE}`));
   try {
@@ -547,6 +591,57 @@ test('plot shows coordinates and equations as soon as hover selects a target, wi
     assert.equal(stage.querySelector('.plot-coord'), null, '移回空白处后坐标隐藏');
     assert.match(readout.textContent, /选中点或交点看坐标/, '移回空白处恢复默认读数');
   } finally { page.window.close(); }
+});
+
+test('plot and graph figures can download the current SVG view as PNG', async () => {
+  const cases = [
+    { kind: 'plot', selector: '.md-plot', markdown: `${FENCE}plot\ntitle: 下载测试函数\nf: x\nx: -5, 5\ny: -5, 5\n${FENCE}` },
+    { kind: 'graph', selector: '.md-graph', markdown: `${FENCE}graph\ntitle: 下载测试图\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` },
+  ];
+  for (const item of cases) {
+    const page = await interactiveDom(render(item.markdown));
+    try {
+      const figure = page.window.document.querySelector(item.selector);
+      const button = figure.querySelector('[data-download-figure]');
+      assert.ok(button, `${item.kind} 有下载 PNG 按钮`);
+      assert.equal(button.dataset.downloadFigure, item.kind);
+      const captured = { blobs: [], drawn: false, download: '' };
+      page.window.URL.createObjectURL = (blob) => {
+        captured.blobs.push(blob);
+        return `blob:figure-${captured.blobs.length}`;
+      };
+      page.window.URL.revokeObjectURL = () => {};
+      page.window.Image = class {
+        set src(_value) { queueMicrotask(() => this.onload?.()); }
+      };
+      page.window.HTMLCanvasElement.prototype.getContext = () => ({
+        fillStyle: '',
+        fillRect() {},
+        drawImage() { captured.drawn = true; },
+      });
+      page.window.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
+        captured.canvas = { width: this.width, height: this.height };
+        callback(new page.window.Blob(['png'], { type: 'image/png' }));
+      };
+      page.window.HTMLAnchorElement.prototype.click = function click() {
+        captured.download = this.download;
+      };
+      button.click();
+      await new Promise((resolve) => { setTimeout(resolve, 40); });
+      assert.equal(captured.drawn, true, `${item.kind} 已把 SVG 画到画布`);
+      assert.ok(captured.canvas.width >= 1000 && captured.canvas.height >= 300, `${item.kind} PNG 使用高清尺寸`);
+      assert.match(captured.download, /下载测试.*\.png$/, `${item.kind} 下载文件名包含图题`);
+      const svgText = await new Promise((resolve, reject) => {
+        const reader = new page.window.FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(captured.blobs[0]);
+      });
+      assert.match(svgText, /<rect[^>]+fill=/, `${item.kind} PNG 带背景色`);
+      assert.match(svgText, /style="[^"]*(fill|stroke):/, `${item.kind} 导出 SVG 已内联主题样式`);
+      assert.equal(button.textContent, '已下载 PNG', `${item.kind} 下载后有完成反馈`);
+    } finally { page.window.close(); }
+  }
 });
 
 test('interactive graph zooms and reports node coordinates', async () => {
@@ -795,7 +890,7 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
 });
 
 test('editor preview graph nodes drag locally and save reports all source positions at once', async () => {
-  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
+  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0 ; weight=5\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
   const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
   try {
     page.window.Element.prototype.getBoundingClientRect = function rect() {
@@ -815,6 +910,7 @@ test('editor preview graph nodes drag locally and save reports all source positi
     const publicPage = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
     try {
       assert.equal(publicPage.window.document.querySelector('[data-graph-adjust]'), null, '读者页没有调整点位');
+      assert.equal(publicPage.window.document.querySelector('[data-graph-node-weight-tools]'), null, '读者页没有点权工具栏');
     } finally { publicPage.window.close(); }
 
     let committed = null;
@@ -835,9 +931,32 @@ test('editor preview graph nodes drag locally and save reports all source positi
     pointer(page, groupA, 'pointerdown', 52, 210);
     pointer(page, stage, 'pointermove', 120, 252);
     assert.equal(Number(circleA.getAttribute('cx')), 120, '拖动中节点实时跟随');
+    const badge = groupA.querySelector('.graph-node-weight');
+    assert.match(badge?.getAttribute('transform') || '', /^translate\(137\.2\s/, '拖动时点权角标按相对偏移跟随节点');
     assert.equal(readout.textContent, frozenReadout, '拖动中详细信息冻结不更新，行数不变不抖动');
     pointer(page, stage, 'pointerup', 120, 252);
     assert.equal(commitCount, 0, '拖完一个点松手不写回源码、不触发重渲染');
+    // 调整模式里给点选中的点加点权：填数字点「设置点权」即时更新角标并派发写回事件。
+    let weightEvent = null;
+    page.window.document.addEventListener('minxi:graph-node-weight', (event) => { weightEvent = event.detail; });
+    const weightTools = figure.querySelector('[data-graph-node-weight-tools]');
+    assert.ok(weightTools, '调整模式有点权工具栏');
+    assert.equal(weightTools.hidden, false, '进入调整模式后点权工具栏显示');
+    assert.match(figure.querySelector('[data-graph-node-weight-target]').textContent, /点 A/, '点权工具显示当前选中的点');
+    const weightInput = figure.querySelector('[data-graph-node-weight-input]');
+    assert.equal(weightInput.value, '5', '点权框带出已有 点权');
+    weightInput.value = '9';
+    figure.querySelector('[data-graph-node-weight-apply]').click();
+    assert.equal(weightEvent?.graphIndex, 0, '设置点权派发写回事件');
+    assert.equal(weightEvent?.nodeId, 'A');
+    assert.equal(weightEvent?.weight, 9);
+    assert.equal(groupA.dataset.nodeWeight, '9', '点组点权即时更新');
+    assert.equal(groupA.querySelector('.graph-node-weight-text').textContent, '9', '点权角标即时更新');
+    figure.querySelector('[data-graph-node-weight-clear]').click();
+    assert.equal(weightEvent?.nodeId, 'A', '清除点权派发写回事件');
+    assert.equal(weightEvent?.weight, null);
+    assert.equal(groupA.dataset.nodeWeight, undefined, '清除后点组不再带点权');
+    assert.equal(groupA.querySelector('.graph-node-weight'), null, '清除后点权角标移除');
     // 同一轮调整里继续拖同一点：位置只在本地累积，仍然不派发事件。
     pointer(page, groupA, 'pointerdown', 120, 252);
     pointer(page, stage, 'pointermove', 150, 280);

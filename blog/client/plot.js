@@ -9,9 +9,176 @@ const number = (value) => {
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const raf = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : window.setTimeout(callback, 0));
 
+/* ---------------- 图形下载为 PNG ----------------
+   导出的是用户当前看到的视图（平移/缩放后的范围、图算法高亮都会保留）。
+   页面里的 SVG 大量样式来自主题 CSS 与 CSS 变量，直接序列化会丢色；
+   因此先把每个 SVG 元素最终生效的计算样式内联，再交给画布转 PNG。 */
+const FIGURE_PNG_STYLE_PROPERTIES = [
+  'fill', 'fill-opacity', 'stroke', 'stroke-opacity', 'stroke-width',
+  'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin',
+  'stroke-miterlimit', 'opacity', 'visibility', 'display', 'color',
+  'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing',
+  'text-anchor', 'paint-order', 'dominant-baseline',
+];
+
+function figurePngFilename(figure) {
+  const doc = figure.ownerDocument;
+  const typeLabel = figure.classList.contains('md-graph') ? '可视化图' : '函数图像';
+  const title = figure.querySelector('figcaption')?.textContent?.trim()
+    || figure.querySelector('svg')?.getAttribute('aria-label')?.trim()
+    || typeLabel;
+  const figures = [...doc.querySelectorAll('.md-plot, .md-graph')];
+  const index = Math.max(1, figures.indexOf(figure) + 1);
+  const base = title.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || typeLabel;
+  return `${base}-${index}.png`;
+}
+
+function downloadFigureAsPng(figure, button = null) {
+  const doc = figure?.ownerDocument;
+  const view = doc?.defaultView;
+  const svg = figure?.querySelector('svg');
+  if (!doc || !view || !svg) return false;
+  const restoreButton = () => {
+    if (!button) return;
+    button.disabled = false;
+    button.textContent = '下载 PNG';
+  };
+  if (button) {
+    button.disabled = true;
+    button.textContent = '生成中…';
+  }
+  let objectUrl = '';
+  try {
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const viewBox = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    const [minX, minY, width, height] = viewBox.length === 4 && viewBox.every(Number.isFinite)
+      ? viewBox
+      : [0, 0, Number(svg.getAttribute('width')) || 680, Number(svg.getAttribute('height')) || 420];
+    if (!(width > 0) || !(height > 0)) throw new Error('图形尺寸不可用');
+
+    const sourceNodes = [svg, ...svg.querySelectorAll('*')];
+    const cloneNodes = [clone, ...clone.querySelectorAll('*')];
+    sourceNodes.forEach((source, index) => {
+      const target = cloneNodes[index];
+      if (!target) return;
+      const computed = view.getComputedStyle(source);
+      const styles = FIGURE_PNG_STYLE_PROPERTIES
+        .map((property) => {
+          const value = computed?.getPropertyValue(property);
+          return value ? `${property}:${value}` : '';
+        })
+        .filter(Boolean);
+      if (styles.length) target.setAttribute('style', styles.join(';'));
+      target.removeAttribute('class');
+    });
+
+    const stage = figure.querySelector('.plot-stage');
+    const background = [figure, stage, doc.body]
+      .map((element) => {
+        if (!element) return '';
+        try { return view.getComputedStyle(element).backgroundColor || ''; } catch { return ''; }
+      })
+      .find((color) => color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') || '#11151d';
+    const rect = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', String(minX));
+    rect.setAttribute('y', String(minY));
+    rect.setAttribute('width', String(width));
+    rect.setAttribute('height', String(height));
+    rect.setAttribute('fill', background);
+    clone.insertBefore(rect, clone.firstChild);
+
+    const scale = Math.min(3, Math.max(1.5, 1600 / width));
+    const outputWidth = Math.max(1, Math.round(width * scale));
+    const outputHeight = Math.max(1, Math.round(height * scale));
+    clone.setAttribute('width', String(outputWidth));
+    clone.setAttribute('height', String(outputHeight));
+
+    // 导出用的图片/画布/下载链接统一在脚本所在的主页面窗口创建：后台预览
+    // 的图位于沙盒 iframe 中，若用 iframe 的窗口加载 blob: 图片会被其 CSP
+    // 拦截，下载也会被沙盒拦下；样式计算仍用图所在文档的窗口，不受影响。
+    const svgText = new window.XMLSerializer().serializeToString(clone);
+    objectUrl = window.URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' }));
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('浏览器无法创建画布');
+        context.fillStyle = background;
+        context.fillRect(0, 0, outputWidth, outputHeight);
+        context.drawImage(image, 0, 0, outputWidth, outputHeight);
+        canvas.toBlob((blob) => {
+          try {
+            if (!blob) throw new Error('PNG 生成失败');
+            const pngUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = pngUrl;
+            link.download = figurePngFilename(figure);
+            document.body.append(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => window.URL.revokeObjectURL(pngUrl), 1000);
+            if (button) {
+              button.disabled = false;
+              button.textContent = '已下载 PNG';
+              window.setTimeout(restoreButton, 1600);
+            }
+          } catch {
+            if (button) button.textContent = '下载失败';
+            window.setTimeout(restoreButton, 1600);
+          } finally {
+            if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+          }
+        }, 'image/png');
+      } catch {
+        if (button) button.textContent = '下载失败';
+        window.setTimeout(restoreButton, 1600);
+        if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+      }
+    };
+    image.onerror = () => {
+      if (button) button.textContent = '下载失败';
+      window.setTimeout(restoreButton, 1600);
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+    };
+    image.src = objectUrl;
+    return true;
+  } catch {
+    if (objectUrl) {
+      try { window.URL.revokeObjectURL(objectUrl); } catch { /* 忽略回收失败 */ }
+    }
+    if (button) button.textContent = '下载失败';
+    window.setTimeout(restoreButton, 1600);
+    return false;
+  }
+}
+
+function addFigureDownloadButton(figure, toolbar) {
+  if (!toolbar || toolbar.querySelector('[data-download-figure]')) return null;
+  const doc = figure.ownerDocument;
+  const group = doc.createElement('div');
+  group.className = 'plot-tools figure-download-tools';
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', '下载图像');
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.dataset.downloadFigure = figure.classList.contains('md-graph') ? 'graph' : 'plot';
+  button.textContent = '下载 PNG';
+  button.title = '把当前图形下载为 PNG 图片';
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', () => downloadFigureAsPng(figure, button));
+  group.append(button);
+  toolbar.append(group);
+  return button;
+}
+
 /* ---------------- 函数图像：拖动平移 / 滚轮与双指缩放 / 坐标读数 ---------------- */
 
 function initPlot(figure) {
+  addFigureDownloadButton(figure, figure.querySelector(':scope > .plot-toolbar'));
   if (figure.dataset.plotInteractive !== 'true' || figure.classList.contains('is-interactive')) return;
   const source = figure.dataset.plotSource || '';
   const stage = figure.querySelector('.plot-stage');
@@ -570,6 +737,11 @@ function initGraph(figure) {
   let adjustButton = null;
   let savePositionsButton = null;
   let resetPositionButton = null;
+  let weightTools = null;
+  let weightTarget = null;
+  let weightInput = null;
+  let applyWeightButton = null;
+  let clearWeightButton = null;
   if (editableGraph) {
     const adjustTools = doc.createElement('div');
     adjustTools.className = 'plot-tools graph-adjust-tools';
@@ -593,13 +765,42 @@ function initGraph(figure) {
     resetPositionButton.hidden = true;
     adjustTools.append(adjustButton, savePositionsButton, resetPositionButton);
     toolbar.append(adjustTools);
+    // 给点加点权：在调整模式里点选一个点，直接填数字写回源码，不必手写语法。
+    weightTools = doc.createElement('div');
+    weightTools.className = 'plot-tools graph-weight-tools';
+    weightTools.setAttribute('role', 'group');
+    weightTools.setAttribute('aria-label', '给选中的点设置点权');
+    weightTools.dataset.graphNodeWeightTools = 'true';
+    weightTools.hidden = true;
+    weightTarget = doc.createElement('span');
+    weightTarget.className = 'graph-weight-target';
+    weightTarget.dataset.graphNodeWeightTarget = 'true';
+    weightTarget.textContent = '先点选一个点';
+    weightInput = doc.createElement('input');
+    weightInput.type = 'number';
+    weightInput.step = 'any';
+    weightInput.placeholder = '点权';
+    weightInput.dataset.graphNodeWeightInput = 'true';
+    weightInput.setAttribute('aria-label', '点权');
+    applyWeightButton = doc.createElement('button');
+    applyWeightButton.type = 'button';
+    applyWeightButton.dataset.graphNodeWeightApply = 'true';
+    applyWeightButton.textContent = '设置点权';
+    applyWeightButton.title = '把点权写回 Markdown 源码';
+    clearWeightButton = doc.createElement('button');
+    clearWeightButton.type = 'button';
+    clearWeightButton.dataset.graphNodeWeightClear = 'true';
+    clearWeightButton.textContent = '清除点权';
+    weightTools.append(weightTarget, weightInput, applyWeightButton, clearWeightButton);
+    toolbar.append(weightTools);
   }
+  addFigureDownloadButton(figure, toolbar);
   figure.insertBefore(toolbar, stage);
   const readout = doc.createElement('p');
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
   const graphReadoutHint = editableGraph
-    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可连续拖动多个节点，最后点「保存点位」一次性写回源码。'
+    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可拖动节点，也可点选节点在工具栏设置点权，点位最后点「保存点位」一次性写回源码。'
     : '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   readout.textContent = graphReadoutHint;
   // 调整点位时暂时关闭下方详细信息：拖动中坐标读数会不断变行数，撑高/压矮
@@ -735,6 +936,12 @@ function initGraph(figure) {
     if (Number.isFinite(weight) && !/^-?(?:\d+\.?\d*|\.\d+)$/.test(label)) parts.push(`边权 ${Number(weight.toFixed(4))}`);
     if (!parts.length) parts.push(el.dataset.directed === 'true' ? '有向边' : '无向边');
     return parts.join(' · ');
+  };
+  const nodeDetail = (group) => {
+    const weight = group?.dataset?.nodeWeight;
+    return weight !== undefined && weight !== '' && Number.isFinite(Number(weight))
+      ? `点权 ${Number(Number(weight).toFixed(4))}`
+      : '';
   };
   const applyAlgorithm = (mode) => {
     if (activeAlgorithm === mode) { clearAlgorithm(); return; }
@@ -987,10 +1194,16 @@ function initGraph(figure) {
     const ring = group.querySelector('.graph-node-ring');
     const label = group.querySelector('.graph-node-label');
     const sub = group.querySelector('.graph-node-sub');
+    const weightBadge = group.querySelector('.graph-node-weight');
     if (circle) { circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); }
     if (ring) { ring.setAttribute('cx', point.x); ring.setAttribute('cy', point.y); }
     if (label) { label.setAttribute('x', point.x); label.setAttribute('y', point.y + 4); }
     if (sub) { sub.setAttribute('x', point.x); sub.setAttribute('y', point.y + state.size + 15); }
+    if (weightBadge) {
+      const offsetX = Number(weightBadge.dataset.weightOffsetX || 0);
+      const offsetY = Number(weightBadge.dataset.weightOffsetY || 0);
+      weightBadge.setAttribute('transform', `translate(${point.x + offsetX} ${point.y + offsetY})`);
+    }
     updateGraphEdgesFor(group.dataset.nodeId);
   };
   const roundGraphCoord = (value) => Number(Number(value).toFixed(2));
@@ -1026,6 +1239,105 @@ function initGraph(figure) {
   let draggedGraphNode = null;
   let graphNodeDrag = null;
   let suppressGraphClick = false;
+  let selectedGraphNode = null;
+  const formatGraphWeight = (weight) => String(Number(Number(weight).toFixed(4)));
+  const refreshGraphWeightTools = () => {
+    if (!weightTools) return;
+    weightTools.hidden = !graphAdjustMode;
+    const selected = selectedGraphNode && figure.contains(selectedGraphNode) ? selectedGraphNode : null;
+    if (weightTarget) {
+      weightTarget.textContent = selected
+        ? `点 ${selected.dataset.nodeLabel || selected.dataset.nodeId}`
+        : '先点选一个点';
+    }
+    if (weightInput && doc.activeElement !== weightInput) {
+      weightInput.value = selected?.dataset.nodeWeight || '';
+    }
+    if (applyWeightButton) applyWeightButton.disabled = !selected;
+    if (clearWeightButton) clearWeightButton.disabled = !selected || !selected.dataset.nodeWeight;
+  };
+  const setGraphNodeWeightLocal = (group, weight) => {
+    const state = graphNodes.get(group.dataset.nodeId);
+    if (!state) return;
+    let badge = group.querySelector('.graph-node-weight');
+    if (weight === null || weight === undefined || !Number.isFinite(Number(weight))) {
+      delete group.dataset.nodeWeight;
+      badge?.remove();
+      refreshGraphWeightTools();
+      return;
+    }
+    const weightLabel = formatGraphWeight(weight);
+    group.dataset.nodeWeight = weightLabel;
+    if (!badge) {
+      const namespace = 'http://www.w3.org/2000/svg';
+      badge = doc.createElementNS(namespace, 'g');
+      badge.setAttribute('class', 'graph-node-weight');
+      const circle = doc.createElementNS(namespace, 'circle');
+      circle.setAttribute('class', 'graph-node-weight-badge');
+      circle.setAttribute('style', 'fill:var(--accent,#4dabf7);stroke:var(--panel,#11151d)');
+      circle.setAttribute('stroke-width', '1.6');
+      const text = doc.createElementNS(namespace, 'text');
+      text.setAttribute('class', 'graph-node-weight-text');
+      text.setAttribute('style', 'fill:#ffffff');
+      text.setAttribute('font-size', '13');
+      text.setAttribute('font-weight', '700');
+      text.setAttribute('y', '4');
+      text.setAttribute('text-anchor', 'middle');
+      badge.append(circle, text);
+      group.append(badge);
+    }
+    const radius = Math.max(12, 7 + weightLabel.length * 3.8);
+    const offsetX = state.size * 0.74 + radius * 0.2;
+    const offsetY = -(state.size * 0.74 + radius * 0.2);
+    badge.dataset.weightOffsetX = String(offsetX);
+    badge.dataset.weightOffsetY = String(offsetY);
+    badge.querySelector('circle')?.setAttribute('r', String(radius));
+    const text = badge.querySelector('text');
+    if (text) text.textContent = weightLabel;
+    badge.setAttribute('transform', `translate(${state.screen.x + offsetX} ${state.screen.y + offsetY})`);
+    refreshGraphWeightTools();
+  };
+  const commitGraphNodeWeight = (weight) => {
+    if (!selectedGraphNode) return;
+    setGraphNodeWeightLocal(selectedGraphNode, weight);
+    const EventCtor = doc.defaultView?.CustomEvent || CustomEvent;
+    figure.dispatchEvent(new EventCtor('minxi:graph-node-weight', {
+      bubbles: true,
+      detail: {
+        graphIndex: Number(figure.dataset.graphIndex || 0),
+        nodeId: selectedGraphNode.dataset.nodeId,
+        weight,
+      },
+    }));
+  };
+  if (applyWeightButton) {
+    applyWeightButton.addEventListener('click', () => {
+      if (!selectedGraphNode || !weightInput) return;
+      const weight = Number(weightInput.value);
+      if (weightInput.value.trim() === '' || !Number.isFinite(weight)) {
+        weightInput.setCustomValidity('请输入数字点权');
+        weightInput.reportValidity();
+        return;
+      }
+      weightInput.setCustomValidity('');
+      commitGraphNodeWeight(weight);
+    });
+  }
+  if (clearWeightButton) {
+    clearWeightButton.addEventListener('click', () => {
+      if (!selectedGraphNode) return;
+      if (weightInput) weightInput.value = '';
+      commitGraphNodeWeight(null);
+    });
+  }
+  if (weightInput) {
+    weightInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyWeightButton?.click();
+      }
+    });
+  }
   const setGraphAdjustMode = (on) => {
     if (on && !graphAdjustMode) {
       graphPositionSnapshot = captureGraphPositions();
@@ -1046,6 +1358,10 @@ function initGraph(figure) {
     }
     if (savePositionsButton) savePositionsButton.hidden = !on;
     if (resetPositionButton) resetPositionButton.hidden = !on;
+    if (on && !selectedGraphNode) {
+      selectedGraphNode = figure.querySelector('.graph-node-group.is-selected');
+    }
+    refreshGraphWeightTools();
     // 进入调整先隐藏读数且不改其文本，占位高度保持不变，拖动全程零抖动。
     readout.style.visibility = on ? 'hidden' : '';
     if (!on) readout.textContent = graphReadoutHint;
@@ -1092,6 +1408,8 @@ function initGraph(figure) {
         pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
         try { stage.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
         draggedGraphNode = nodeGroup;
+        selectedGraphNode = nodeGroup;
+        refreshGraphWeightTools();
         graphNodeDrag = { pointerId: event.pointerId, start: point, screen: { ...state.screen } };
         stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
         nodeGroup.classList.add('is-selected', 'is-dragging-node');
@@ -1156,7 +1474,7 @@ function initGraph(figure) {
     }
     const group = event.target?.closest?.('.graph-node-group');
     if (group && stage.contains(group)) {
-      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
+      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`, nodeDetail(group));
     } else {
       hideTooltip();
       if (algorithmSummary) updateReadout(algorithmSummary);
@@ -1173,11 +1491,15 @@ function initGraph(figure) {
     stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
     if (edge && stage.contains(edge)) {
       edge.classList.add('is-selected');
+      selectedGraphNode = null;
+      refreshGraphWeightTools();
       const arrow = edge.dataset.directed === 'true' ? ' → ' : ' — ';
       showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edgeDetail(edge));
     } else if (group && stage.contains(group)) {
       group.classList.add('is-selected');
-      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
+      selectedGraphNode = group;
+      refreshGraphWeightTools();
+      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`, nodeDetail(group));
     }
   });
   const finish = (event) => {
@@ -1223,4 +1545,4 @@ function initPlots(root = document) {
 
 initPlots(document);
 
-window.MinxiPlots = { initPlot, initGraph, initPlots };
+window.MinxiPlots = { initPlot, initGraph, initPlots, downloadFigureAsPng };
