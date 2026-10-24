@@ -154,6 +154,31 @@ test('graph accepts several edge-weight spellings and renders weights larger', (
   assert.ok(svg.includes('路线 · 边权 <tspan class="graph-edge-weight" font-size="17" font-weight="700">-1</tspan>'), '名称保持普通字号，权重数字单独放大');
 });
 
+test('graph node weights parse from options or brackets and render as badges', async () => {
+  const spec = plots.parseGraphSpec([
+    'node: A ; weight=5',
+    'node: B ; 点权：2.5',
+    'node: C[-1]',
+    'node: D(4)',
+    'node: E',
+    'edge: A - B',
+  ].join('\n'));
+  assert.deepEqual([...spec.nodes.values()].map((node) => node.weight), [5, 2.5, -1, 4, null], 'weight=、点权：、A[n]、A(n) 都能解析点权');
+  const svg = plots.renderGraphSvg(spec);
+  assert.ok(svg.includes('data-node-weight="5"'), '点组带点权供交互读数');
+  assert.ok(svg.includes('class="graph-node-weight"') && svg.includes('>2.5</text>'), '点权以右上角角标显示');
+  assert.ok(svg.includes('>-1</text>') && svg.includes('>4</text>'), '负数与括号写法也显示');
+  const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0 ; weight=5\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
+  try {
+    const figure = page.window.document.querySelector('.md-graph');
+    const group = figure.querySelector('.graph-node-group[data-node-id="A"]');
+    pointer(page, group, 'pointermove', 100, 100);
+    assert.equal(figure.querySelector('.plot-readout').textContent, '点 A：点权 5', '悬停点时读数带点权');
+    pointer(page, group, 'click', 100, 100);
+    assert.equal(figure.querySelector('.plot-readout').textContent, '点 A：点权 5', '点击点时读数带点权');
+  } finally { page.window.close(); }
+});
+
 test('graph algorithms find vertex/edge biconnected components and a DFS tree with back edges', () => {
   const result = plots.analyzeGraphData(['A', 'B', 'C', 'D', 'E', 'F', 'G'], [
     { from: 'A', to: 'B' }, { from: 'B', to: 'C' }, { from: 'C', to: 'A' },
@@ -865,7 +890,7 @@ test('coordinate display box and line hover styles are shipped (CSS)', async () 
 });
 
 test('editor preview graph nodes drag locally and save reports all source positions at once', async () => {
-  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
+  const srcdoc = dom.window.MinxiPreview.document({ body: `${FENCE}graph\nnode: A ; x=0 ; y=0 ; weight=5\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}` });
   const page = new JSDOM(srcdoc, { url: 'https://preview.example/', runScripts: 'outside-only', pretendToBeVisual: true });
   try {
     page.window.Element.prototype.getBoundingClientRect = function rect() {
@@ -905,6 +930,8 @@ test('editor preview graph nodes drag locally and save reports all source positi
     pointer(page, groupA, 'pointerdown', 52, 210);
     pointer(page, stage, 'pointermove', 120, 252);
     assert.equal(Number(circleA.getAttribute('cx')), 120, '拖动中节点实时跟随');
+    const badge = groupA.querySelector('.graph-node-weight');
+    assert.match(badge?.getAttribute('transform') || '', /^translate\(137\.2\s/, '拖动时点权角标按相对偏移跟随节点');
     assert.equal(readout.textContent, frozenReadout, '拖动中详细信息冻结不更新，行数不变不抖动');
     pointer(page, stage, 'pointerup', 120, 252);
     assert.equal(commitCount, 0, '拖完一个点松手不写回源码、不触发重渲染');

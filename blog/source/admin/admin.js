@@ -1705,7 +1705,10 @@
       const bodyLines = lines.slice(i + 1, end).map((line) => {
         const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
         if (!match) return line;
-        const id = match[2].trim();
+        const idSegment = match[2].trim();
+        // 点名后可能跟点权（A[5] / A(5)）：识别真实点名，写回时原样保留这一段。
+        const idMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)(?:\s*(?:\[[^\]]+\]|\([^)]+\)))?$/.exec(idSegment);
+        const id = idMatch?.[1] || '';
         if (!graphNodeId.test(id)) return line;
         seen.add(id);
         const options = (match[3] || "")
@@ -1717,7 +1720,7 @@
         if (pos && Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.y))) {
           options.push(`x=${formatGraphCoord(pos.x)}`, `y=${formatGraphCoord(pos.y)}`);
         }
-        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+        return options.length ? `${match[1]}${idSegment} ; ${options.join(" ; ")}` : `${match[1]}${idSegment}`;
       });
       if (positions) {
         for (const [id, pos] of Object.entries(positions)) {
@@ -2356,7 +2359,7 @@
   $("#insert-graph").addEventListener("change", (event) => {
     const mode = ["reader", "none", "components", "bridges", "mst", "bipartite", "vbcc", "ebcc", "dfs"].includes(event.target.value) ? event.target.value : "";
     if (!mode) return;
-    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -[5]- A\n```\n\n");
+    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red ; weight=6\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -[5]- A\n```\n\n");
     event.target.value = "";
   });
 

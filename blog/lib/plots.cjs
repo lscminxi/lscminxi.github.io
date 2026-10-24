@@ -19,8 +19,8 @@
  *
  * ```graph
  * directed: true
- * node: A ; label=起点 ; color=red
- * node: B ; x=100 ; y=60
+ * node: A ; label=起点 ; color=red ; weight=5
+ * node: B ; x=100 ; y=60（点权也可用 点权=5 或 A[5]）
  * edge: A -> B ; color=blue ; label=路径
  * edge: B -- A ; weight=5（也可用 边权=5、weight: 5 或 A -[5]- B）
  * ```
@@ -711,7 +711,7 @@ function parseInlineWeightedEdge(body) {
 function parseGraphSpec(source) {
   const spec = { directed: false, algorithm: 'reader', nodes: new Map(), edges: [], title: '' };
   const ensureNode = (id) => {
-    if (!spec.nodes.has(id)) spec.nodes.set(id, { id, label: '', x: null, y: null, color: '', size: 20 });
+    if (!spec.nodes.has(id)) spec.nodes.set(id, { id, label: '', x: null, y: null, color: '', size: 20, weight: null, weightLabel: '' });
     return spec.nodes.get(id);
   };
   const addEdge = (from, to, arrow, options, inlineWeight = NaN) => {
@@ -751,12 +751,21 @@ function parseGraphSpec(source) {
     }
     if ((match = /^(?:node|点|顶点)\s*[:：]\s*(.+)$/i.exec(line))) {
       const [body, options] = splitOptions(match[1]);
-      const id = body.trim();
+      // 点名后可直接跟点权：A[5] / A(5)；也可用 ; weight=5 / 点权=5。
+      const nodeMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)\s*(?:\[\s*(-?(?:\d+\.?\d*|\.\d+))\s*\]|\(\s*(-?(?:\d+\.?\d*|\.\d+))\s*\))?$/.exec(body.trim());
+      const id = nodeMatch?.[1] || '';
       if (NODE_ID.test(id) && spec.nodes.size < 60) {
         const node = ensureNode(id);
         node.label = labelText(options.label || '');
         node.color = parseColor(options.color) || node.color;
         node.size = clamp(options.size ?? options.r, 10, 34, node.size);
+        const inlineWeight = Number(nodeMatch[2] ?? nodeMatch[3]);
+        const optionWeight = Number(options.weight ?? options.w ?? options['点权'] ?? options['权重']);
+        const weight = Number.isFinite(optionWeight) ? optionWeight : inlineWeight;
+        if (Number.isFinite(weight)) {
+          node.weight = weight;
+          node.weightLabel = String(weight);
+        }
         const x = Number(options.x); const y = Number(options.y);
         if (options.x !== undefined && Number.isFinite(x)) node.x = x;
         if (options.y !== undefined && Number.isFinite(y)) node.y = y;
@@ -1139,7 +1148,16 @@ function renderGraphSvg(spec) {
     const sub = node.label && node.label !== node.id && node.id !== text
       ? `<text class="graph-node-sub" style="fill:var(--muted,#919ba9)" font-size="10" x="${fmt(x)}" y="${fmt(y + node.size + 15)}" text-anchor="middle">${escape(node.id)}</text>`
       : '';
-    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}" data-node-x="${fmt(node.x)}" data-node-y="${fmt(node.y)}" data-node-size="${fmt(node.size)}"><title>${escape(text)}</title><circle class="graph-node-ring" cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size + 5}" fill="none" style="stroke:var(--text,#e6eaf0)" stroke-width="1.6"/><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}</g>`);
+    // 点权：右上角小圆角标，只显示数字；拖动节点时角标随 transform 一起走。
+    const weightText = node.weightLabel || (Number.isFinite(node.weight) ? String(node.weight) : '');
+    const badgeRadius = weightText ? Math.max(12, 7 + weightText.length * 3.8) : 0;
+    const badgeOffsetX = node.size * 0.74 + badgeRadius * 0.2;
+    const badgeOffsetY = node.size * 0.74 + badgeRadius * 0.2;
+    const weightBadge = weightText
+      ? `<g class="graph-node-weight" data-weight-offset-x="${fmt(badgeOffsetX)}" data-weight-offset-y="${fmt(-badgeOffsetY)}" transform="translate(${fmt(x + badgeOffsetX)} ${fmt(y - badgeOffsetY)})"><circle class="graph-node-weight-badge" style="fill:var(--accent,#4dabf7);stroke:var(--panel,#11151d)" r="${fmt(badgeRadius)}" stroke-width="1.6"/><text class="graph-node-weight-text" style="fill:#ffffff" font-size="13" font-weight="700" y="4" text-anchor="middle">${escape(weightText)}</text></g>`
+      : '';
+    const weightAttr = weightText ? ` data-node-weight="${escape(weightText)}"` : '';
+    out.push(`<g class="graph-node-group" data-node-id="${escape(node.id)}" data-node-label="${escape(text)}" data-node-x="${fmt(node.x)}" data-node-y="${fmt(node.y)}" data-node-size="${fmt(node.size)}"${weightAttr}><title>${escape(text)}</title><circle class="graph-node-ring" cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size + 5}" fill="none" style="stroke:var(--text,#e6eaf0)" stroke-width="1.6"/><circle class="graph-node"${fillAttr} cx="${fmt(x)}" cy="${fmt(y)}" r="${node.size}"/><text class="graph-node-label${node.color ? ' on-color' : ''}" style="fill:${node.color ? '#ffffff' : 'var(--text,#e6eaf0)'}" font-size="12" font-weight="600" x="${fmt(x)}" y="${fmt(y + 4)}" text-anchor="middle">${escape(text.slice(0, 8))}</text>${sub}${weightBadge}</g>`);
   }
 
   out.push('</svg>');

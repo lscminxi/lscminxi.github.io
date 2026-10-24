@@ -606,7 +606,7 @@ test('admin writes dragged graph positions back into the matching graph fence', 
     '```',
     '',
     '```graph',
-    'node: A ; label=起点 ; color=red',
+    'node: A[7] ; label=起点 ; color=red',
     'edge: A - C',
     '```',
   ].join('\n');
@@ -618,7 +618,7 @@ test('admin writes dragged graph positions back into the matching graph fence', 
     doc.dispatchEvent(new frame.contentWindow.CustomEvent('minxi:graph-positions', { detail }));
   };
   fire({ graphIndex: 1, reset: false, positions: { A: { x: 12.5, y: -3 }, C: { x: 40, y: 50 } } });
-  assert.match(field.value, /node: A ; label=起点 ; color=red ; x=12\.5 ; y=-3/, '已有 node 行保留其它选项并写回坐标');
+  assert.match(field.value, /node: A\[7\] ; label=起点 ; color=red ; x=12\.5 ; y=-3/, '已有 node 行保留点权与其它选项并写回坐标');
   assert.match(field.value, /node: C ; x=40 ; y=50/, '边里隐式出现的点补一行坐标');
   assert.match(field.value, /node: A ; x=0 ; y=0/, '第一张图的源码不被改动');
   fire({ graphIndex: 1, reset: true, positions: {} });

@@ -2110,6 +2110,16 @@ body.search-open {
 .article-content .graph-node-label { fill: var(--text); font-size: 12px; font-weight: 600; }
 .article-content .graph-node-label.on-color { fill: #ffffff; }
 .article-content .graph-node-sub { fill: var(--muted); font-size: 10px; }
+.article-content .graph-node-weight-badge {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 1.6;
+}
+.article-content .graph-node-weight-text {
+  fill: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
 .article-content .graph-edge-label {
   fill: var(--text);
   font-size: 11px;
@@ -3409,6 +3419,9 @@ html[data-theme="light"] .article-content .fold-box--success {
 }
 /* 染色点上的文字在浅色下同样用白色（点本身的颜色不变） */
 html[data-theme="light"] .article-content .graph-node-label.on-color {
+  fill: #ffffff;
+}
+html[data-theme="light"] .article-content .graph-node-weight-text {
   fill: #ffffff;
 }
 /* 坐标显示框在浅色下用更柔和的阴影 */

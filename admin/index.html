@@ -8,16 +8,16 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#0b0e14">
   <link rel="icon" id="admin-favicon" href="https://cdn.luogu.com.cn/upload/usericon/1549479.png">
-  <link rel="stylesheet" href="/css/main.css?v=graph-sync-1">
-  <link rel="stylesheet" href="./admin.css?v=graph-sync-1">
+  <link rel="stylesheet" href="/css/main.css?v=graph-sync-2">
+  <link rel="stylesheet" href="./admin.css?v=graph-sync-2">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <!-- 和前台同一个主题脚本：先定下 data-theme（访客自己的选择），再接线顶栏的主题切换。
        注意：admin 目录在 _config.yml 里被 skip_render 跳过，这里的 HTML 是原样复制的，
        不要写 EJS 标签，否则会直接漏到页面源码里。 -->
   <script src="/js/theme.js?v=theme-1"></script>
-  <script src="./preview.js?v=graph-sync-1" defer></script>
+  <script src="./preview.js?v=graph-sync-2" defer></script>
   <script src="./appearance.js?v=theme-1" defer></script>
-  <script src="./admin.js?v=graph-sync-1" defer></script>
+  <script src="./admin.js?v=graph-sync-2" defer></script>
 </head>
 <body class="admin-body">
   <header class="admin-topbar">
@@ -349,16 +349,16 @@ interactive: on
 title: 带权示例图
 directed: true
 algo: reader
-node: A ; label=起点 ; color=red ; x=0 ; y=0
-node: B ; x=120 ; y=0
-node: C ; x=60 ; y=100
+node: A ; label=起点 ; color=red ; weight=5 ; x=0 ; y=0
+node: B ; 点权=3 ; x=120 ; y=0
+node: C[2] ; x=60 ; y=100
 edge: A -&gt; B ; label=直达 ; weight=3 ; color=blue
 edge: B -&gt; C ; 边权=2
 edge: C -- A ; weight: 5
 edge: A -[4]- C
 ```</code></pre>
           <ul>
-            <li><code>node: 点名</code> 声明点；点名可用字母、数字、下划线、连字符或中文。选项有 <code>label=显示文字</code>、<code>color=</code> 颜色、<code>size=10~34</code> 半径、<code>x=</code> / <code>y=</code> 坐标（y 越大越靠下）。边里出现但没声明的点会自动创建，位置自动布局；写了坐标就按坐标摆放。后台预览里点「调整点位」可拖动节点，最后点「保存点位」一次性写回源码。</li>
+            <li><code>node: 点名</code> 声明点；点名可用字母、数字、下划线、连字符或中文。选项有 <code>label=显示文字</code>、<code>color=</code> 颜色、<code>size=10~34</code> 半径、<code>x=</code> / <code>y=</code> 坐标（y 越大越靠下）。<strong>点权</strong>可写 <code>node: A ; weight=5</code>、<code>点权=5</code>、<code>权重=5</code>，或直接写 <code>node: A[5]</code>、<code>node: A(5)</code>；点权数字会显示在点的右上角小圆角标里，悬停或点击点时也会读出，可写小数或负数。边里出现但没声明的点会自动创建，位置自动布局；写了坐标就按坐标摆放。后台预览里点「调整点位」可拖动节点，最后点「保存点位」一次性写回源码，点权写法会保留。</li>
             <li><code>edge: A -&gt; B</code> 是有向边（需同时写 <code>directed: true</code> 才画箭头），<code>edge: A -- B</code> 或 <code>edge: A - B</code> 是无向边；也可以把 <code>A -&gt; B</code> 单独写一行。边选项有 <code>label=名称</code>、<code>color=</code> 颜色、<code>dash=true</code> 虚线。同一对点可写多条边，会自动画成弧线错开；<code>edge: A -&gt; A</code> 是自环。</li>
             <li><strong>边权（重点）</strong>：推荐写 <code>edge: A -- B ; weight=5</code>；也支持 <code>w=5</code>、<code>边权=5</code>、<code>权重=5</code>、<code>weight: 5</code>，或直接把数字写进边里：<code>A -[5]- B</code>、<code>A --[5]-- B</code>、<code>A -[5]-&gt; B</code>，还可以用 <code>label=5</code> 把纯数字标注当边权。边权可写小数或负数，图上的权重数字会以更大的粗体显示；同时写名称和边权时会显示「名称 · 边权 5」。不写边权时算法按 1 计算，最小生成树会使用这些边权。</li>
             <li><code>directed: true/false</code> 决定 <code>-&gt;</code> 是否按有向边处理；<code>title:</code> 是图下方标题。</li>

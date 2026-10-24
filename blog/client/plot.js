@@ -904,6 +904,12 @@ function initGraph(figure) {
     if (!parts.length) parts.push(el.dataset.directed === 'true' ? '有向边' : '无向边');
     return parts.join(' · ');
   };
+  const nodeDetail = (group) => {
+    const weight = group?.dataset?.nodeWeight;
+    return weight !== undefined && weight !== '' && Number.isFinite(Number(weight))
+      ? `点权 ${Number(Number(weight).toFixed(4))}`
+      : '';
+  };
   const applyAlgorithm = (mode) => {
     if (activeAlgorithm === mode) { clearAlgorithm(); return; }
     clearAlgorithm(false);
@@ -1155,10 +1161,16 @@ function initGraph(figure) {
     const ring = group.querySelector('.graph-node-ring');
     const label = group.querySelector('.graph-node-label');
     const sub = group.querySelector('.graph-node-sub');
+    const weightBadge = group.querySelector('.graph-node-weight');
     if (circle) { circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); }
     if (ring) { ring.setAttribute('cx', point.x); ring.setAttribute('cy', point.y); }
     if (label) { label.setAttribute('x', point.x); label.setAttribute('y', point.y + 4); }
     if (sub) { sub.setAttribute('x', point.x); sub.setAttribute('y', point.y + state.size + 15); }
+    if (weightBadge) {
+      const offsetX = Number(weightBadge.dataset.weightOffsetX || 0);
+      const offsetY = Number(weightBadge.dataset.weightOffsetY || 0);
+      weightBadge.setAttribute('transform', `translate(${point.x + offsetX} ${point.y + offsetY})`);
+    }
     updateGraphEdgesFor(group.dataset.nodeId);
   };
   const roundGraphCoord = (value) => Number(Number(value).toFixed(2));
@@ -1324,7 +1336,7 @@ function initGraph(figure) {
     }
     const group = event.target?.closest?.('.graph-node-group');
     if (group && stage.contains(group)) {
-      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
+      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`, nodeDetail(group));
     } else {
       hideTooltip();
       if (algorithmSummary) updateReadout(algorithmSummary);
@@ -1345,7 +1357,7 @@ function initGraph(figure) {
       showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edgeDetail(edge));
     } else if (group && stage.contains(group)) {
       group.classList.add('is-selected');
-      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`);
+      showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`, nodeDetail(group));
     }
   });
   const finish = (event) => {
