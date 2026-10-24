@@ -787,6 +787,88 @@ test('overscroll blank space is excluded from scroll sync percentages', async ()
   editor.window.close();
 });
 
+test('scroll sync keeps following near the bottom instead of freezing at the overscroll boundary', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  // 镜像层每行 24px（行高也 24px），模拟真实长文的行坐标。
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetTop', {
+    configurable: true,
+    get() {
+      const parent = this.parentElement;
+      if (parent?.getAttribute?.('aria-hidden') === 'true') {
+        const index = [...parent.children].indexOf(this);
+        if (index >= 0) return index * 24;
+      }
+      return 0;
+    },
+  });
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get() {
+      const parent = this.parentElement;
+      return parent?.getAttribute?.('aria-hidden') === 'true' ? 24 : 0;
+    },
+  });
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = Array.from({ length: 70 }, (_, index) => `第 ${index + 1} 行`).join('\n');
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const metric = (element, height, client, get, set) => {
+    Object.defineProperties(element, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, get: () => client },
+      scrollTop: { configurable: true, get, set },
+    });
+  };
+  let editorTop = 0;
+  let previewTop = 0;
+  // 物理行程 1680 = 正文行程 1310 + 文末留白 370；旧逻辑把位置钳到 1310，
+  // 滚过 1310 后预览就冻住，最后一程完全不跟随。
+  metric(field, 1880, 200, () => editorTop, (value) => { editorTop = value; });
+  field.style.paddingBottom = '370px';
+  const doc = frame.contentDocument;
+  doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content">'
+    + '<p data-source-line="1" data-source-end-line="2">开头</p>'
+    + '<p data-source-line="65" data-source-end-line="70">结尾</p></div>';
+  if (!doc.scrollingElement) {
+    Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  }
+  metric(doc.scrollingElement, 1600, 200, () => previewTop, (value) => { previewTop = value; });
+  const place = (selector, top, height) => {
+    const el = doc.querySelector(selector);
+    el.__pv = top; el.__h = height;
+    return el;
+  };
+  place('.article-content > p', 0, 24);
+  place('.article-content > p:last-child', 1200, 200);
+  doc.defaultView.HTMLElement.prototype.getBoundingClientRect = function rect() {
+    return {
+      top: (this.__pv || 0) - previewTop, bottom: (this.__pv || 0) - previewTop + (this.__h || 0),
+      height: this.__h || 0, left: 0, right: 100, width: 100, x: 0, y: (this.__pv || 0) - previewTop, toJSON() {},
+    };
+  };
+
+  // 滚过「扣除留白」的边界（1310）之后，预览仍应继续向下跟随。
+  editorTop = 1600;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.ok(previewTop > 1250, `接近底部时预览应继续跟随，实际 ${previewTop}`);
+
+  // 编辑区真正到底时，预览必须同时到底。
+  editorTop = 1680;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 1400, '编辑区到底时预览同时到底');
+  editor.window.close();
+});
+
 test('folds, graphs and plots drift proportionally during scroll sync', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',

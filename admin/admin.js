@@ -1588,6 +1588,9 @@
       const last = kids[kids.length - 1];
       return (last.offsetTop || 0) + (last.offsetHeight || 0);
     };
+    // 锚点的编辑区坐标以第一行行首为 0：textarea 的 scrollTop 同样以第一行
+    // 能滚到的位置为基准，直接拿镜像的绝对 offsetTop 会多出顶部内边距。
+    const mirrorBaseTop = mirrorLineTop(1);
     const isAtomicBlock = (block) => {
       // 函数图/关系图不再整块钉在顶部：和折叠框一样按块内进度缓慢下移。
       // 独立图片没有可对应的源码内部进度，仍整块对齐。
@@ -1602,14 +1605,14 @@
       if (!Number.isInteger(line) || line < 1 || !lineMirror.children[line - 1]) continue;
       const endLine = Number(block.dataset.sourceEndLine) || line + 1;
       const rect = block.getBoundingClientRect();
-      const ta = mirrorLineTop(line);
+      const ta = Math.max(0, mirrorLineTop(line) - mirrorBaseTop);
       const pv = rect.top + (scroll.scrollTop || 0);
       if (!Number.isFinite(ta) || !Number.isFinite(pv)) continue;
       const prev = anchors[anchors.length - 1];
       if (prev && (ta <= prev.ta || pv <= prev.pv)) continue;
       anchors.push({
         ta,
-        taEnd: Math.max(mirrorLineTop(endLine), ta),
+        taEnd: Math.max(mirrorLineTop(endLine) - mirrorBaseTop, ta),
         pv,
         pvBottom: pv + Math.max(0, rect.height || 0),
         atomic: isAtomicBlock(block),
@@ -1625,23 +1628,30 @@
     if ($("#writing-workspace")?.dataset.mode === "edit") return;
     const maxPv = scroll.scrollHeight - scroll.clientHeight;
     if (!(maxPv > 0)) return;
-    // 文末留白（滑过文末的 padding-bottom）不能算进同步行程：同步只按正文
-    // 本身的可滚范围算百分比与锚点尾段，否则必须把最后一行拉到编辑区最
-    // 顶端、滑完整段空白，预览才肯翻到底。留白行程内的滚动一律钳到文末。
+    // 编辑区的可滚行程以物理行程为准：底部留白正是让最后一行能继续滚到
+    // 编辑区顶部的那段距离，锚点坐标也按完整行程计算。若在这里先把位置
+    // 钳到「扣除留白后的行程」，滚到最后约一屏时位置会被提前冻住，预览
+    // 还没到底就不再跟随。只有完全没有锚点、退回百分比同步时，才按扣除
+    // 留白后的行程算，避免留白把百分比稀释。
     const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
-    const maxTa = Math.max(0, (ta.scrollHeight - ta.clientHeight) - overscrollBottom);
-    if (!(maxTa > 0)) {
+    const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+    const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
+    if (!(physicalMaxTa > 0)) {
       // 正文短到本身不用滚：预览直接对齐顶部。
       if (scroll.style) scroll.style.scrollBehavior = "auto";
       scroll.scrollTop = 0;
       return;
     }
     const anchors = collectScrollAnchors(doc, scroll);
-    const y = Math.min(ta.scrollTop || 0, maxTa);
+    const rawY = ta.scrollTop || 0;
+    const y = Math.min(rawY, anchors.length ? physicalMaxTa : effectiveMaxTa);
     let target;
     if (!anchors.length) {
-      // 没有可用锚点时退回按正文总高度比例同步（同样不含文末留白）。
-      target = (y / maxTa) * maxPv;
+      // 没有可用锚点时退回按正文总高度比例同步（不含文末留白）。
+      target = effectiveMaxTa > 0 ? (y / effectiveMaxTa) * maxPv : maxPv;
+    } else if (rawY >= physicalMaxTa - 0.5) {
+      // 编辑区真正到底：预览必须同时到底，不能停在最后一块的内部映射上。
+      target = maxPv;
     } else if (y < anchors[0].ta) {
       target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
     } else {
@@ -1664,10 +1674,10 @@
         target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
       } else {
         // 最后一块之后：平滑过渡到两侧同时见底。
-        const span = maxTa - a.taEnd;
+        const span = physicalMaxTa - a.taEnd;
         target = span > 0.5
           ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
-          : (y >= maxTa - 0.5 ? maxPv : a.pvBottom);
+          : (y >= physicalMaxTa - 0.5 ? maxPv : a.pvBottom);
       }
     }
     // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放
