@@ -1733,6 +1733,59 @@
     }
     return null;
   };
+  const formatGraphWeight = (value) => String(Number(Number(value).toFixed(4)));
+  const rewriteGraphBlockNodeWeight = (markdown, graphIndex, nodeId, weight) => {
+    if (!/^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/.test(String(nodeId || ''))) return null;
+    if (weight !== null && !Number.isFinite(Number(weight))) return null;
+    const lines = String(markdown).split("\n");
+    let current = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^```graph\s*$/.test(lines[i].trim())) continue;
+      current += 1;
+      let end = i + 1;
+      while (end < lines.length && !/^```\s*$/.test(lines[end].trim())) end += 1;
+      if (current !== graphIndex) { i = end; continue; }
+      if (end >= lines.length) return null;
+      let seen = false;
+      const bodyLines = lines.slice(i + 1, end).map((line) => {
+        const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
+        if (!match) return line;
+        const idSegment = match[2].trim();
+        const idMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)(?:\s*(?:\[[^\]]+\]|\([^)]+\)))?$/.exec(idSegment);
+        const id = idMatch?.[1] || '';
+        if (id !== nodeId) return line;
+        seen = true;
+        const options = (match[3] || "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item) => !/^(weight|w|点权|权重)\s*(?:=|[:：])/i.test(item));
+        if (weight !== null) options.push(`weight=${formatGraphWeight(weight)}`);
+        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+      });
+      if (!seen && weight !== null) {
+        bodyLines.push(`node: ${nodeId} ; weight=${formatGraphWeight(weight)}`);
+      }
+      return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
+    }
+    return null;
+  };
+  const handleGraphNodeWeight = (event) => {
+    const detail = event.detail || {};
+    const graphIndex = Number(detail.graphIndex || 0);
+    const weight = detail.weight === null ? null : Number(detail.weight);
+    if (detail.weight !== null && !Number.isFinite(weight)) return;
+    const next = rewriteGraphBlockNodeWeight(el.f.body.value, graphIndex, detail.nodeId, weight);
+    if (next === null || next === el.f.body.value) return;
+    const cursor = Math.min(el.f.body.selectionStart ?? next.length, next.length);
+    el.f.body.value = next;
+    el.f.body.selectionStart = el.f.body.selectionEnd = cursor;
+    el.f.body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    updatePreview();
+    $("#preview-status").textContent = weight === null
+      ? "图点权已从源码清除（记得保存文章）"
+      : "图点权已写回源码（记得保存文章）";
+  };
   const handleGraphPositions = (event) => {
     const detail = event.detail || {};
     const graphIndex = Number(detail.graphIndex || 0);
@@ -1758,6 +1811,7 @@
     scrollAnchorsDirty = true;
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
     try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
+    try { previewFrame.contentDocument?.addEventListener("minxi:graph-node-weight", handleGraphNodeWeight); } catch { /* 预览未就绪时忽略 */ }
     // 新文档先保持隐藏，对齐完成后再显示，避免用户先看到最前端、再被滚到目标位置。
     // 后续两次校准都已关闭平滑滚动，只会直接落位，不产生物理滚动特效。
     syncPreviewScroll();

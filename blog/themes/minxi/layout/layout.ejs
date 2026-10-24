@@ -20,7 +20,7 @@
   <script src="<%- url_for('/js/wallpaper.js') %>?v=wallpaper-2"></script>
   <link rel="icon"<% if (appearance.faviconType) { %> type="<%= appearance.faviconType %>"<% } %> href="<%= url_for(appearance.favicon) %>">
   <% if (appearance.faviconType === 'image/png') { %><link rel="apple-touch-icon" href="<%= url_for(appearance.favicon) %>">
-  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=graph-sync-2">
+  <% } %><link rel="stylesheet" href="<%- url_for('/css/main.css') %>?v=graph-sync-3">
   <link rel="stylesheet" href="<%- url_for('/vendor/katex/katex.min.css') %>">
   <% if (appearance.hasWallpaper) { %><style>
     :root {
@@ -31,7 +31,7 @@
   </style>
   <% } %><script src="<%- url_for('/js/main.js') %>?v=latex-search-1" defer></script>
   <script src="<%- url_for('/js/auth.js') %>?v=auth-1" defer></script>
-  <script src="<%- url_for('/js/plot.js') %>?v=graph-sync-2" defer></script>
+  <script src="<%- url_for('/js/plot.js') %>?v=graph-sync-3" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>

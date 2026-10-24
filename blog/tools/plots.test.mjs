@@ -910,6 +910,7 @@ test('editor preview graph nodes drag locally and save reports all source positi
     const publicPage = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B\n${FENCE}`));
     try {
       assert.equal(publicPage.window.document.querySelector('[data-graph-adjust]'), null, '读者页没有调整点位');
+      assert.equal(publicPage.window.document.querySelector('[data-graph-node-weight-tools]'), null, '读者页没有点权工具栏');
     } finally { publicPage.window.close(); }
 
     let committed = null;
@@ -935,6 +936,27 @@ test('editor preview graph nodes drag locally and save reports all source positi
     assert.equal(readout.textContent, frozenReadout, '拖动中详细信息冻结不更新，行数不变不抖动');
     pointer(page, stage, 'pointerup', 120, 252);
     assert.equal(commitCount, 0, '拖完一个点松手不写回源码、不触发重渲染');
+    // 调整模式里给点选中的点加点权：填数字点「设置点权」即时更新角标并派发写回事件。
+    let weightEvent = null;
+    page.window.document.addEventListener('minxi:graph-node-weight', (event) => { weightEvent = event.detail; });
+    const weightTools = figure.querySelector('[data-graph-node-weight-tools]');
+    assert.ok(weightTools, '调整模式有点权工具栏');
+    assert.equal(weightTools.hidden, false, '进入调整模式后点权工具栏显示');
+    assert.match(figure.querySelector('[data-graph-node-weight-target]').textContent, /点 A/, '点权工具显示当前选中的点');
+    const weightInput = figure.querySelector('[data-graph-node-weight-input]');
+    assert.equal(weightInput.value, '5', '点权框带出已有 点权');
+    weightInput.value = '9';
+    figure.querySelector('[data-graph-node-weight-apply]').click();
+    assert.equal(weightEvent?.graphIndex, 0, '设置点权派发写回事件');
+    assert.equal(weightEvent?.nodeId, 'A');
+    assert.equal(weightEvent?.weight, 9);
+    assert.equal(groupA.dataset.nodeWeight, '9', '点组点权即时更新');
+    assert.equal(groupA.querySelector('.graph-node-weight-text').textContent, '9', '点权角标即时更新');
+    figure.querySelector('[data-graph-node-weight-clear]').click();
+    assert.equal(weightEvent?.nodeId, 'A', '清除点权派发写回事件');
+    assert.equal(weightEvent?.weight, null);
+    assert.equal(groupA.dataset.nodeWeight, undefined, '清除后点组不再带点权');
+    assert.equal(groupA.querySelector('.graph-node-weight'), null, '清除后点权角标移除');
     // 同一轮调整里继续拖同一点：位置只在本地累积，仍然不派发事件。
     pointer(page, groupA, 'pointerdown', 120, 252);
     pointer(page, stage, 'pointermove', 150, 280);

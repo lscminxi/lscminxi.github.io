@@ -2150,6 +2150,15 @@ body.search-open {
   border-color: var(--accent); color: var(--text);
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
+.article-content .graph-weight-tools { align-items: center; }
+.article-content .graph-weight-tools[hidden] { display: none; }
+.article-content .graph-weight-target { color: var(--muted); font-size: 12px; }
+.article-content .graph-weight-tools input {
+  width: 84px; border: 1px solid var(--line); background: var(--panel-raised); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; line-height: 1.5;
+}
+.article-content .graph-weight-tools input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.article-content .graph-weight-tools button:disabled { opacity: 0.45; cursor: default; }
 .article-content .plot-stage { touch-action: none; cursor: grab; border-radius: 6px; }
 .article-content .plot-stage.is-dragging { cursor: grabbing; }
 .article-content .plot-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

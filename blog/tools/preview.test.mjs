@@ -626,6 +626,40 @@ test('admin writes dragged graph positions back into the matching graph fence', 
   editor.window.close();
 });
 
+test('admin writes graph node weights set from the preview back into source', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.scrollTo = () => {};
+  w.fetch = () => { throw new Error('Graph node weight commit must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  field.value = [
+    '```graph',
+    'node: A[7] ; label=起点 ; color=red ; x=1 ; y=2',
+    'edge: A - C',
+    '```',
+  ].join('\n');
+  field.dispatchEvent(new w.Event('input'));
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  frame.dispatchEvent(new w.Event('load'));
+  const doc = frame.contentDocument;
+  const fire = (detail) => {
+    doc.dispatchEvent(new frame.contentWindow.CustomEvent('minxi:graph-node-weight', { detail }));
+  };
+  fire({ graphIndex: 0, nodeId: 'A', weight: 9.5 });
+  assert.match(field.value, /node: A ; label=起点 ; color=red ; x=1 ; y=2 ; weight=9\.5/, '已有 node 行更新点权并保留坐标与其它选项');
+  fire({ graphIndex: 0, nodeId: 'C', weight: 3 });
+  assert.match(field.value, /node: C ; weight=3/, '边里隐式出现的点补一行点权');
+  fire({ graphIndex: 0, nodeId: 'A', weight: null });
+  assert.doesNotMatch(field.value.split('\n')[1], /weight|7/, '清除点权删掉选项和方括号写法');
+  assert.match(w.document.querySelector('#preview-status').textContent, /点权已从源码清除/, '清除后状态栏有提示');
+  editor.window.close();
+});
+
 test('editor-lead scrolling syncs the preview and re-render does not jump to the top', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',

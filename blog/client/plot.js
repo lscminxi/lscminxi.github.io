@@ -737,6 +737,11 @@ function initGraph(figure) {
   let adjustButton = null;
   let savePositionsButton = null;
   let resetPositionButton = null;
+  let weightTools = null;
+  let weightTarget = null;
+  let weightInput = null;
+  let applyWeightButton = null;
+  let clearWeightButton = null;
   if (editableGraph) {
     const adjustTools = doc.createElement('div');
     adjustTools.className = 'plot-tools graph-adjust-tools';
@@ -760,6 +765,34 @@ function initGraph(figure) {
     resetPositionButton.hidden = true;
     adjustTools.append(adjustButton, savePositionsButton, resetPositionButton);
     toolbar.append(adjustTools);
+    // 给点加点权：在调整模式里点选一个点，直接填数字写回源码，不必手写语法。
+    weightTools = doc.createElement('div');
+    weightTools.className = 'plot-tools graph-weight-tools';
+    weightTools.setAttribute('role', 'group');
+    weightTools.setAttribute('aria-label', '给选中的点设置点权');
+    weightTools.dataset.graphNodeWeightTools = 'true';
+    weightTools.hidden = true;
+    weightTarget = doc.createElement('span');
+    weightTarget.className = 'graph-weight-target';
+    weightTarget.dataset.graphNodeWeightTarget = 'true';
+    weightTarget.textContent = '先点选一个点';
+    weightInput = doc.createElement('input');
+    weightInput.type = 'number';
+    weightInput.step = 'any';
+    weightInput.placeholder = '点权';
+    weightInput.dataset.graphNodeWeightInput = 'true';
+    weightInput.setAttribute('aria-label', '点权');
+    applyWeightButton = doc.createElement('button');
+    applyWeightButton.type = 'button';
+    applyWeightButton.dataset.graphNodeWeightApply = 'true';
+    applyWeightButton.textContent = '设置点权';
+    applyWeightButton.title = '把点权写回 Markdown 源码';
+    clearWeightButton = doc.createElement('button');
+    clearWeightButton.type = 'button';
+    clearWeightButton.dataset.graphNodeWeightClear = 'true';
+    clearWeightButton.textContent = '清除点权';
+    weightTools.append(weightTarget, weightInput, applyWeightButton, clearWeightButton);
+    toolbar.append(weightTools);
   }
   addFigureDownloadButton(figure, toolbar);
   figure.insertBefore(toolbar, stage);
@@ -767,7 +800,7 @@ function initGraph(figure) {
   readout.className = 'plot-readout';
   readout.setAttribute('aria-live', 'polite');
   const graphReadoutHint = editableGraph
-    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可连续拖动多个节点，最后点「保存点位」一次性写回源码。'
+    ? '拖动平移，滚轮或双指缩放；点「调整点位」后可拖动节点，也可点选节点在工具栏设置点权，点位最后点「保存点位」一次性写回源码。'
     : '拖动平移，滚轮或双指缩放；把指针移到点上可查看点名。';
   readout.textContent = graphReadoutHint;
   // 调整点位时暂时关闭下方详细信息：拖动中坐标读数会不断变行数，撑高/压矮
@@ -1206,6 +1239,105 @@ function initGraph(figure) {
   let draggedGraphNode = null;
   let graphNodeDrag = null;
   let suppressGraphClick = false;
+  let selectedGraphNode = null;
+  const formatGraphWeight = (weight) => String(Number(Number(weight).toFixed(4)));
+  const refreshGraphWeightTools = () => {
+    if (!weightTools) return;
+    weightTools.hidden = !graphAdjustMode;
+    const selected = selectedGraphNode && figure.contains(selectedGraphNode) ? selectedGraphNode : null;
+    if (weightTarget) {
+      weightTarget.textContent = selected
+        ? `点 ${selected.dataset.nodeLabel || selected.dataset.nodeId}`
+        : '先点选一个点';
+    }
+    if (weightInput && doc.activeElement !== weightInput) {
+      weightInput.value = selected?.dataset.nodeWeight || '';
+    }
+    if (applyWeightButton) applyWeightButton.disabled = !selected;
+    if (clearWeightButton) clearWeightButton.disabled = !selected || !selected.dataset.nodeWeight;
+  };
+  const setGraphNodeWeightLocal = (group, weight) => {
+    const state = graphNodes.get(group.dataset.nodeId);
+    if (!state) return;
+    let badge = group.querySelector('.graph-node-weight');
+    if (weight === null || weight === undefined || !Number.isFinite(Number(weight))) {
+      delete group.dataset.nodeWeight;
+      badge?.remove();
+      refreshGraphWeightTools();
+      return;
+    }
+    const weightLabel = formatGraphWeight(weight);
+    group.dataset.nodeWeight = weightLabel;
+    if (!badge) {
+      const namespace = 'http://www.w3.org/2000/svg';
+      badge = doc.createElementNS(namespace, 'g');
+      badge.setAttribute('class', 'graph-node-weight');
+      const circle = doc.createElementNS(namespace, 'circle');
+      circle.setAttribute('class', 'graph-node-weight-badge');
+      circle.setAttribute('style', 'fill:var(--accent,#4dabf7);stroke:var(--panel,#11151d)');
+      circle.setAttribute('stroke-width', '1.6');
+      const text = doc.createElementNS(namespace, 'text');
+      text.setAttribute('class', 'graph-node-weight-text');
+      text.setAttribute('style', 'fill:#ffffff');
+      text.setAttribute('font-size', '13');
+      text.setAttribute('font-weight', '700');
+      text.setAttribute('y', '4');
+      text.setAttribute('text-anchor', 'middle');
+      badge.append(circle, text);
+      group.append(badge);
+    }
+    const radius = Math.max(12, 7 + weightLabel.length * 3.8);
+    const offsetX = state.size * 0.74 + radius * 0.2;
+    const offsetY = -(state.size * 0.74 + radius * 0.2);
+    badge.dataset.weightOffsetX = String(offsetX);
+    badge.dataset.weightOffsetY = String(offsetY);
+    badge.querySelector('circle')?.setAttribute('r', String(radius));
+    const text = badge.querySelector('text');
+    if (text) text.textContent = weightLabel;
+    badge.setAttribute('transform', `translate(${state.screen.x + offsetX} ${state.screen.y + offsetY})`);
+    refreshGraphWeightTools();
+  };
+  const commitGraphNodeWeight = (weight) => {
+    if (!selectedGraphNode) return;
+    setGraphNodeWeightLocal(selectedGraphNode, weight);
+    const EventCtor = doc.defaultView?.CustomEvent || CustomEvent;
+    figure.dispatchEvent(new EventCtor('minxi:graph-node-weight', {
+      bubbles: true,
+      detail: {
+        graphIndex: Number(figure.dataset.graphIndex || 0),
+        nodeId: selectedGraphNode.dataset.nodeId,
+        weight,
+      },
+    }));
+  };
+  if (applyWeightButton) {
+    applyWeightButton.addEventListener('click', () => {
+      if (!selectedGraphNode || !weightInput) return;
+      const weight = Number(weightInput.value);
+      if (weightInput.value.trim() === '' || !Number.isFinite(weight)) {
+        weightInput.setCustomValidity('请输入数字点权');
+        weightInput.reportValidity();
+        return;
+      }
+      weightInput.setCustomValidity('');
+      commitGraphNodeWeight(weight);
+    });
+  }
+  if (clearWeightButton) {
+    clearWeightButton.addEventListener('click', () => {
+      if (!selectedGraphNode) return;
+      if (weightInput) weightInput.value = '';
+      commitGraphNodeWeight(null);
+    });
+  }
+  if (weightInput) {
+    weightInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyWeightButton?.click();
+      }
+    });
+  }
   const setGraphAdjustMode = (on) => {
     if (on && !graphAdjustMode) {
       graphPositionSnapshot = captureGraphPositions();
@@ -1226,6 +1358,10 @@ function initGraph(figure) {
     }
     if (savePositionsButton) savePositionsButton.hidden = !on;
     if (resetPositionButton) resetPositionButton.hidden = !on;
+    if (on && !selectedGraphNode) {
+      selectedGraphNode = figure.querySelector('.graph-node-group.is-selected');
+    }
+    refreshGraphWeightTools();
     // 进入调整先隐藏读数且不改其文本，占位高度保持不变，拖动全程零抖动。
     readout.style.visibility = on ? 'hidden' : '';
     if (!on) readout.textContent = graphReadoutHint;
@@ -1272,6 +1408,8 @@ function initGraph(figure) {
         pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
         try { stage.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
         draggedGraphNode = nodeGroup;
+        selectedGraphNode = nodeGroup;
+        refreshGraphWeightTools();
         graphNodeDrag = { pointerId: event.pointerId, start: point, screen: { ...state.screen } };
         stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
         nodeGroup.classList.add('is-selected', 'is-dragging-node');
@@ -1353,10 +1491,14 @@ function initGraph(figure) {
     stage.querySelectorAll('.graph-node-group.is-selected, .graph-edge-group.is-selected').forEach((el) => el.classList.remove('is-selected'));
     if (edge && stage.contains(edge)) {
       edge.classList.add('is-selected');
+      selectedGraphNode = null;
+      refreshGraphWeightTools();
       const arrow = edge.dataset.directed === 'true' ? ' → ' : ' — ';
       showDisplay(event, `边 ${edge.dataset.from}${arrow}${edge.dataset.to}`, edgeDetail(edge));
     } else if (group && stage.contains(group)) {
       group.classList.add('is-selected');
+      selectedGraphNode = group;
+      refreshGraphWeightTools();
       showDisplay(event, `点 ${group.dataset.nodeLabel || group.dataset.nodeId}`, nodeDetail(group));
     }
   });
