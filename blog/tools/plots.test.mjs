@@ -135,6 +135,25 @@ test('graph algorithms find components, bridges, cut vertices, MST and bipartite
   assert.ok(svg.includes('data-edge-index="0"') && svg.includes('data-weight="5"'), '边组带编号和权重供前端算法定位');
 });
 
+test('graph accepts several edge-weight spellings and renders weights larger', () => {
+  const spec = plots.parseGraphSpec([
+    'directed: true',
+    'node: A', 'node: B', 'node: C', 'node: D',
+    'edge: A - B ; weight=5',
+    'edge: B - C ; 边权：2.5',
+    'edge: C -[3]-> D',
+    'edge: D - A ; label=路线 ; weight=-1',
+    'A -[4]- B',
+  ].join('\n'));
+  assert.deepEqual(spec.edges.map((edge) => edge.weight), [5, 2.5, 3, -1, 4], 'weight=、边权：、-[n]- 与简写都能解析边权');
+  assert.equal(spec.edges[2].directed, true, '-[3]-> 保持有向');
+  assert.equal(spec.edges[4].directed, false, '-[4]- 是无向带权边');
+  assert.ok(spec.edges.every((edge) => edge.hasWeight && edge.weightLabel), '每条边都记录可单独排版的权重数字');
+  const svg = plots.renderGraphSvg(spec);
+  assert.ok(svg.includes('<tspan class="graph-edge-weight" font-size="17" font-weight="700">5</tspan>'), '纯边权以 17px 粗体显示');
+  assert.ok(svg.includes('路线 · 边权 <tspan class="graph-edge-weight" font-size="17" font-weight="700">-1</tspan>'), '名称保持普通字号，权重数字单独放大');
+});
+
 test('graph algorithms find vertex/edge biconnected components and a DFS tree with back edges', () => {
   const result = plots.analyzeGraphData(['A', 'B', 'C', 'D', 'E', 'F', 'G'], [
     { from: 'A', to: 'B' }, { from: 'B', to: 'C' }, { from: 'C', to: 'A' },
@@ -472,7 +491,7 @@ test('plot selection also works when the click lands near (not exactly on) a poi
 
 test('named graph edges still show their weight', async () => {
   const svg = plots.renderGraphSvg(plots.parseGraphSpec('node: A\nnode: B\nedge: A - B ; label=路径 ; weight=3'));
-  assert.ok(svg.includes('路径 · 边权 3'), '图上标注同时显示名称与边权');
+  assert.ok(svg.includes('路径 · 边权 <tspan class="graph-edge-weight" font-size="17" font-weight="700">3</tspan>'), '图上标注同时显示名称与放大后的边权');
   assert.ok(svg.includes('data-label="路径"') && svg.includes('data-weight="3"'), '边组保留名称与边权供交互读数');
   const page = await interactiveDom(render(`${FENCE}graph\nnode: A ; x=0 ; y=0\nnode: B ; x=100 ; y=0\nedge: A - B ; label=路径 ; weight=3\n${FENCE}`));
   try {

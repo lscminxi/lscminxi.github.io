@@ -1570,12 +1570,10 @@
     }
   };
   // 每次同步都按当前文档现算块级锚点（仿洛谷编辑器的按块对齐）：锚点记下
-  // 每个块的源码起止行与预览上下沿。普通文本块在块内按行插值；函数图、
-  // 关系图、独立图片这类「源码行数与渲染高度不成比例」的块整块对齐——
-  // 编辑光标落在块源码范围内时预览就停在块顶，不按行数硬摊比例。
-  // 折叠框不钉在块顶：编辑位置在折叠框源码范围内的比例，映射到它当前
-  // 渲染高度上缓慢下移（同样仿洛谷）；展开时内部块还有各自的锚点，
-  // 编辑落到内部块上时由内部锚点接管。未展开时内部块一律跳过。
+  // 每个块的源码起止行与预览上下沿。普通文本块、折叠框、函数图与关系图
+  // 都在块内按源码行位置比例映射到当前渲染高度上缓慢下移；只有独立图片
+  // 这类没有内部行进度的块才整块对齐到块顶。折叠框展开时内部块还有各自
+  // 的锚点，编辑落到内部块上时由内部锚点接管；未展开时内部块一律跳过。
   const collectScrollAnchors = (doc, scroll) => {
     if (scrollAnchorsDirty) {
       try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
@@ -1591,10 +1589,9 @@
       return (last.offsetTop || 0) + (last.offsetHeight || 0);
     };
     const isAtomicBlock = (block) => {
-      if (block.classList?.contains('md-plot') || block.classList?.contains('md-graph')) return true;
-      // 折叠框不算整块：按源码内位置比例映射到渲染高度上缓慢下移。
-      if (block.querySelector?.(':scope > img')) return true;
-      return false;
+      // 函数图/关系图不再整块钉在顶部：和折叠框一样按块内进度缓慢下移。
+      // 独立图片没有可对应的源码内部进度，仍整块对齐。
+      return Boolean(block.querySelector?.(':scope > img'));
     };
     for (const block of doc.querySelectorAll("[data-source-line]")) {
       const parentFold = block.parentElement?.closest?.('details.fold-box');
@@ -1652,7 +1649,8 @@
       while (i > 0 && anchors[i].ta > y) i -= 1;
       const a = anchors[i];
       if (y < a.taEnd) {
-        // 块内部：整块对齐的块停在块顶；普通块按行位置摊到块的渲染高度。
+        // 块内部：独立图片停在块顶；其余块（含图与折叠框）按行位置
+        // 比例摊到当前渲染高度，随编辑滚动缓慢下移。
         if (a.atomic) {
           target = a.pv;
         } else {
@@ -2358,7 +2356,7 @@
   $("#insert-graph").addEventListener("change", (event) => {
     const mode = ["reader", "none", "components", "bridges", "mst", "bipartite", "vbcc", "ebcc", "dfs"].includes(event.target.value) ? event.target.value : "";
     if (!mode) return;
-    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -- A ; weight=5\n```\n\n");
+    insertAtCursor(el.f.body, "\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -[5]- A\n```\n\n");
     event.target.value = "";
   });
 

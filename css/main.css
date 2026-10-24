@@ -228,7 +228,7 @@ html.header-open .header-hint {
   font-size: 22px;
 }
 .brand-suffix {
-  font-size: 15px;
+  font-size: 17px;
   color: var(--muted);
   font-weight: 400;
   margin-left: 3px;
@@ -880,7 +880,7 @@ html.header-open .header-hint {
   margin-bottom: 15px;
 }
 .sidebar-section h2 .section-icon {
-  font-size: 15px;
+  font-size: 17px;
 }
 .subtle-label {
   margin-left: auto;
@@ -1168,7 +1168,7 @@ html.header-open .header-hint {
 }
 .article-content h4 {
   margin: 22px 0 12px;
-  font-size: 15px;
+  font-size: 17px;
 }
 .article-content p {
   margin: 17px 0;
@@ -2116,6 +2116,10 @@ body.search-open {
   paint-order: stroke;
   stroke: var(--panel);
   stroke-width: 3px;
+}
+.article-content .graph-edge-weight {
+  font-size: 17px;
+  font-weight: 700;
 }
 
 /* 交互控件：无脚本（后台预览）时隐藏工具栏，静态坐标与方程仍直接可见 */

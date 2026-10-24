@@ -753,7 +753,7 @@ test('overscroll blank space is excluded from scroll sync percentages', async ()
   editor.window.close();
 });
 
-test('folds drift proportionally and graphs align as whole blocks during scroll sync', async () => {
+test('folds, graphs and plots drift proportionally during scroll sync', async () => {
   const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
     url: 'https://preview.example/admin/', runScripts: 'outside-only',
   });
@@ -776,7 +776,7 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   });
   const field = w.document.querySelector('#f-body');
   const frame = w.document.querySelector('#post-preview');
-  const md = '段一\n\n:::info[提示]\n内部甲\n\n内部乙\n:::\n\n```graph\nnode: A\nedge: A - A\n```\n\n尾段';
+  const md = '段一\n\n:::info[提示]\n内部甲\n\n内部乙\n:::\n\n```graph\nnode: A\nedge: A - A\n```\n\n尾段\n\n```plot\nf: x\n```\n\n末尾';
   field.value = md;
   field.dispatchEvent(new w.Event('input'));
   await new Promise((resolve) => setTimeout(resolve, 260));
@@ -789,7 +789,7 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   };
   let editorTop = 0;
   let previewTop = 0;
-  metric(field, 336, 100, () => editorTop, (value) => { editorTop = value; });
+  metric(field, 480, 20, () => editorTop, (value) => { editorTop = value; });
   field.style.paddingBottom = '0px';
   const doc = frame.contentDocument;
   doc.body.innerHTML = '<h1>未命名文章</h1><p class="article-description"></p><div class="article-content">'
@@ -797,11 +797,13 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
     + '<details class="fold-box" data-source-line="3" data-source-end-line="8"><summary>提示</summary><div class="fold-box-body">'
     + '<p data-source-line="4" data-source-end-line="5">内部甲</p><p data-source-line="6" data-source-end-line="7">内部乙</p></div></details>'
     + '<figure class="md-graph" data-source-line="9" data-source-end-line="13"></figure>'
-    + '<p data-source-line="14" data-source-end-line="15">尾段</p></div>';
+    + '<p data-source-line="14" data-source-end-line="15">尾段</p>'
+    + '<figure class="md-plot" data-source-line="16" data-source-end-line="19"></figure>'
+    + '<p data-source-line="20" data-source-end-line="21">末尾</p></div>';
   if (!doc.scrollingElement) {
     Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
   }
-  metric(doc.scrollingElement, 1000, 200, () => previewTop, (value) => { previewTop = value; });
+  metric(doc.scrollingElement, 1300, 200, () => previewTop, (value) => { previewTop = value; });
   const place = (selector, top, height) => {
     const el = doc.querySelector(selector);
     el.__pv = top; el.__h = height;
@@ -810,6 +812,7 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   place('.article-content > p', 0, 24);
   const fold = place('.fold-box', 48, 56);
   place('.md-graph', 200, 480);
+  place('.md-plot', 760, 240);
   doc.defaultView.HTMLElement.prototype.getBoundingClientRect = function rect() {
     return {
       top: (this.__pv || 0) - previewTop, bottom: (this.__pv || 0) - previewTop + (this.__h || 0),
@@ -831,11 +834,23 @@ test('folds drift proportionally and graphs align as whole blocks during scroll 
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(previewTop, 48, '折叠框起点对齐块顶');
 
-  // 编辑位置落在 graph 源码内部：预览停在图块顶部，不按源码行快速划过整张图。
-  editorTop = 210;
+  // 编辑位置落在 graph 源码内部：与折叠框一样按块内行位置比例映射到
+  // 图的渲染高度。图源码 192~288px、渲染 200~680px：源码中点 240px
+  // 应漂移到渲染中点 440px，而不是一直钉在图顶 200px。
+  editorTop = 240;
   field.dispatchEvent(new w.Event('scroll'));
   await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.equal(previewTop, 200, '关系图整块对齐到块顶');
+  assert.equal(previewTop, 440, '关系图按块内进度缓慢下移');
+  editorTop = 192;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 200, '刚进入关系图时仍对齐图顶');
+
+  // 函数图同理：源码 360~432px、渲染 760~1000px，中点 396px 对应 880px。
+  editorTop = 396;
+  field.dispatchEvent(new w.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(previewTop, 880, '函数图按块内进度缓慢下移');
 
   // 折叠框展开后改用内部块锚点：编辑到内部第一块时对齐到该块。
   fold.open = true;
@@ -942,6 +957,8 @@ test('editor guide is folded and visibility uses pin-style toggle buttons', asyn
   const html = await readFile('source/admin/index.html', 'utf8');
   assert.match(html, /<details class="editor-guide">/, '写作介绍应放进折叠框');
   assert.ok(!/<details class="editor-guide" open/.test(html), '介绍折叠框默认收起');
+  assert.ok(html.includes('函数图 ```plot') && html.includes('points: (x,y)'), '写作说明详细写函数图语法');
+  assert.ok(html.includes('关系图 ```graph') && html.includes('weight=5') && html.includes('A -[5]- B') && html.includes('边权（重点）'), '写作说明详细写关系图与边权写法');
   assert.equal(html.includes('id="f-visibility"'), false, '可见性不再用下拉框');
   assert.ok(html.includes('data-visibility="public"') && html.includes('data-visibility="private"'), '可见性是公开/私密按钮组');
   const editor = new JSDOM(html, { url: 'https://preview.example/admin/', runScripts: 'outside-only' });

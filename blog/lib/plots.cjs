@@ -22,7 +22,7 @@
  * node: A ; label=起点 ; color=red
  * node: B ; x=100 ; y=60
  * edge: A -> B ; color=blue ; label=路径
- * edge: B -- A
+ * edge: B -- A ; weight=5（也可用 边权=5、weight: 5 或 A -[5]- B）
  * ```
  * graph 里不写 x/y 的点会自动按圆环布局；边引用未声明的点会自动建点。
  * 表达式只支持 x、数字、四则运算与 ^、括号和常用函数（sin/cos/sqrt/ln…），
@@ -179,7 +179,8 @@ function splitOptions(text) {
   const parts = String(text).split(';');
   const options = {};
   for (const part of parts.slice(1)) {
-    const match = /^\s*([A-Za-z\u4e00-\u9fa5]+)\s*=\s*(.*?)\s*$/.exec(part);
+    // 选项以等号为准，也接受 weight: 3 / 边权：3 这类冒号写法。
+    const match = /^\s*([A-Za-z\u4e00-\u9fa5]+)\s*(?:=|[:：])\s*(.*?)\s*$/.exec(part);
     if (match) options[match[1].toLowerCase()] = match[2];
   }
   return [parts[0].trim(), options];
@@ -695,28 +696,45 @@ function parseGraphAlgorithm(value) {
   return GRAPH_ALGORITHM_ALIASES[key] || 'reader';
 }
 
+function parseInlineWeightedEdge(body) {
+  // 直观的带权边写法：A -[5]- B、A --[5]-- B、A -[5]-> B（括号也可）。
+  const match = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)\s*(-->|->|—>|--|-)\s*(?:\[\s*(-?(?:\d+\.?\d*|\.\d+))\s*\]|\(\s*(-?(?:\d+\.?\d*|\.\d+))\s*\))\s*(-->|->|—>|--|-)?\s*([A-Za-z0-9_\-\u4e00-\u9fa5]+)$/.exec(String(body || '').trim());
+  if (!match) return null;
+  return {
+    from: match[1],
+    to: match[6],
+    arrow: (match[5] || match[2]).includes('>'),
+    weight: Number(match[3] ?? match[4]),
+  };
+}
+
 function parseGraphSpec(source) {
   const spec = { directed: false, algorithm: 'reader', nodes: new Map(), edges: [], title: '' };
   const ensureNode = (id) => {
     if (!spec.nodes.has(id)) spec.nodes.set(id, { id, label: '', x: null, y: null, color: '', size: 20 });
     return spec.nodes.get(id);
   };
-  const addEdge = (from, to, arrow, options) => {
+  const addEdge = (from, to, arrow, options, inlineWeight = NaN) => {
     if (spec.edges.length >= 120) return;
     ensureNode(from); ensureNode(to);
-    const explicitWeight = Number(options.weight ?? options.w);
+    const optionWeight = Number(options.weight ?? options.w ?? options['边权'] ?? options['权重']);
+    const explicitWeight = Number.isFinite(optionWeight) ? optionWeight : inlineWeight;
+    const hasExplicitWeight = Number.isFinite(explicitWeight);
     const rawLabel = labelText(options.label || '');
     const numericLabel = /^-?(?:\d+\.?\d*|\.\d+)$/.test(rawLabel) ? Number(rawLabel) : NaN;
-    const weight = Number.isFinite(explicitWeight) ? explicitWeight : (Number.isFinite(numericLabel) ? numericLabel : 1);
+    const weight = hasExplicitWeight ? explicitWeight : (Number.isFinite(numericLabel) ? numericLabel : 1);
     spec.edges.push({
       from, to,
       directed: spec.directed && arrow,
       color: parseColor(options.color) || '',
-      label: rawLabel || (Number.isFinite(explicitWeight) ? String(explicitWeight) : ''),
+      label: rawLabel || (hasExplicitWeight ? String(explicitWeight) : ''),
       // 有名称又写了边权时，图上的标注同时显示名称与边权，别把权重藏掉。
-      displayLabel: rawLabel && Number.isFinite(explicitWeight) && !Number.isFinite(numericLabel)
+      displayLabel: rawLabel && hasExplicitWeight && !Number.isFinite(numericLabel)
         ? `${rawLabel} · 边权 ${explicitWeight}`
-        : (rawLabel || (Number.isFinite(explicitWeight) ? String(explicitWeight) : '')),
+        : (rawLabel || (hasExplicitWeight ? String(explicitWeight) : '')),
+      // 渲染时把权重数字单独放大加粗；名称仍用普通边标注字号。
+      hasWeight: hasExplicitWeight || Number.isFinite(numericLabel),
+      weightLabel: hasExplicitWeight ? String(explicitWeight) : (Number.isFinite(numericLabel) ? rawLabel : ''),
       weight,
       dash: truthy(options.dash, false),
     });
@@ -747,13 +765,23 @@ function parseGraphSpec(source) {
     }
     if ((match = /^(?:edge|边)\s*[:：]\s*(.+)$/i.exec(line))) {
       const [body, options] = splitOptions(match[1]);
+      const weighted = parseInlineWeightedEdge(body);
+      if (weighted) {
+        addEdge(weighted.from, weighted.to, weighted.arrow, options, weighted.weight);
+        continue;
+      }
       const edgeMatch = /^(\S+)\s*(->|-->|—>|--|-)\s*(\S+)$/.exec(body.trim());
       if (edgeMatch && NODE_ID.test(edgeMatch[1]) && NODE_ID.test(edgeMatch[3])) {
         addEdge(edgeMatch[1], edgeMatch[3], edgeMatch[2].includes('>'), options);
       }
       continue;
     }
-    // 简写：单独一行 `A -> B` / `A -- B`
+    // 简写：单独一行 `A -> B` / `A -- B`，也支持 `A -[5]-> B`
+    const weightedShorthand = parseInlineWeightedEdge(line);
+    if (weightedShorthand) {
+      addEdge(weightedShorthand.from, weightedShorthand.to, weightedShorthand.arrow, {}, weightedShorthand.weight);
+      continue;
+    }
     const shorthand = /^(\S+)\s*(->|-->|--|-)\s*(\S+)$/.exec(line);
     if (shorthand && NODE_ID.test(shorthand[1]) && NODE_ID.test(shorthand[3])) {
       addEdge(shorthand[1], shorthand[3], shorthand[2].includes('>'), {});
@@ -1013,6 +1041,20 @@ function analyzeGraph(spec) {
   return analyzeGraphData([...spec.nodes.keys()], spec.edges);
 }
 
+function renderGraphEdgeLabel(edge, x, y) {
+  if (!edge.label) return '';
+  const style = 'fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px';
+  if (!edge.hasWeight) {
+    return `<text class="graph-edge-label" style="${style}" font-size="11" x="${fmt(x)}" y="${fmt(y)}" text-anchor="middle">${escape(edge.displayLabel || edge.label)}</text>`;
+  }
+  const weight = `<tspan class="graph-edge-weight" font-size="17" font-weight="700">${escape(edge.weightLabel || String(edge.weight ?? 1))}</tspan>`;
+  const rawLabel = String(edge.label || '');
+  const numericLabel = /^-?(?:\d+\.?\d*|\.\d+)$/.test(rawLabel);
+  const name = numericLabel ? '' : rawLabel;
+  const content = name ? `${escape(name)} · 边权 ${weight}` : weight;
+  return `<text class="graph-edge-label" style="${style}" font-size="11" x="${fmt(x)}" y="${fmt(y)}" text-anchor="middle">${content}</text>`;
+}
+
 function renderGraphSvg(spec) {
   const nodes = layoutGraph(spec);
   if (!nodes.length) return `<figure class="md-graph" data-graph-algorithm="${spec.algorithm || 'reader'}"><svg class="md-graph-svg" viewBox="0 0 200 60" role="img" aria-label="空图"></svg></figure>\n`;
@@ -1054,7 +1096,7 @@ function renderGraphSvg(spec) {
       out.push(`<circle class="graph-edge-hit" cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none" stroke="transparent" stroke-width="13"/>`);
       out.push(`<circle class="graph-edge-line" cx="${fmt(x1)}" cy="${fmt(y1 - a.size - r + 6)}" r="${fmt(r - 4)}" fill="none"${edge.color ? ` stroke="${edge.color}"` : ' class="graph-edge-line graph-edge" style="stroke:var(--text,#e6eaf0);opacity:.72"'} stroke-width="2.5"${dash}/>`);
       if (edge.directed) out.push(arrow(x1 + (r - 4) * 0.72, y1 - a.size - r + 6 - (r - 4) * 0.72, Math.PI / 4, color));
-      if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(x1)}" y="${fmt(y1 - a.size - 2 * r - 2)}" text-anchor="middle">${escape(edge.displayLabel || edge.label)}</text>`);
+      if (edge.label) out.push(renderGraphEdgeLabel(edge, x1, y1 - a.size - 2 * r - 2));
       closeEdge();
       continue;
     }
@@ -1085,7 +1127,7 @@ function renderGraphSvg(spec) {
       if (edge.directed) out.push(arrow(endX, endY, Math.atan2(ty, tx), color));
       labelX = 0.25 * startX + 0.5 * cxp + 0.25 * endX; labelY = 0.25 * startY + 0.5 * cyp + 0.25 * endY - 5;
     }
-    if (edge.label) out.push(`<text class="graph-edge-label" style="fill:var(--text,#e6eaf0);paint-order:stroke;stroke:var(--panel,#11151d);stroke-width:3px" font-size="11" x="${fmt(labelX)}" y="${fmt(labelY)}" text-anchor="middle">${escape(edge.displayLabel || edge.label)}</text>`);
+    if (edge.label) out.push(renderGraphEdgeLabel(edge, labelX, labelY));
     closeEdge();
   }
 

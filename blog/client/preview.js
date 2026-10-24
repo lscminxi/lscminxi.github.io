@@ -48,8 +48,8 @@ window.MinxiPreview = {
       FORBID_ATTR: ['id', 'name'],
     });
     // 给每个块标上它在 Markdown 源码里的起止行号，供后台编辑器做「源码行 ↔
-    // 预览块」的块级滚动同步：普通块按行内插，折叠框（展开时含内部块）、
-    // 函数图、关系图这类源码行数与渲染高度不成比例的块按整块对齐。
+    // 预览块」的块级滚动同步：普通块、折叠框（展开时含内部块）、函数图与
+    // 关系图都按块内行位置比例映射到渲染高度，滚动时缓慢下移对齐。
     try {
       // 按 token 标注行号有两个坑，都不能靠「第几个 token 对第几个元素」硬对：
       // 1) 有些 token 不产生 DOM（被净化掉的 HTML、注释），占下标会让后面全错位；
@@ -149,7 +149,7 @@ window.MinxiPreview = {
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src https: data:;">
       <base href="${escape(location.origin)}/">
-      <link rel="stylesheet" href="/css/main.css?v=figure-png-1">
+      <link rel="stylesheet" href="/css/main.css?v=graph-sync-1">
       <link rel="stylesheet" href="/vendor/katex/katex.min.css">
       <style>body{padding:24px;background:var(--bg);overflow-wrap:anywhere}h1{font-size:33px;line-height:1.55;margin:0 0 12px}.article-content{font-size:16px!important;line-height:2;min-width:0}.article-description{margin-bottom:24px}.preview-empty{color:var(--muted)}</style>
       <title>文章预览</title></head><body>
