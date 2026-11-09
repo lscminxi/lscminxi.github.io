@@ -2,9 +2,9 @@
 title: 关于我
 layout: page
 eyebrow: THE PERSON BEHIND THE CODE
-description: 幼儿园小班水平
+description: 铭奚
 ---
 
-## ？！糖糖
+空悲切
 
-幼儿园小班水平
+[luogu](https://www.luogu.com.cn/user/1549479)
