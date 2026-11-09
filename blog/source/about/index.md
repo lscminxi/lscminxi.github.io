@@ -2,7 +2,7 @@
 title: 关于我
 layout: page
 eyebrow: THE PERSON BEHIND THE CODE
-description: 铭奚
+description: 铭析
 ---
 
 空悲切
