@@ -16,7 +16,7 @@ await walk(root);
 assert(files.length > 0, "Build output is empty; run npm run build first");
 const index = await readFile(join(root, "index.html"), "utf8");
 assert(index.includes("Minxi 的 blog"), "Site title missing");
-assert(index.includes("幼儿园小班水平"), "Profile missing");
+assert(index.includes("铭汐的 blog"), "Profile missing");
 assert(index.includes("lsc_minxi"), "Author missing");
 const about = await readFile(join(root, "about", "index.html"), "utf8");
 // 「关于」页保留但不在主导航里：导航区块不许出现 /about/，首页其它位置（个人卡片/首屏）仍要能点进去。
