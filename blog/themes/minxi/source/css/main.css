@@ -3514,3 +3514,50 @@ html[data-theme="light"] .theme-options [data-theme-option] {
     background: none;
   }
 }
+
+/* 公开 Markdown 编辑器：写作区分栏布局（与后台编辑器保持一致） */
+.writing-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  height: 65vh;
+  min-height: 420px;
+}
+.writing-workspace .code-area {
+  margin: 0;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+}
+#public-post-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+.writing-workspace[data-mode="edit"],
+.writing-workspace[data-mode="preview"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.writing-workspace[data-mode="edit"] #public-post-preview,
+.writing-workspace[data-mode="preview"] #public-editor-body {
+  display: none;
+}
+@media (max-width: 760px) {
+  .writing-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+  .writing-workspace .code-area,
+  #public-post-preview {
+    height: 50vh;
+    min-height: 320px;
+  }
+}
