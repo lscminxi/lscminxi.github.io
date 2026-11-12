@@ -424,6 +424,14 @@
   const renderPreview = () => {
     const doc = previewFrame.contentDocument;
     if (!doc) return;
+    if (typeof window.MinxiPreview === 'undefined' || !window.MinxiPreview.buildFragment) {
+      // 预览组件尚未就绪，稍后重试
+      if (previewReadyRetries < MAX_PREVIEW_READY_RETRIES) {
+        previewReadyRetries++;
+        setTimeout(() => renderPreview(), 100);
+      }
+      return;
+    }
     const text = body.value;
     let fragment;
     try {
@@ -459,6 +467,24 @@
   };
 
   // ---------------- 初始化 ----------------
+  let previewReadyRetries = 0;
+  const MAX_PREVIEW_READY_RETRIES = 50; // 最多等待约 5 秒
+
+  const waitForPreviewReady = (callback) => {
+    if (typeof window.MinxiPreview !== 'undefined' && window.MinxiPreview.buildFragment) {
+      callback();
+      return;
+    }
+    if (previewReadyRetries++ >= MAX_PREVIEW_READY_RETRIES) {
+      const doc = previewFrame.contentDocument;
+      if (doc) {
+        doc.body.innerHTML = '<div class="muted small">预览组件加载失败，请刷新页面重试。</div>';
+      }
+      return;
+    }
+    setTimeout(() => waitForPreviewReady(callback), 100);
+  };
+
   const init = () => {
     if (!body || !previewFrame) return;
 
@@ -509,8 +535,10 @@
     downloadBtn?.addEventListener('click', downloadMd);
     clearBtn?.addEventListener('click', clearDraft);
 
-    // 首次渲染预览
-    renderPreview();
+    // 等待预览组件就绪后再首次渲染（preview.js 可能尚未执行）
+    waitForPreviewReady(() => {
+      renderPreview();
+    });
   };
 
   if (document.readyState === 'loading') {
