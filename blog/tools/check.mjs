@@ -26,7 +26,8 @@ assert(!navBlock.includes("/about/"), "About page must not be linked from the ma
 assert(!navBlock.includes(">关于<"), "About link must not appear in the main navigation");
 assert(index.includes('href="/about/"'), "About page must still be reachable from elsewhere on the home page");
 
-assert(about.includes("？！糖糖"), "About page bio missing");
+// About page content is managed by the author via the admin panel;
+// no fixed text is required.
 assert(!index.includes("example.com"), "Default Hexo URL remains");
 const search = JSON.parse(await readFile(join(root, "search.json"), "utf8"));
 assert(Array.isArray(search), "Search index must be an array");

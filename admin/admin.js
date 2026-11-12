@@ -2911,6 +2911,8 @@
       );
       if (!ok) return;
     }
+    // 敏感写操作前再次确认令牌有效性，防止会话失效后直接修改个人简介。
+    await requireValidToken();
     busy(el.aboutSave, true, "提交中…");
     el.aboutStatus.textContent = "正在提交…";
     try {
