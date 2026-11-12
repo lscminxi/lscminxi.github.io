@@ -1551,7 +1551,12 @@
   let scrollAnchorsDirty = true;
   let lineMirror = null;
   let syncRaf = 0;
+  let editorSyncRaf = 0;
   let mirrorIdleTimer = 0;
+  // 双向滚动同步防循环标志：编辑区→预览时置位，预览滚动事件忽略；
+  // 预览→编辑区时置位，编辑区滚动事件忽略。
+  let syncingPreview = false;
+  let syncingEditor = false;
   let previewLoadPending = false;
   const previewFrame = $("#post-preview");
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
@@ -1655,7 +1660,10 @@
     return anchors;
   };
   const syncPreviewScroll = () => {
-    const ta = el.f.body;
+    if (syncingPreview) return;
+    syncingPreview = true;
+    try {
+      const ta = el.f.body;
     const doc = previewFrame.contentDocument;
     const scroll = doc?.scrollingElement;
     if (!doc || !scroll) return;
@@ -1718,7 +1726,71 @@
     // 一段从旧位置滚到目标位置的物理滚动动画。
     if (scroll.style) scroll.style.scrollBehavior = "auto";
     scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
+    } finally {
+      syncingPreview = false;
+    }
   };
+
+  /* 预览滚动 → 编辑区跟随：反向查找预览滚动位置对应的源码锚点，
+     把预览区间映射回编辑区行镜像的像素位置，带动编辑区同步滚动。
+     防止与编辑区→预览的同步形成循环，通过 syncingEditor 标志互斥。 */
+  const syncEditorScroll = () => {
+    if (syncingEditor) return;
+    syncingEditor = true;
+    try {
+      const doc = previewFrame.contentDocument;
+      const scroll = doc?.scrollingElement;
+      if (!doc || !scroll) return;
+      const anchors = collectScrollAnchors(doc, scroll);
+      if (!anchors.length) return;
+      const ta = el.f.body;
+      const maxPv = scroll.scrollHeight - scroll.clientHeight;
+      const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+      if (!(physicalMaxTa > 0)) return;
+      const pv = scroll.scrollTop || 0;
+
+      let targetTa;
+      if (pv <= anchors[0].pv) {
+        // 预览在第一个锚点之前：按比例回退到编辑区顶部区间。
+        targetTa = anchors[0].ta > 0 ? (pv / anchors[0].pv) * anchors[0].ta : 0;
+      } else if (pv >= maxPv - 0.5) {
+        // 预览真正到底：编辑区也到底部。
+        targetTa = physicalMaxTa;
+      } else {
+        // 从后往前找到第一个 pv >= anchors[i].pv 的锚点，pv 落在该锚点覆盖范围内或之后。
+        let i = anchors.length - 1;
+        while (i > 0 && anchors[i].pv > pv) i -= 1;
+        const a = anchors[i];
+        if (pv <= a.pvBottom) {
+          // 在锚点 a 覆盖范围内（块内）。
+          if (a.atomic) {
+            // 独立图片整块对齐：回到块顶。
+            targetTa = a.ta;
+          } else {
+            const pvSpan = a.pvBottom - a.pv;
+            const taSpan = a.taEnd - a.ta;
+            targetTa = pvSpan > 0 ? a.ta + ((pv - a.pv) / pvSpan) * taSpan : a.ta;
+          }
+        } else if (i + 1 < anchors.length) {
+          // 块间空行区域：a.pvBottom < pv < anchors[i+1].pv。
+          const b = anchors[i + 1];
+          const pvSpan = b.pv - a.pvBottom;
+          const taSpan = b.ta - a.taEnd;
+          targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
+        } else {
+          // 最后一块之后：平滑过渡到两侧同时见底。
+          const span = maxPv - a.pvBottom;
+          targetTa = span > 0.5
+            ? a.taEnd + ((pv - a.pvBottom) / span) * (physicalMaxTa - a.taEnd)
+            : physicalMaxTa;
+        }
+      }
+      ta.scrollTop = Math.max(0, Math.min(physicalMaxTa, targetTa));
+    } finally {
+      syncingEditor = false;
+    }
+  };
+
   const queuePreviewSync = () => {
     if (syncRaf) return;
     syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
@@ -1856,6 +1928,15 @@
     try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
     try { previewFrame.contentDocument?.addEventListener("minxi:graph-positions", handleGraphPositions); } catch { /* 预览未就绪时忽略 */ }
     try { previewFrame.contentDocument?.addEventListener("minxi:graph-node-weight", handleGraphNodeWeight); } catch { /* 预览未就绪时忽略 */ }
+    // 预览滚动 → 编辑区跟随：双向同步的反向链路。编辑区→预览的同步会置位
+    // syncingPreview，此时预览滚动事件不再触发反向同步，避免两侧循环触发。
+    try {
+      previewFrame.contentDocument?.addEventListener("scroll", () => {
+        if (syncingPreview) return;
+        if (editorSyncRaf) return;
+        editorSyncRaf = scheduleFrame(() => { editorSyncRaf = 0; syncEditorScroll(); });
+      }, { passive: true });
+    } catch { /* 预览滚动监听器绑定失败时忽略 */ }
     // 新文档先保持隐藏，对齐完成后再显示，避免用户先看到最前端、再被滚到目标位置。
     // 后续两次校准都已关闭平滑滚动，只会直接落位，不产生物理滚动特效。
     syncPreviewScroll();

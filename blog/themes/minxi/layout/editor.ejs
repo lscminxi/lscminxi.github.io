@@ -1,0 +1,88 @@
+<div class="page-heading"><div class="eyebrow"><%= page.eyebrow || 'WRITE IN MARKDOWN' %></div><h1><%= page.title %><span class="accent-dot">.</span></h1><p><%= page.description || '在浏览器里写 Markdown，实时预览，内容只保存在本地，不会上传。' %></p></div>
+
+<section class="editor-page" aria-label="公开 Markdown 编辑器">
+  <div class="editor-toolbar">
+    <span class="muted small">本地编辑 · 不登录 · 不上传</span>
+    <div class="editor-actions">
+      <button class="btn ghost small" id="editor-download-md" type="button">下载 .md</button>
+      <button class="btn primary small" id="editor-clear-local" type="button">清除本地草稿</button>
+    </div>
+    <p class="muted small" id="editor-save-status" role="status"></p>
+  </div>
+
+  <div class="writing-workspace" id="public-writing-workspace" data-mode="split">
+    <textarea aria-label="正文 Markdown" id="public-editor-body" class="code-area tall" spellcheck="false" placeholder="在这里写 Markdown… 支持 $$ 公式、```plot 函数图、```graph 关系图、:::info 折叠框等语法。内容只保存在你的浏览器本地，刷新前不会丢失。"></textarea>
+    <iframe id="public-post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  </div>
+
+  <p id="public-preview-status" class="muted small" role="status"></p>
+  <p class="muted small editor-stats" id="public-editor-stats" role="status">共 0 字 · 0 行</p>
+
+  <details class="editor-guide">
+    <summary>写作说明与语法速查（点开查看）</summary>
+    <div class="editor-guide-body">
+      <p>实时预览仅在本地浏览器生成，不会保存或发布到服务器。内容写入后会自动保存到本地浏览器（localStorage），关闭或刷新页面后再次打开会恢复。点「下载 .md」可将内容保存为本地文件。</p>
+      <ul>
+        <li>公式：行内 <code>$a_i^2$</code>；独立公式用 <code>$$</code> 单独成行。正文区按 <kbd>Shift</kbd>+<kbd>↑</kbd> 可搜索并插入 LaTeX 符号。</li>
+        <li>折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</li>
+        <li>函数图与关系图：用 <code>```plot</code> 或 <code>```graph</code> 代码块编写，每行一条指令。</li>
+      </ul>
+
+      <h4>函数图 ```plot：画曲线、点与线段</h4>
+      <pre><code>```plot
+title: 抛物线与直线
+f: x^2 - 2x + 1 ; color=red ; width=3
+f: -x + 3 ; color=green
+points: (1, 0), (3, 2) ; connect=true ; color=blue ; size=5
+line: (-2, 4), (4, -2) ; color=purple
+x: -3, 5
+y: -2, 10
+grid: on
+coords: on
+intersections: on
+interactive: on
+```</code></pre>
+
+      <h4>关系图 ```graph：点、边、边权与算法</h4>
+      <pre><code>```graph
+title: 带权示例图
+directed: true
+algo: reader
+node: A ; label=起点 ; color=red ; weight=5 ; x=0 ; y=0
+node: B ; 点权=3 ; x=120 ; y=0
+edge: A -&gt; B ; label=直达 ; weight=3 ; color=blue
+edge: B -&gt; C ; 边权=2
+edge: C -- A ; weight: 5
+edge: A -[4]- C
+```</code></pre>
+
+      <p class="muted small">函数图和关系图右上角有「下载 PNG」，可把当前画面导出为图片。编辑器内容仅保存在本地，点「下载 .md」可将源码保存为文件。</p>
+    </div>
+  </details>
+
+  <div class="toast" id="public-editor-toast" hidden></div>
+
+  <div class="latex-picker" id="public-latex-picker" hidden>
+    <div class="latex-picker-backdrop" id="public-latex-picker-backdrop"></div>
+    <section class="latex-picker-card" role="dialog" aria-modal="true" aria-labelledby="public-latex-picker-title">
+      <div class="latex-picker-head">
+        <h2 id="public-latex-picker-title">插入 LaTeX 符号</h2>
+        <button class="btn ghost small" id="public-close-latex-picker" type="button" aria-label="关闭 LaTeX 符号搜索">关闭</button>
+      </div>
+      <label class="latex-picker-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="public-latex-symbol-search" type="search" placeholder="搜索命令或中文，如 pm、正负、异或、积分、分数…" autocomplete="off" aria-label="搜索 LaTeX 符号">
+        <kbd>Esc</kbd>
+      </label>
+      <div class="public-latex-category-tabs" id="public-latex-category-tabs" aria-label="LaTeX 符号分类"></div>
+      <div class="latex-symbol-grid" id="public-latex-symbol-grid" aria-live="polite"></div>
+      <div class="latex-picker-foot">
+        <code id="public-latex-symbol-command">选择一个符号</code>
+        <span id="public-latex-symbol-detail">方向键选择，Enter 或点击插入</span>
+      </div>
+    </section>
+  </div>
+</section>
+
+<script src="/admin/preview.js?v=graph-sync-3" defer></script>
+<script src="/js/editor.js?v=editor-1" defer></script>
