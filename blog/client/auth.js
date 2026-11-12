@@ -280,6 +280,9 @@ function paintAuthUi() {
     const info = dialogOf('#auth-account-info');
     if (info) info.textContent = `已登录 @${currentUser.login}${isOwner() ? '（站长）' : ''}，可以评论和点赞了。`;
   }
+  // 非站长访客不显示后台入口，减少攻击面。只有站长登录后才能看到「进入后台」。
+  const adminBtn = dialogOf('#auth-admin');
+  if (adminBtn) adminBtn.hidden = !currentUser || !isOwner();
   document.dispatchEvent(new CustomEvent('minxi:auth-changed', { detail: { user: currentUser } }));
 }
 

@@ -364,6 +364,12 @@
   }
 
   async function api(path, { method = "GET", body } = {}) {
+    // 客户端预检：没有有效令牌时不发任何请求到 GitHub API，避免发送空 Bearer 令牌。
+    if (!token) {
+      const error = new Error("未登录：无有效的 GitHub 授权/令牌，请求已被拦截。");
+      error.status = 401;
+      throw error;
+    }
     const response = await fetch(CONFIG.api + path, {
       method,
       cache: "no-store",
@@ -883,6 +889,30 @@
     return repo;
   }
 
+  /* 敏感操作（删除文章、保存配置等）前再次验证令牌有效性。
+     防止会话在登录后失效或被劫持时，直接执行写操作而不再经过允许名单检查。 */
+  async function requireValidToken() {
+    if (!token) {
+      throw new Error("会话已过期：没有有效的 GitHub 授权/令牌，请重新登录。");
+    }
+    // 仅重新确认身份，不更新 currentUser（避免覆盖已登录的站长身份）。
+    const identity = await api("/user");
+    const login = typeof identity?.login === "string" ? identity.login.trim() : "";
+    if (!login) {
+      throw new Error("GitHub 未返回有效的登录账号，操作已拦截。");
+    }
+    const allowedLogins = Array.isArray(CONFIG.allowedLogins)
+      ? CONFIG.allowedLogins
+          .filter((name) => typeof name === "string")
+          .map((name) => name.trim())
+          .filter(Boolean)
+      : [];
+    if (!allowedLogins.some((name) => name.toLowerCase() === login.toLowerCase())) {
+      throw new Error(`账号 @${login} 不在站长允许名单中，操作已拦截。`);
+    }
+    return login;
+  }
+
   async function enterApp() {
     el.viewLogin.hidden = true;
     el.viewApp.hidden = false;
@@ -1203,6 +1233,8 @@
       );
       if (!ok) return false;
       started = true;
+      // 敏感操作前再次确认令牌有效性，防止会话失效或被劫持后直接删除。
+      await requireValidToken();
       busy(button, true, "删除中…");
       if (editor) {
         busy(el.savePost, true);
@@ -1431,6 +1463,8 @@
     const files = [...el.uploadInput.files];
     el.uploadInput.value = "";
     if (!files.length) return;
+    // 图片上传是写操作，先验证令牌有效性。
+    await requireValidToken();
     for (const file of files) {
       const prepared = await prepareUpload(file);
       if (prepared.error) {
@@ -2555,6 +2589,8 @@
       if (!ok) return;
     }
     const markdown = buildMarkdown(fields);
+    // 敏感写操作前再次确认令牌有效性，防止会话失效后直接写入 GitHub。
+    await requireValidToken();
     busy(el.savePost, true, "提交中…");
     el.editorStatus.textContent = "正在提交到 GitHub…";
     try {
@@ -3406,6 +3442,8 @@
       if (!ok) return;
     }
     const value = api.resolveAppearance(draft);
+    // 敏感写操作前再次确认令牌有效性。
+    await requireValidToken();
     busy(el.appearanceSave, true, "提交中…");
     el.appearanceStatus.textContent = "正在提交…";
     try {
