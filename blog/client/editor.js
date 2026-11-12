@@ -325,6 +325,20 @@
 
   const escapeHtml = (text) => String(text).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+  // ---------------- 辅助：在光标处插入文本 ----------------
+  const insertAtCursor = (text) => {
+    const start = body.selectionStart ?? body.value.length;
+    const end = body.selectionEnd ?? body.value.length;
+    const before = body.value.slice(0, start);
+    const after = body.value.slice(end);
+    body.value = before + text + after;
+    const cursorPos = start + text.length;
+    body.selectionStart = cursorPos;
+    body.selectionEnd = cursorPos;
+    body.focus();
+    body.dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+
   const insertLatexSymbol = (symbol) => {
     const start = body.selectionStart ?? body.value.length;
     const end = body.selectionEnd ?? body.value.length;
@@ -409,6 +423,72 @@
     toast.hidden = false;
     setTimeout(() => { toast.hidden = true; }, 2500);
   };
+
+  // ---------------- 插入按钮事件 ----------------
+  $('#public-insert-math')?.addEventListener('click', () => {
+    insertAtCursor("\n\n$$\n\f(n) = \sum_{i=1}^{n} i = \frac{n(n+1)}{2}\n$$\n\n");
+  });
+
+  $('#public-insert-latex-symbol')?.addEventListener('click', openLatexPicker);
+
+  $('#public-insert-fold')?.addEventListener('change', (event) => {
+    const kind = event.target.value;
+    if (kind !== 'info' && kind !== 'success') return;
+    const label = kind === 'info' ? '提示' : '成功';
+    insertAtCursor("\n\n:::" + kind + "[" + label + "]\n\n在这里写内容，支持 **Markdown** 和 $a_i$ 公式。\n\n:::\n\n");
+    event.target.value = '';
+  });
+
+  $('#public-insert-plot')?.addEventListener('click', () => {
+    insertAtCursor("\n\n```plot\ntitle: 函数图像\nf: x^2 - 2x + 1 ; color=red\nf: -x + 3 ; color=green\npoints: (1, 0), (3, 2) ; connect=true ; color=blue\nx: -3, 5\ncoords: on\nintersections: on\n```\n\n");
+  });
+
+  $('#public-insert-graph')?.addEventListener('change', (event) => {
+    const mode = ['reader', 'none', 'components', 'bridges', 'mst', 'bipartite', 'vbcc', 'ebcc', 'dfs'].includes(event.target.value) ? event.target.value : '';
+    if (!mode) return;
+    insertAtCursor("\n\n```graph\ntitle: 示例图\nalgo: " + mode + "\ndirected: true\nnode: A ; label=起点 ; color=red ; weight=6\nnode: B\nnode: C\nedge: A -> B ; label=一步 ; weight=1\nedge: B -> C ; weight=2\nedge: C -[5]- A\n```\n\n");
+    event.target.value = '';
+  });
+
+  $('#public-insert-image')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    showToast('公开编辑器不支持图片上传，请手动输入 Markdown 图片语法');
+    event.target.value = '';
+  });
+
+  $('#public-insert-more')?.addEventListener('click', () => {
+    insertAtCursor("\n\n<!-- more -->\n\n");
+  });
+
+  // ---------------- 模式切换（编辑 / 分屏 / 预览 / 纯净） ----------------
+  const setEditorMode = (mode) => {
+    writingWorkspace.dataset.mode = mode;
+    document.body.classList.toggle('zen-editing', mode === 'zen');
+    $$('[data-editor-mode]').forEach((item) => {
+      item.setAttribute('aria-pressed', String(item.dataset.editorMode === mode));
+    });
+    updateEditorOverscroll();
+    queuePreview();
+    scrollAnchorsDirty = true;
+    scheduleFrame(() => {
+      updateEditorOverscroll();
+      syncPreviewScroll();
+    });
+    if (mode === 'zen') body.focus();
+  };
+
+  $$('[data-editor-mode]').forEach((button) => {
+    button.addEventListener('click', () => setEditorMode(button.dataset.editorMode));
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.body.classList.contains('zen-editing')) {
+      setEditorMode('split');
+    }
+  });
+
+
 
   const updateStats = () => {
     const text = body.value;
@@ -638,7 +718,12 @@
     }
   };
 
+  let lastScrollTime = 0;
+  const SCROLL_THROTTLE_MS = 16;
   const queuePreviewSync = () => {
+    const now = performance.now();
+    if (now - lastScrollTime < SCROLL_THROTTLE_MS && syncRaf) return;
+    lastScrollTime = now;
     if (syncRaf) return;
     syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
   };
@@ -794,6 +879,7 @@
     // 监听器绑定失败导致预览滚动不跟随编辑区。
     previewFrame.addEventListener('load', () => {
       scrollAnchorsDirty = true;
+      try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
       try {
         previewFrame.contentDocument?.addEventListener('scroll', () => {
           if (syncingPreview) return;
