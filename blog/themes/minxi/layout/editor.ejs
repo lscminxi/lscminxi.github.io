@@ -1,34 +1,6 @@
 <div class="page-heading"><div class="eyebrow"><%= page.eyebrow || 'WRITE IN MARKDOWN' %></div><h1><%= page.title %></h1><p><%= page.description || '在浏览器里写 Markdown，实时预览，内容只保存在本地，不会上传。' %></p></div>
 
 <section class="editor-page" aria-label="公开 Markdown 编辑器">
-  <div class="editor-toolbar">
-    <span class="muted small">本地编辑 · 不登录 · 不上传</span>
-    <div class="editor-actions">
-      <button class="btn ghost small" id="editor-download-md" type="button">下载 .md</button>
-      <button class="btn primary small" id="editor-clear-local" type="button">清除本地草稿</button>
-    </div>
-    <p class="muted small" id="editor-save-status" role="status"></p>
-  </div>
-
-  <div class="form-grid">
-    <label class="field"><span>标题</span><input id="public-f-title" type="text" placeholder="例如：二分查找笔记"></label>
-    <label class="field"><span>文件名（英文短名，决定 URL）</span><input id="public-f-slug" type="text" placeholder="binary-search" spellcheck="false"></label>
-    <label class="field"><span>日期</span><input id="public-f-date" type="datetime-local" step="60"></label>
-    <div class="field taxonomy-field"><span id="public-f-categories-label">分类（可多选）</span><input id="public-f-categories" type="hidden"><div id="public-f-categories-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="public-f-categories-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有分类，也可在弹窗里搜索或新建。</p></div>
-    <div class="field taxonomy-field"><span id="public-f-tags-label">标签（可多选）</span><input id="public-f-tags" type="hidden"><div id="public-f-tags-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="public-f-tags-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有标签，也可在弹窗里搜索或新建。</p></div>
-    <label class="field"><span>强调色</span><select id="public-f-accent"><option value="">默认</option><option value="blue">blue</option><option value="purple">purple</option><option value="amber">amber</option></select></label>
-    <div class="field pin-field"><span>置顶</span><div class="preview-modes" role="group" aria-label="置顶设置"><button class="btn ghost small" type="button" data-pin="off" aria-pressed="true">不置顶</button><button class="btn ghost small" type="button" data-pin="on" aria-pressed="false">置顶</button></div><p class="pin-hint" id="public-pin-hint" aria-live="polite"></p></div>
-    <div class="field visibility-field"><span>可见性</span><div class="preview-modes" role="group" aria-label="文章可见性"><button class="btn ghost small" type="button" data-visibility="public" aria-pressed="true">公开</button><button class="btn ghost small" type="button" data-visibility="private" aria-pressed="false">私密</button></div><p class="visibility-hint" id="public-visibility-hint" aria-live="polite"></p></div>
-    <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="public-f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
-    <label class="checkline wide"><input id="public-f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
-  </div>
-
-  <p class="muted small">
-    发布地址：<code id="public-url-preview">/</code>
-    <span id="public-slug-warning" class="warn small" hidden></span>
-    日期晚于当前时间的文章不会发布（站点时区 Asia/Shanghai）。
-  </p>
-
   <div class="body-head">
     <label class="field grow"><span>正文 Markdown</span></label>
     <div class="body-tools">
@@ -51,7 +23,7 @@
   <details class="editor-guide">
     <summary>写作说明与语法速查（点开查看）</summary>
     <div class="editor-guide-body">
-      <p>实时预览仅在本地浏览器生成，不会保存或发布到服务器。内容写入后会自动保存到本地浏览器（localStorage），关闭或刷新页面后再次打开会恢复。点「下载 .md」可将内容保存为本地文件。</p>
+      <p>实时预览仅在本地浏览器生成，不会保存或发布到服务器。内容写入后会自动保存到本地浏览器（localStorage），关闭或刷新页面后再次打开会恢复。</p>
       <ul>
         <li>公式：行内 <code>$a_i^2$</code>；独立公式用 <code>$$</code> 单独成行。正文区按 <kbd>Shift</kbd>+<kbd>↑</kbd> 可搜索并插入 LaTeX 符号。</li>
         <li>折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</li>
@@ -86,7 +58,7 @@ edge: C -- A ; weight: 5
 edge: A -[4]- C
 ```</code></pre>
 
-      <p class="muted small">函数图和关系图右上角有「下载 PNG」，可把当前画面导出为图片。编辑器内容仅保存在本地，点「下载 .md」可将源码保存为文件。</p>
+      <p class="muted small">函数图和关系图右上角有「下载 PNG」，可把当前画面导出为图片。编辑器内容仅保存在本地。</p>
     </div>
   </details>
 
@@ -96,10 +68,6 @@ edge: A -[4]- C
   </div>
 
   <p id="public-preview-status" class="muted small" role="status"></p>
-  <div class="panel-actions">
-    <span class="muted small" id="public-editor-status"></span>
-    <button class="btn primary" id="public-save-post" type="button">保存到本地</button>
-  </div>
   <p class="muted small editor-stats" id="public-editor-stats" role="status">共 0 字 · 0 行</p>
 
   <div class="toast" id="public-editor-toast" hidden></div>
