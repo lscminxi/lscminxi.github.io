@@ -56,20 +56,70 @@
   <div class="editor-toolbar">
     <span class="muted small">本地编辑 · 不登录 · 不上传</span>
     <div class="editor-actions">
+      <button class="btn ghost small" id="editor-back-list" type="button">← 返回列表</button>
       <button class="btn ghost small" id="editor-download-md" type="button">下载 .md</button>
-      <button class="btn primary small" id="editor-clear-local" type="button">清除本地草稿</button>
+      <button class="btn ghost small" id="editor-clear-local" type="button">清除本地草稿</button>
     </div>
     <p class="muted small" id="editor-save-status" role="status"></p>
   </div>
 
-  <div class="writing-workspace" id="public-writing-workspace" data-mode="split">
-    <textarea aria-label="正文 Markdown" id="public-editor-body" class="code-area tall" spellcheck="false" placeholder="在这里写 Markdown… 支持 $$ 公式、```plot 函数图、```graph 关系图、:::info 折叠框等语法。内容只保存在你的浏览器本地，刷新前不会丢失。"></textarea>
-    <iframe id="public-post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  <div class="form-grid">
+    <label class="field"><span>标题</span><input id="f-title" type="text" placeholder="例如：二分查找笔记"></label>
+    <label class="field"><span>文件名（英文短名，决定 URL）</span><input id="f-slug" type="text" placeholder="binary-search" spellcheck="false"></label>
+    <label class="field"><span>日期</span><input id="f-date" type="datetime-local" step="60"></label>
+    <div class="field taxonomy-field"><span id="f-categories-label">分类（可多选）</span><input id="f-categories" type="hidden"><div id="f-categories-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="f-categories-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有分类，也可在弹窗里搜索或新建。</p></div>
+    <div class="field taxonomy-field"><span id="f-tags-label">标签（可多选）</span><input id="f-tags" type="hidden"><div id="f-tags-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="f-tags-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有标签，也可在弹窗里搜索或新建。</p></div>
+    <label class="field"><span>强调色</span>
+      <select id="f-accent">
+        <option value="">默认</option>
+        <option value="blue">blue</option>
+        <option value="purple">purple</option>
+        <option value="amber">amber</option>
+      </select>
+    </label>
+    <div class="field pin-field"><span>置顶</span><div class="preview-modes" role="group" aria-label="置顶设置"><button class="btn ghost small" type="button" data-pin="off" aria-pressed="true">不置顶</button><button class="btn ghost small" type="button" data-pin="on" aria-pressed="false">置顶</button></div><p class="pin-hint" id="pin-hint"></p></div>
+    <div class="field visibility-field"><span>可见性</span><div class="preview-modes" role="group" aria-label="文章可见性"><button class="btn ghost small" type="button" data-visibility="public" aria-pressed="true">公开</button><button class="btn ghost small" type="button" data-visibility="private" aria-pressed="false">私密</button></div><p class="visibility-hint" id="visibility-hint"></p></div>
+    <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
+    <label class="checkline wide"><input id="f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
   </div>
-
-  <p id="public-preview-status" class="muted small" role="status"></p>
-  <p class="muted small editor-stats" id="public-editor-stats" role="status">共 0 字 · 0 行</p>
-
+  <p class="muted small">
+    发布地址：<code id="url-preview">/</code>
+    <span id="slug-warning" class="warn small" hidden></span>
+    日期晚于当前时间的文章不会发布（站点时区 Asia/Shanghai）。保存仅写入本地浏览器，不会上传到 GitHub。
+  </p>
+  <div class="body-head">
+    <label class="field grow"><span>正文 Markdown</span></label>
+    <div class="body-tools">
+      <div class="preview-modes" role="group" aria-label="编辑器视图">
+        <button class="btn ghost small" type="button" data-editor-mode="edit" aria-pressed="false">编辑</button>
+        <button class="btn ghost small" type="button" data-editor-mode="split" aria-pressed="true">分屏</button>
+        <button class="btn ghost small" type="button" data-editor-mode="preview" aria-pressed="false">预览</button>
+        <button class="btn ghost small" type="button" data-editor-mode="zen" aria-pressed="false" title="隐藏其余面板，专注分屏写作（Esc 退出）">纯净</button>
+      </div>
+      <button class="btn ghost small" id="insert-math" type="button">插入公式</button>
+      <button class="btn ghost small" id="insert-latex-symbol" type="button" title="在正文编辑区按 Shift + ↑ 也可打开">LaTeX 符号 <kbd>Shift</kbd>+<kbd>↑</kbd></button>
+      <select id="insert-fold" class="small-select" aria-label="插入折叠框">
+        <option value="">插入折叠框…</option>
+        <option value="info">info · 蓝色提示</option>
+        <option value="success">success · 绿色成功</option>
+      </select>
+      <button class="btn ghost small" id="insert-plot" type="button">插入函数图像</button>
+      <select id="insert-graph" class="small-select" aria-label="插入可视化图并设置算法">
+        <option value="">插入可视化图…</option>
+        <option value="reader">读者自选算法</option>
+        <option value="none">不显示算法</option>
+        <option value="components">作者指定：连通分量</option>
+        <option value="bridges">作者指定：桥与割点</option>
+        <option value="mst">作者指定：最小生成树</option>
+        <option value="bipartite">作者指定：二分图</option>
+        <option value="vbcc">作者指定：点双连通分量</option>
+        <option value="ebcc">作者指定：边双连通分量</option>
+        <option value="dfs">作者指定：DFS 树（返祖边）</option>
+      </select>
+      <select id="insert-image" class="small-select"><option value="">插入图片…</option></select>
+      <button class="btn ghost small" id="insert-more" type="button">插入 &lt;!-- more --&gt;</button>
+    </div>
+  </div>
   <details class="editor-guide">
     <summary>写作说明与语法速查（点开查看）</summary>
     <div class="editor-guide-body">
@@ -79,12 +129,11 @@
         <li>折叠框：<code>:::info[标题]</code> 或 <code>:::success[标题]</code>，用 <code>:::</code> 结束。</li>
         <li>函数图与关系图：用 <code>```plot</code> 或 <code>```graph</code> 代码块编写，每行一条指令。</li>
       </ul>
-
       <h4>函数图 ```plot：画曲线、点与线段</h4>
       <pre><code>```plot
 title: 抛物线与直线
 f: x^2 - 2x + 1 ; color=red ; width=3
-f: -x + 3 ; color=green
+f: -x + 3 ; color=green ; dash=true
 points: (1, 0), (3, 2) ; connect=true ; color=blue ; size=5
 line: (-2, 4), (4, -2) ; color=purple
 x: -3, 5
@@ -94,7 +143,6 @@ coords: on
 intersections: on
 interactive: on
 ```</code></pre>
-
       <h4>关系图 ```graph：点、边、边权与算法</h4>
       <pre><code>```graph
 title: 带权示例图
@@ -102,37 +150,83 @@ directed: true
 algo: reader
 node: A ; label=起点 ; color=red ; weight=5 ; x=0 ; y=0
 node: B ; 点权=3 ; x=120 ; y=0
+node: C[2] ; x=60 ; y=100
 edge: A -&gt; B ; label=直达 ; weight=3 ; color=blue
 edge: B -&gt; C ; 边权=2
 edge: C -- A ; weight: 5
 edge: A -[4]- C
 ```</code></pre>
-
-      <p class="muted small">函数图和关系图右上角有「下载 PNG」，可把当前画面导出为图片。编辑器内容仅保存在本地，点「下载 .md」可将源码保存为文件。</p>
     </div>
   </details>
+  <div class="writing-workspace" id="writing-workspace" data-mode="split">
+    <textarea aria-label="正文 Markdown" id="f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。&#10;&#10;&lt;!-- more --&gt; 之前的内容会作为摘要显示在首页卡片上（若填写了描述则以描述为准）。"></textarea>
+    <iframe id="post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  </div>
+  <p id="preview-status" class="muted small" role="status"></p>
+  <div class="panel-actions">
+    <span class="muted small" id="editor-status"></span>
+    <button class="btn danger small" id="delete-local" type="button" hidden>删除本地草稿</button>
+    <button class="btn primary" id="save-local" type="button">保存到本地</button>
+  </div>
+  <p class="muted small editor-stats" id="editor-stats" role="status">正文共 0 字 · 0 行</p>
 
-  <div class="toast" id="public-editor-toast" hidden></div>
+  <div class="toast" id="toast" hidden></div>
 
-  <div class="latex-picker" id="public-latex-picker" hidden>
-    <div class="latex-picker-backdrop" id="public-latex-picker-backdrop"></div>
-    <section class="latex-picker-card" role="dialog" aria-modal="true" aria-labelledby="public-latex-picker-title">
+  <div class="latex-picker" id="latex-picker" hidden>
+    <div class="latex-picker-backdrop" id="latex-picker-backdrop"></div>
+    <section class="latex-picker-card" role="dialog" aria-modal="true" aria-labelledby="latex-picker-title">
       <div class="latex-picker-head">
-        <h2 id="public-latex-picker-title">插入 LaTeX 符号</h2>
-        <button class="btn ghost small" id="public-close-latex-picker" type="button" aria-label="关闭 LaTeX 符号搜索">关闭</button>
+        <h2 id="latex-picker-title">插入 LaTeX 符号</h2>
+        <button class="btn ghost small" id="close-latex-picker" type="button" aria-label="关闭 LaTeX 符号搜索">关闭</button>
       </div>
       <label class="latex-picker-search">
         <span aria-hidden="true">⌕</span>
-        <input id="public-latex-symbol-search" type="search" placeholder="搜索命令或中文，如 pm、正负、异或、积分、分数…" autocomplete="off" aria-label="搜索 LaTeX 符号">
+        <input id="latex-symbol-search" type="search" placeholder="搜索命令或中文，如 pm、正负、异或、积分、分数…" autocomplete="off" aria-label="搜索 LaTeX 符号">
         <kbd>Esc</kbd>
       </label>
-      <div class="public-latex-category-tabs" id="public-latex-category-tabs" aria-label="LaTeX 符号分类"></div>
-      <div class="latex-symbol-grid" id="public-latex-symbol-grid" aria-live="polite"></div>
+      <div class="latex-category-tabs" id="latex-category-tabs" aria-label="LaTeX 符号分类"></div>
+      <div class="latex-symbol-grid" id="latex-symbol-grid" aria-live="polite"></div>
       <div class="latex-picker-foot">
-        <code id="public-latex-symbol-command">选择一个符号</code>
-        <span id="public-latex-symbol-detail">方向键选择，Enter 或点击插入</span>
+        <code id="latex-symbol-command">选择一个符号</code>
+        <span id="latex-symbol-detail">方向键选择，Enter 或点击插入</span>
       </div>
     </section>
+  </div>
+
+  <div class="taxonomy-picker" id="taxonomy-picker" hidden>
+    <div class="latex-picker-backdrop" id="taxonomy-picker-backdrop"></div>
+    <section class="latex-picker-card taxonomy-picker-card" role="dialog" aria-modal="true" aria-labelledby="taxonomy-picker-title">
+      <div class="latex-picker-head">
+        <h2 id="taxonomy-picker-title">选择标签</h2>
+        <button class="btn ghost small" id="close-taxonomy-picker" type="button" aria-label="取消选择">关闭</button>
+      </div>
+      <label class="latex-picker-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="taxonomy-search" type="search" placeholder="搜索已有项，或输入新名称后按 Enter 新建" autocomplete="off" aria-label="搜索或新建分类/标签">
+        <kbd>Enter 新建</kbd>
+      </label>
+      <div class="taxonomy-selected" id="taxonomy-selected" aria-live="polite"></div>
+      <div class="taxonomy-options" id="taxonomy-options" aria-live="polite"></div>
+      <button class="taxonomy-create" id="taxonomy-create" type="button" hidden></button>
+      <div class="latex-picker-foot taxonomy-picker-foot">
+        <span id="taxonomy-count">已选 0 个</span>
+        <div class="taxonomy-actions">
+          <button class="btn ghost small" id="cancel-taxonomy-picker" type="button">取消</button>
+          <button class="btn primary small" id="done-taxonomy-picker" type="button">完成</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">确认操作</h2>
+      <p id="modal-text"></p>
+      <div class="modal-actions">
+        <button class="btn ghost small" id="modal-cancel" type="button">取消</button>
+        <button class="btn danger small" id="modal-ok" type="button">确认</button>
+      </div>
+    </div>
   </div>
 </section>
 
