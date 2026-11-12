@@ -7,7 +7,7 @@
  * - 点「下载 .md」可把源码保存到本地文件
  * - 不会调用 GitHub API，不需要登录，不上传任何内容
  *
- * 预览使用后台同一套 MinpiPreview.buildFragment（window.MinpiPreview），
+ * 预览使用后台同一套 MinxiPreview.buildFragment（window.MinxiPreview），
  * 支持 $$ 公式、```plot 函数图、```graph 关系图、:::info 折叠框等语法。
  */
 
@@ -427,7 +427,7 @@
     const text = body.value;
     let fragment;
     try {
-      fragment = window.MinpiPreview.buildFragment({ body: text });
+      fragment = window.MinxiPreview.buildFragment({ body: text });
     } catch (error) {
       doc.body.innerHTML = `<div class="muted small">预览渲染出错：${escapeHtml(error.message)}</div>`;
       return;
