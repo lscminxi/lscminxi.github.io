@@ -45,4 +45,10 @@ await build({
   bundle: true, minify: true, format: 'iife', platform: 'browser',
   target: ['es2020'], legalComments: 'eof',
 });
-console.log('✓ Local KaTeX fonts/CSS, safe Markdown preview, appearance, wallpaper, theme and plot bundles prepared.');
+// 公开 Markdown 编辑器：所有人可用，保存仅在本地（依赖 window.MinpiPreview，需在 preview.js 之后加载）。
+await build({
+  entryPoints: ['client/editor.js'], outfile: 'themes/minxi/source/js/editor.js',
+  bundle: true, minify: true, format: 'iife', platform: 'browser',
+  target: ['es2020'], legalComments: 'eof',
+});
+console.log('✓ Local KaTeX fonts/CSS, safe Markdown preview, appearance, wallpaper, theme, plot and public editor bundles prepared.');
