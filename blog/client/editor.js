@@ -9,6 +9,9 @@
  *
  * 预览使用后台同一套 MinxiPreview.buildFragment（window.MinxiPreview），
  * 支持 $$ 公式、```plot 函数图、```graph 关系图、:::info 折叠框等语法。
+ *
+ * 滚动同步：编辑区与预览区双向按块级锚点分段插值对齐，
+ * 仿洛谷编辑器，块内按源码行位置比例缓慢下移，不钉块顶，不跳回。
  */
 
 (() => {
@@ -20,13 +23,16 @@
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-  const body = $('#public-editor-body');
+  // ---------------- DOM 元素 ----------------
+  const body = $('#public-f-body');
   const previewFrame = $('#public-post-preview');
+  const writingWorkspace = $('#public-writing-workspace');
   const saveStatus = $('#editor-save-status');
   const stats = $('#public-editor-stats');
   const toast = $('#public-editor-toast');
   const downloadBtn = $('#editor-download-md');
   const clearBtn = $('#editor-clear-local');
+  const saveBtn = $('#public-save-post');
 
   // ---------------- LaTeX 符号搜索（Shift + ↑） ----------------
   const latexPicker = $('#public-latex-picker');
@@ -411,7 +417,238 @@
     stats.textContent = `共 ${chars} 字 · ${lines} 行`;
   };
 
-  // ---------------- 预览 ----------------
+  // ---------------- 滚动同步（双向，仿洛谷编辑器） ----------------
+  let scrollAnchorsDirty = true;
+  let lineMirror = null;
+  let syncRaf = 0;
+  let editorSyncRaf = 0;
+  let mirrorIdleTimer = 0;
+  let syncingPreview = false;
+  let syncingEditor = false;
+  let previewLoadPending = false;
+
+  const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
+
+  // 允许「滑过文末”：给 textarea 加底部留白，滚到尽头时最后一行正好停在编辑区顶部。
+  const updateEditorOverscroll = () => {
+    const ta = body;
+    if (!ta) return;
+    const style = window.getComputedStyle(ta);
+    const fontSize = parseFloat(style.fontSize) || 12.5;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.9;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const height = Number.isFinite(ta.clientHeight) ? ta.clientHeight : 0;
+    const bottom = height > 0
+      ? Math.max(lineHeight, height - paddingTop - lineHeight)
+      : lineHeight;
+    ta.style.paddingBottom = `${Math.round(bottom)}px`;
+    scrollAnchorsDirty = true;
+  };
+
+  const ensureLineMirror = () => {
+    if (lineMirror) return lineMirror;
+    const mirror = document.createElement('div');
+    mirror.setAttribute('aria-hidden', 'true');
+    mirror.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;';
+    document.body.append(mirror);
+    lineMirror = mirror;
+    return mirror;
+  };
+
+  const rebuildLineMirror = () => {
+    const ta = body;
+    const mirror = ensureLineMirror();
+    const style = window.getComputedStyle(ta);
+    mirror.style.width = `${ta.clientWidth}px`;
+    mirror.style.tabSize = style.tabSize || '2';
+    mirror.style.font = style.font;
+    mirror.style.lineHeight = style.lineHeight;
+    mirror.style.letterSpacing = style.letterSpacing;
+    mirror.style.padding = style.padding;
+    mirror.style.border = '0';
+    mirror.style.boxSizing = 'border-box';
+    mirror.style.whiteSpace = style.whiteSpace || 'pre-wrap';
+    mirror.style.overflowWrap = style.overflowWrap || 'break-word';
+    mirror.style.wordBreak = style.wordBreak || 'normal';
+    mirror.textContent = '';
+    for (const line of ta.value.split('\n')) {
+      const div = document.createElement('div');
+      div.textContent = line || '\u200b';
+      mirror.append(div);
+    }
+  };
+
+  const collectScrollAnchors = (doc, scroll) => {
+    if (scrollAnchorsDirty) {
+      try { rebuildLineMirror(); } catch { /* 镜像不可用时退回比例同步 */ }
+      scrollAnchorsDirty = false;
+    }
+    const anchors = [];
+    if (!lineMirror?.children?.length) return anchors;
+    const mirrorLineTop = (lineNo) => {
+      const kids = lineMirror.children;
+      if (lineNo <= 1) return kids[0].offsetTop || 0;
+      if (lineNo <= kids.length) return kids[lineNo - 1].offsetTop || 0;
+      const last = kids[kids.length - 1];
+      return (last.offsetTop || 0) + (last.offsetHeight || 0);
+    };
+    const mirrorBaseTop = mirrorLineTop(1);
+    const isAtomicBlock = (block) => {
+      // 独立图片没有可对应的源码内部进度，仍整块对齐。
+      return Boolean(block.querySelector?.(':scope > img'));
+    };
+    for (const block of doc.querySelectorAll('[data-source-line]')) {
+      const parentFold = block.parentElement?.closest?.('details.fold-box');
+      if (parentFold && !parentFold.open) continue;
+      if (!block.classList?.contains('fold-box')
+        && block.parentElement?.closest?.('[data-source-line]') && !parentFold) continue;
+      const line = Number(block.dataset.sourceLine);
+      if (!Number.isInteger(line) || line < 1 || !lineMirror.children[line - 1]) continue;
+      const endLine = Number(block.dataset.sourceEndLine) || line + 1;
+      const rect = block.getBoundingClientRect();
+      const ta = Math.max(0, mirrorLineTop(line) - mirrorBaseTop);
+      const pv = rect.top + (scroll.scrollTop || 0);
+      if (!Number.isFinite(ta) || !Number.isFinite(pv)) continue;
+      const prev = anchors[anchors.length - 1];
+      if (prev && (ta <= prev.ta || pv <= prev.pv)) continue;
+      anchors.push({
+        ta,
+        taEnd: Math.max(mirrorLineTop(endLine) - mirrorBaseTop, ta),
+        pv,
+        pvBottom: pv + Math.max(0, rect.height || 0),
+        atomic: isAtomicBlock(block),
+      });
+    }
+    return anchors;
+  };
+
+  const syncPreviewScroll = () => {
+    if (syncingPreview) return;
+    syncingPreview = true;
+    try {
+      const ta = body;
+      const doc = previewFrame.contentDocument;
+      const scroll = doc?.scrollingElement;
+      if (!doc || !scroll) return;
+      if (writingWorkspace?.dataset.mode === 'edit') return;
+      const maxPv = scroll.scrollHeight - scroll.clientHeight;
+      if (!(maxPv > 0)) return;
+
+      const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
+      const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+      const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
+      if (!(physicalMaxTa > 0)) {
+        if (scroll.style) scroll.style.scrollBehavior = 'auto';
+        scroll.scrollTop = 0;
+        return;
+      }
+
+      const anchors = collectScrollAnchors(doc, scroll);
+      const rawY = ta.scrollTop || 0;
+      const y = Math.min(rawY, anchors.length ? physicalMaxTa : effectiveMaxTa);
+      let target;
+
+      if (!anchors.length) {
+        target = effectiveMaxTa > 0 ? (y / effectiveMaxTa) * maxPv : maxPv;
+      } else if (rawY >= physicalMaxTa - 0.5) {
+        // 编辑区真正到底：预览必须同时到底。
+        target = maxPv;
+      } else if (y < anchors[0].ta) {
+        target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
+      } else {
+        let i = anchors.length - 1;
+        while (i > 0 && anchors[i].ta > y) i -= 1;
+        const a = anchors[i];
+        if (y < a.taEnd) {
+          if (a.atomic) {
+            target = a.pv;
+          } else {
+            const span = a.taEnd - a.ta;
+            target = span > 0 ? a.pv + ((y - a.ta) / span) * (a.pvBottom - a.pv) : a.pv;
+          }
+        } else if (i + 1 < anchors.length) {
+          const b = anchors[i + 1];
+          const span = b.ta - a.taEnd;
+          target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
+        } else {
+          const span = physicalMaxTa - a.taEnd;
+          target = span > 0.5
+            ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
+            : (y >= physicalMaxTa - 0.5 ? maxPv : a.pvBottom);
+        }
+      }
+
+      if (scroll.style) scroll.style.scrollBehavior = 'auto';
+      scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
+    } finally {
+      syncingPreview = false;
+    }
+  };
+
+  const syncEditorScroll = () => {
+    if (syncingEditor) return;
+    syncingEditor = true;
+    try {
+      const doc = previewFrame.contentDocument;
+      const scroll = doc?.scrollingElement;
+      if (!doc || !scroll) return;
+      const anchors = collectScrollAnchors(doc, scroll);
+      if (!anchors.length) return;
+      const ta = body;
+      const maxPv = scroll.scrollHeight - scroll.clientHeight;
+      const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+      if (!(physicalMaxTa > 0)) return;
+      const pv = scroll.scrollTop || 0;
+
+      let targetTa;
+      if (pv <= anchors[0].pv) {
+        targetTa = anchors[0].ta > 0 ? (pv / anchors[0].pv) * anchors[0].ta : 0;
+      } else {
+        let i = anchors.length - 1;
+        while (i > 0 && anchors[i].pv > pv) i -= 1;
+        const a = anchors[i];
+        if (pv <= a.pvBottom) {
+          if (a.atomic) {
+            targetTa = a.ta;
+          } else {
+            const pvSpan = a.pvBottom - a.pv;
+            const taSpan = a.taEnd - a.ta;
+            targetTa = pvSpan > 0 ? a.ta + ((pv - a.pv) / pvSpan) * taSpan : a.ta;
+          }
+        } else if (i + 1 < anchors.length) {
+          const b = anchors[i + 1];
+          const pvSpan = b.pv - a.pvBottom;
+          const taSpan = b.ta - a.taEnd;
+          targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
+        } else {
+          // 最后一块之后：平滑过渡到编辑区有效底部（扣除文末留白）。
+          // 预览到底时，编辑区映射到最后一行源码位置，而不被强制
+          // 拉到包含留白的物理最底部，避免「预览到底编辑区也卡底」的缺陷。
+          const span = maxPv - a.pvBottom;
+          const overscrollBottom = parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
+          const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
+          targetTa = span > 0
+            ? a.taEnd + ((pv - a.pvBottom) / span) * (effectiveMaxTa - a.taEnd)
+            : effectiveMaxTa;
+        }
+      }
+      ta.scrollTop = Math.max(0, Math.min(physicalMaxTa, targetTa));
+    } finally {
+      syncingEditor = false;
+    }
+  };
+
+  const queuePreviewSync = () => {
+    if (syncRaf) return;
+    syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
+  };
+
+  const queueEditorSync = () => {
+    if (editorSyncRaf) return;
+    editorSyncRaf = scheduleFrame(() => { editorSyncRaf = 0; syncEditorScroll(); });
+  };
+
+  // ---------------- 预览渲染 ----------------
   let previewRaf = 0;
   const queuePreview = () => {
     if (previewRaf) return;
@@ -425,7 +662,6 @@
     const doc = previewFrame.contentDocument;
     if (!doc) return;
     if (typeof window.MinxiPreview === 'undefined' || !window.MinxiPreview.buildFragment) {
-      // 预览组件尚未就绪，稍后重试
       if (previewReadyRetries < MAX_PREVIEW_READY_RETRIES) {
         previewReadyRetries++;
         setTimeout(() => renderPreview(), 100);
@@ -442,11 +678,12 @@
     }
     doc.body.innerHTML = '';
     doc.body.appendChild(fragment);
-    // 给代码块加语言类名（供主题样式）
-    doc.querySelectorAll('pre code[class*="language-"]').forEach((code) => {
+    doc.querySelectorAll('pre code[class*="language-\"]').forEach((code) => {
       const pre = code.parentElement;
       if (pre) pre.classList.add('highlight');
     });
+    // 渲染完成后标脏锚点，下次滚动时重新收集
+    scrollAnchorsDirty = true;
   };
 
   // ---------------- 下载 .md ----------------
@@ -466,9 +703,14 @@
     showToast('已下载 Markdown 源码');
   };
 
+  const saveToLocal = () => {
+    saveDraft();
+    showToast('已保存到本地草稿');
+  };
+
   // ---------------- 初始化 ----------------
   let previewReadyRetries = 0;
-  const MAX_PREVIEW_READY_RETRIES = 50; // 最多等待约 5 秒
+  const MAX_PREVIEW_READY_RETRIES = 50;
 
   const waitForPreviewReady = (callback) => {
     if (typeof window.MinxiPreview !== 'undefined' && window.MinxiPreview.buildFragment) {
@@ -488,17 +730,14 @@
   const init = () => {
     if (!body || !previewFrame) return;
 
-    // 恢复草稿
     loadDraft();
     updateStats();
 
-    // 输入事件：自动保存 + 预览
     body.addEventListener('input', () => {
       scheduleSave();
       queuePreview();
     });
 
-    // LaTeX 符号搜索：Shift + ↑
     document.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowUp' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
         if (latexPicker.hidden === false) return;
@@ -510,7 +749,6 @@
       }
     });
 
-    // LaTeX 搜索输入
     latexSearchInput.addEventListener('input', renderLatexGrid);
     latexSearchInput.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowDown') {
@@ -531,11 +769,54 @@
     $('#public-close-latex-picker')?.addEventListener('click', closeLatexPicker);
     latexPickerBackdrop?.addEventListener('click', closeLatexPicker);
 
-    // 下载按钮
     downloadBtn?.addEventListener('click', downloadMd);
     clearBtn?.addEventListener('click', clearDraft);
+    saveBtn?.addEventListener('click', saveToLocal);
 
-    // 等待预览组件就绪后再首次渲染（preview.js 可能尚未执行）
+    // 编辑区滚动 → 预览跟随
+    body.addEventListener('scroll', queuePreviewSync, { passive: true });
+
+    window.addEventListener('resize', () => {
+      scrollAnchorsDirty = true;
+      updateEditorOverscroll();
+    });
+
+    document.fonts?.ready?.then(() => {
+      updateEditorOverscroll();
+      scrollAnchorsDirty = true;
+      syncPreviewScroll();
+    });
+
+    updateEditorOverscroll();
+
+    // 预览 iframe 加载完成后：绑定预览滚动→编辑区的反向同步，
+    // 并做初始对齐与多次校准（参考后台编辑器），避免 iframe 未就绪时
+    // 监听器绑定失败导致预览滚动不跟随编辑区。
+    previewFrame.addEventListener('load', () => {
+      scrollAnchorsDirty = true;
+      try {
+        previewFrame.contentDocument?.addEventListener('scroll', () => {
+          if (syncingPreview) return;
+          if (editorSyncRaf) return;
+          editorSyncRaf = scheduleFrame(() => { editorSyncRaf = 0; syncEditorScroll(); });
+        }, { passive: true });
+      } catch { /* 预览滚动监听器绑定失败时忽略 */ }
+      syncPreviewScroll();
+      const revealAlignedPreview = () => {
+        syncPreviewScroll();
+        previewFrame.style.visibility = '';
+      };
+      if (window.requestAnimationFrame) window.requestAnimationFrame(revealAlignedPreview);
+      else revealAlignedPreview();
+      setTimeout(() => syncPreviewScroll(), 120);
+      try {
+        previewFrame.contentDocument?.fonts?.ready?.then(() => {
+          scrollAnchorsDirty = true;
+          syncPreviewScroll();
+        });
+      } catch { /* 字体接口不可用时忽略 */ }
+    });
+
     waitForPreviewReady(() => {
       renderPreview();
     });
@@ -547,7 +828,6 @@
     init();
   }
 
-  // 暴露给 window，方便调试
   window.MinxiPublicEditor = {
     getDraft: () => body.value,
     saveDraft,

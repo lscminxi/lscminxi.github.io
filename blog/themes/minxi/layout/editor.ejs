@@ -10,13 +10,43 @@
     <p class="muted small" id="editor-save-status" role="status"></p>
   </div>
 
-  <div class="writing-workspace" id="public-writing-workspace" data-mode="split">
-    <textarea aria-label="正文 Markdown" id="public-editor-body" class="code-area tall" spellcheck="false" placeholder="在这里写 Markdown… 支持 $$ 公式、```plot 函数图、```graph 关系图、:::info 折叠框等语法。内容只保存在你的浏览器本地，刷新前不会丢失。"></textarea>
-    <iframe id="public-post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  <div class="form-grid">
+    <label class="field"><span>标题</span><input id="public-f-title" type="text" placeholder="例如：二分查找笔记"></label>
+    <label class="field"><span>文件名（英文短名，决定 URL）</span><input id="public-f-slug" type="text" placeholder="binary-search" spellcheck="false"></label>
+    <label class="field"><span>日期</span><input id="public-f-date" type="datetime-local" step="60"></label>
+    <div class="field taxonomy-field"><span id="public-f-categories-label">分类（可多选）</span><input id="public-f-categories" type="hidden"><div id="public-f-categories-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="public-f-categories-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有分类，也可在弹窗里搜索或新建。</p></div>
+    <div class="field taxonomy-field"><span id="public-f-tags-label">标签（可多选）</span><input id="public-f-tags" type="hidden"><div id="public-f-tags-control" class="taxonomy-control" role="button" tabindex="0" aria-labelledby="public-f-tags-label" aria-haspopup="dialog"></div><p class="taxonomy-hint">点击选择已有标签，也可在弹窗里搜索或新建。</p></div>
+    <label class="field"><span>强调色</span><select id="public-f-accent"><option value="">默认</option><option value="blue">blue</option><option value="purple">purple</option><option value="amber">amber</option></select></label>
+    <div class="field pin-field"><span>置顶</span><div class="preview-modes" role="group" aria-label="置顶设置"><button class="btn ghost small" type="button" data-pin="off" aria-pressed="true">不置顶</button><button class="btn ghost small" type="button" data-pin="on" aria-pressed="false">置顶</button></div><p class="pin-hint" id="public-pin-hint" aria-live="polite"></p></div>
+    <div class="field visibility-field"><span>可见性</span><div class="preview-modes" role="group" aria-label="文章可见性"><button class="btn ghost small" type="button" data-visibility="public" aria-pressed="true">公开</button><button class="btn ghost small" type="button" data-visibility="private" aria-pressed="false">私密</button></div><p class="visibility-hint" id="public-visibility-hint" aria-live="polite"></p></div>
+    <label class="field wide"><span>一句话描述（显示在文章卡片上）</span><input id="public-f-description" type="text" placeholder="用一句话介绍这篇笔记"></label>
+    <label class="checkline wide"><input id="public-f-sample" type="checkbox"><span>标记为「示例文章」</span></label>
   </div>
 
-  <p id="public-preview-status" class="muted small" role="status"></p>
-  <p class="muted small editor-stats" id="public-editor-stats" role="status">共 0 字 · 0 行</p>
+  <p class="muted small">
+    发布地址：<code id="public-url-preview">/</code>
+    <span id="public-slug-warning" class="warn small" hidden></span>
+    日期晚于当前时间的文章不会发布（站点时区 Asia/Shanghai）。
+  </p>
+
+  <div class="body-head">
+    <label class="field grow"><span>正文 Markdown</span></label>
+    <div class="body-tools">
+      <div class="preview-modes" role="group" aria-label="编辑器视图">
+        <button class="btn ghost small" type="button" data-editor-mode="edit" aria-pressed="false">编辑</button>
+        <button class="btn ghost small" type="button" data-editor-mode="split" aria-pressed="true">分屏</button>
+        <button class="btn ghost small" type="button" data-editor-mode="preview" aria-pressed="false">预览</button>
+        <button class="btn ghost small" type="button" data-editor-mode="zen" aria-pressed="false" title="隐藏其余面板，专注分屏写作（Esc 退出）">纯净</button>
+      </div>
+      <button class="btn ghost small" id="public-insert-math" type="button">插入公式</button>
+      <button class="btn ghost small" id="public-insert-latex-symbol" type="button" title="在正文编辑区按 Shift + ↑ 也可打开">LaTeX 符号 <kbd>Shift</kbd>+<kbd>↑</kbd></button>
+      <select id="public-insert-fold" class="small-select" aria-label="插入折叠框"><option value="">插入折叠框…</option><option value="info">info · 蓝色提示</option><option value="success">success · 绿色成功</option></select>
+      <button class="btn ghost small" id="public-insert-plot" type="button">插入函数图像</button>
+      <select id="public-insert-graph" class="small-select" aria-label="插入可视化图并设置算法"><option value="">插入可视化图…</option><option value="reader">读者自选算法</option><option value="none">不显示算法</option><option value="components">作者指定：连通分量</option><option value="bridges">作者指定：桥与割点</option><option value="mst">作者指定：最小生成树</option><option value="bipartite">作者指定：二分图</option><option value="vbcc">作者指定：点双连通分量</option><option value="ebcc">作者指定：边双连通分量</option><option value="dfs">作者指定：DFS 树（返祖边）</option></select>
+      <select id="public-insert-image" class="small-select"><option value="">插入图片…</option></select>
+      <button class="btn ghost small" id="public-insert-more" type="button">插入 &lt;!-- more --&gt;</button>
+    </div>
+  </div>
 
   <details class="editor-guide">
     <summary>写作说明与语法速查（点开查看）</summary>
@@ -59,6 +89,18 @@ edge: A -[4]- C
       <p class="muted small">函数图和关系图右上角有「下载 PNG」，可把当前画面导出为图片。编辑器内容仅保存在本地，点「下载 .md」可将源码保存为文件。</p>
     </div>
   </details>
+
+  <div class="writing-workspace" id="public-writing-workspace" data-mode="split">
+    <textarea aria-label="正文 Markdown" id="public-f-body" class="code-area tall" spellcheck="false" placeholder="写下正文，可以用 ```cpp 代码块。"></textarea>
+    <iframe id="public-post-preview" title="文章实时预览" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  </div>
+
+  <p id="public-preview-status" class="muted small" role="status"></p>
+  <div class="panel-actions">
+    <span class="muted small" id="public-editor-status"></span>
+    <button class="btn primary" id="public-save-post" type="button">保存到本地</button>
+  </div>
+  <p class="muted small editor-stats" id="public-editor-stats" role="status">共 0 字 · 0 行</p>
 
   <div class="toast" id="public-editor-toast" hidden></div>
 
