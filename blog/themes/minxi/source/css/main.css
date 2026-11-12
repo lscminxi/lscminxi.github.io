@@ -3546,7 +3546,8 @@ html[data-theme="light"] .theme-options [data-theme-option] {
   grid-template-columns: minmax(0, 1fr);
 }
 .writing-workspace[data-mode="edit"] #public-post-preview,
-.writing-workspace[data-mode="preview"] #public-editor-body {
+.writing-workspace[data-mode="edit"] #public-f-body,
+.writing-workspace[data-mode="preview"] #public-f-body {
   display: none;
 }
 @media (max-width: 760px) {
@@ -4413,6 +4414,9 @@ body.zen-editing #view-editor .panel-head,
 body.zen-editing #view-editor .form-grid,
 body.zen-editing #view-editor > .muted { display: none; }
 body.zen-editing .admin-main { max-width: 1440px; padding-top: 14px; }
+/* 公开编辑器纯净模式：隐藏工具栏与写作说明，只留编辑区 + 预览区 */
+body.zen-editing .editor-page .body-tools,
+body.zen-editing .editor-page .editor-guide { display: none; }
 @media (max-width: 820px) {
   .writing-workspace { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .writing-workspace .code-area, #post-preview { height: 50vh; min-height: 320px; }
