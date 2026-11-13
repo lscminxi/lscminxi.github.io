@@ -690,6 +690,11 @@
       let targetTa;
       if (pv <= anchors[0].pv) {
         targetTa = anchors[0].ta > 0 ? (pv / anchors[0].pv) * anchors[0].ta : 0;
+      } else if (pv >= maxPv - 0.5) {
+        // 预览真正到底：编辑区只映射到最后一行源码位置（有效底部），
+        // 不被强制滚到包含留白的物理最底部，避免底部出现一堆空白空格。
+        const overscrollBottom = parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
+        targetTa = Math.max(0, physicalMaxTa - overscrollBottom);
       } else {
         let i = anchors.length - 1;
         while (i > 0 && anchors[i].pv > pv) i -= 1;
@@ -709,8 +714,6 @@
           targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
         } else {
           // 最后一块之后：平滑过渡到编辑区有效底部（扣除文末留白）。
-          // 预览到底时，编辑区映射到最后一行源码位置，而不被强制
-          // 拉到包含留白的物理最底部，避免「预览到底编辑区也卡底」的缺陷。
           const span = maxPv - a.pvBottom;
           const overscrollBottom = parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
           const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
