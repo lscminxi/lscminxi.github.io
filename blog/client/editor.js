@@ -269,20 +269,24 @@
 
   const renderLatexPicker = () => {
     latexCategoryTabs.innerHTML = '';
+    const seenCategories = new Set();
     latexSymbols.forEach((symbol) => {
+      const category = symbol.category;
+      if (seenCategories.has(category)) return;
+      seenCategories.add(category);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'category-tab';
       btn.textContent = latexCategoryName(symbol.category);
-      btn.dataset.category = symbol.category;
-      if (symbol.category === latexPickerCategory) {
+      btn.dataset.category = category;
+      if (category === latexPickerCategory) {
         btn.classList.add('active');
         btn.setAttribute('aria-pressed', 'true');
       } else {
         btn.setAttribute('aria-pressed', 'false');
       }
       btn.addEventListener('click', () => {
-        latexPickerCategory = symbol.category;
+        latexPickerCategory = category;
         renderLatexPicker();
         renderLatexGrid();
       });
@@ -625,7 +629,9 @@
 
       const anchors = collectScrollAnchors(doc, scroll);
       const rawY = ta.scrollTop || 0;
-      const y = Math.min(rawY, anchors.length ? physicalMaxTa : effectiveMaxTa);
+      // 只在有效滚动行程内计算（扣除文末留白），避免编辑区滚入留白区域时
+      // 预览被错误地映射到底部，导致「编辑区下滑一点直接跳到底部」的缺陷。
+      const y = Math.min(rawY, effectiveMaxTa);
       let target;
 
       if (!anchors.length) {
@@ -651,10 +657,11 @@
           const span = b.ta - a.taEnd;
           target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
         } else {
-          const span = physicalMaxTa - a.taEnd;
+          // 最后一块之后：在有效行程内过渡，避免留白区域导致预览跳到底部。
+          const span = effectiveMaxTa - a.taEnd;
           target = span > 0.5
             ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
-            : (y >= physicalMaxTa - 0.5 ? maxPv : a.pvBottom);
+            : (y >= effectiveMaxTa - 0.5 ? maxPv : a.pvBottom);
         }
       }
 
