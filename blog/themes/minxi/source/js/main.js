@@ -189,13 +189,18 @@
         filter.classList.toggle("active", selected);
         filter.setAttribute("aria-pressed", String(selected));
       });
+      const filterValue = button.dataset.filter;
       let visible = 0;
-      document.querySelectorAll(".post-card[data-category]").forEach((card) => {
+      document.querySelectorAll(".post-card-wrapper").forEach((wrapper) => {
+        const card = wrapper.querySelector(".post-card");
         const matches =
-          button.dataset.filter === "all" ||
-          card.dataset.category === button.dataset.filter;
-        card.hidden = !matches;
-        if (matches) visible++;
+          filterValue === "all" || card.dataset.category === filterValue;
+        if (matches) {
+          wrapper.hidden = false;
+          if (!wrapper.classList.contains("post-batch-hidden")) visible++;
+        } else {
+          wrapper.hidden = true;
+        }
       });
       const empty = document.querySelector(".filter-empty");
       if (empty) empty.hidden = visible !== 0;
@@ -203,16 +208,57 @@
       document.querySelectorAll(".archive-year, .pinned-block").forEach((group) => {
         let count = 0;
         if (group.classList.contains("pinned-block")) {
-          count = [...group.querySelectorAll(".post-card")].filter((card) => !card.hidden).length;
+          count = [...group.querySelectorAll(".post-card")].filter(
+            (card) => !card.hidden && !card.closest(".post-batch-hidden"),
+          ).length;
         } else {
-          for (let el = group.nextElementSibling; el && !el.classList.contains("archive-year"); el = el.nextElementSibling) {
-            if (el.classList.contains("post-card") && !el.hidden) count++;
+          for (
+            let el = group.nextElementSibling;
+            el && !el.classList.contains("archive-year");
+            el = el.nextElementSibling
+          ) {
+            if (
+              el.classList.contains("post-card") &&
+              !el.hidden &&
+              !el.closest(".post-batch-hidden")
+            )
+              count++;
           }
         }
         group.hidden = count === 0;
       });
     }),
   );
+
+  // 首页分批显示：超过10篇文章时，默认只显示前6篇普通文章，
+  // 点击「加载更多」每次显示下6篇（在当前分类筛选下）。
+  const loadMoreBtn = document.querySelector("#load-more");
+  const loadHint = document.querySelector(".load-hint");
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", () => {
+      const activeFilter = document.querySelector("[data-filter].active");
+      const filterValue = activeFilter ? activeFilter.dataset.filter : "all";
+      let shown = 0;
+      document
+        .querySelectorAll(".post-card-wrapper.post-batch-hidden")
+        .forEach((wrapper) => {
+          const card = wrapper.querySelector(".post-card");
+          const matches =
+            filterValue === "all" || card.dataset.category === filterValue;
+          if (matches && shown < 6) {
+            wrapper.classList.remove("post-batch-hidden");
+            shown++;
+          }
+        });
+      const remaining = document.querySelectorAll(
+        ".post-card-wrapper.post-batch-hidden",
+      ).length;
+      if (remaining === 0) {
+        loadMoreBtn.hidden = true;
+        if (loadHint) loadHint.hidden = false;
+      }
+    });
+  }
 
   document.querySelectorAll("figure.highlight").forEach((block) => {
     const language =
