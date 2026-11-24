@@ -525,6 +525,11 @@ html.header-open .header-hint {
   transform: rotate(3deg);
   font: 12px var(--mono);
   color: var(--accent);
+  cursor: pointer;
+}
+.floating-tag:hover {
+  border-color: #6fd0a8;
+  transform: rotate(3deg) scale(1.02);
 }
 .floating-tag > span {
   border-radius: 50%;
