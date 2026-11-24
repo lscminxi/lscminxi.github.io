@@ -33,9 +33,21 @@ module.exports = function preprocessInlineMath(text) {
         j++;
       }
       if (j < text.length && text.startsWith(delimiter, j)) {
-        const content = text.slice(i + delimiter.length, j);
+        let content = text.slice(i + delimiter.length, j);
+        let end = j + delimiter.length;
+        // Marked's display-math rule requires the delimiter to be immediately
+        // followed by a newline. Markdown authors often leave spaces after $$;
+        // normalize only standalone delimiter lines, never inline $$ or code.
+        if (display && (i === 0 || text[i - 1] === '\n') && /^(?:[ \t]*\r?\n)/.test(content)
+          && /\n[ \t]*$/.test(content)) {
+          const closingSpace = text.slice(end).match(/^[ \t]*(?=\r?\n|$)/);
+          if (closingSpace) {
+            content = content.replace(/^[ \t]+(?=\r?\n)/, '').replace(/\n[ \t]+$/, '\n');
+            end += closingSpace[0].length;
+          }
+        }
         out += delimiter + (!display ? content.replace(/\r?\n/g, ' ') : content) + delimiter;
-        i = j + delimiter.length; continue;
+        i = end; continue;
       }
     }
     out += text[i++];
