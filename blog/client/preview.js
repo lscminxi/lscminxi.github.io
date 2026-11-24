@@ -5,6 +5,7 @@ import DOMPurify from 'dompurify';
 import foldContainers from '../lib/fold-containers.cjs';
 import plotExtensions from '../lib/plots.cjs';
 import options from '../lib/math-options.cjs';
+import preprocessInlineMath from '../lib/inline-math.cjs';
 // 函数图像交互（拖动/缩放/坐标读数）。注意：预览 iframe 本身仍然零脚本
 // （sandbox 不带 allow-scripts，绝不能加），交互是由后台父页面把监听器
 // 挂到 iframe 的文档上完成的，见下面的 enhance()。
@@ -34,40 +35,6 @@ const registerFigureSignatures = (root) => {
       try { figureSignatures.set(figure, figureSignature(figure)); } catch { /* 忽略 */ }
     }
   });
-};
-
-// 预处理跨行 inline math：marked-katex-extension 的 inline 正则不允许
-// 内容中包含换行符，导致 $...$ 跨多行时（如矩阵、分段函数）渲染失败。
-// 将跨行的 $...$ 内部换行符替换为空格，使其能被正确识别渲染。
-const preprocessInlineMath = (text) => {
-  let result = '';
-  let i = 0;
-  while (i < text.length) {
-    if (text[i] === '$') {
-      let j = i + 1;
-      let hasNewline = false;
-      while (j < text.length && text[j] !== '$') {
-        if (text[j] === '\n') hasNewline = true;
-        j += 1;
-      }
-      if (j < text.length && text[j] === '$') {
-        const content = text.slice(i + 1, j);
-        if (hasNewline) {
-          result += '$' + content.replace(/\n/g, ' ') + '$';
-        } else {
-          result += text.slice(i, j + 1);
-        }
-        i = j + 1;
-      } else {
-        result += text[i];
-        i += 1;
-      }
-    } else {
-      result += text[i];
-      i += 1;
-    }
-  }
-  return result;
 };
 
 window.MinxiPreview = {
