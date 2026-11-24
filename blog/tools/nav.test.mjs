@@ -305,3 +305,18 @@ test("search finds articles by LaTeX fragments with fuzzy matching", async () =>
     await env.close();
   }
 });
+
+test('百宝箱 is reachable from the main navigation and contains the local editor', async () => {
+  const { JSDOM } = await import('jsdom');
+  const home = new JSDOM(await readFile('public/index.html', 'utf8')).window.document;
+  const toolbox = new JSDOM(await readFile('public/toolbox/index.html', 'utf8')).window.document;
+  const editor = new JSDOM(await readFile('public/editor/index.html', 'utf8')).window.document;
+  const link = home.querySelector('nav[aria-label="主导航"] a[href="/toolbox/"]');
+  assert.equal(link?.textContent, '百宝箱');
+  assert.equal(toolbox.querySelector('nav a[href="/toolbox/"]')?.getAttribute('aria-current'), 'page');
+  assert(editor.querySelector('nav a[href="/toolbox/"]')?.classList.contains('active'));
+  const card = toolbox.querySelector('a.toolbox-card[href="/editor/"]');
+  assert(card?.textContent.includes('Markdown 编辑器'));
+  assert(card.textContent.includes('浏览器'));
+  assert(editor.querySelector('#public-f-body'));
+});
