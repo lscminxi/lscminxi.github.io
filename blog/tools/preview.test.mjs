@@ -1149,3 +1149,25 @@ test('preview reaching the bottom never sends the editor into overscroll padding
   assert.equal(editorTop, 200, 'preview scroll must not move the editor into its blank padding');
   editor.window.close();
 });
+
+test('display aligned math with trailing spaces on delimiter lines renders in preview and publication', async () => {
+  const formula = String.raw`\begin{aligned}
+\sum_{i=1}^{n} (i\times p)^2 &= \sum_{i=1}^{n} i^2 p^2 \\
+&= p^2 \times \frac{n(n+1)(2n+1)}{6}
+\end{aligned}`;
+  const md = `前文\n\n$$  \n${formula}\n$$  \n\n后文`;
+  const post = await hexo.post.render('aligned-math-test.md', { content: md });
+  for (const doc of [preview(md), new JSDOM(render(md)).window.document, new JSDOM(post.content).window.document]) {
+    assert.equal(doc.querySelectorAll('.katex-display').length, 1);
+    assert.equal(doc.querySelectorAll('.katex-error').length, 0);
+    assert.equal(doc.querySelector('annotation').textContent, formula);
+    assert(doc.body.textContent.includes('前文'));
+    assert(doc.body.textContent.includes('后文'));
+  }
+});
+
+test('display delimiter normalization does not alter code or inline display math', () => {
+  const preprocess = require('../lib/inline-math.cjs');
+  const source = '```tex\n$$  \nx\n$$  \n```\n\n`$$  `\n\n行内 $$x$$  后文';
+  assert.equal(preprocess(source), source);
+});
