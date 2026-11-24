@@ -2,7 +2,7 @@
 title: "题解：P17318 [ICPC 2018 Nanjing R] Adrien and Austin"
 date: 2026-11-24 18:57:00
 categories:
-  - 学习笔记
+  - 题解
 tags:
   - 博弈论
 ---
@@ -42,4 +42,5 @@ int main(){
 }	
 ```
 :::
+
 
