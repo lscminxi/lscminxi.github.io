@@ -2,7 +2,7 @@
 title: 图与函数测试
 date: 2026-10-20 22:14:00
 categories:
-  - 学习笔记
+  - 测试
 ---
 ```plot
 title: 函数图像
@@ -42,6 +42,7 @@ edge: A -> B ; weight=1
 edge: B -> C ; weight=2
 edge: C -- A ; weight=5
 ```
+
 
 
 
