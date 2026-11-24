@@ -4914,3 +4914,17 @@ body.zen-editing .editor-page .editor-guide {
 #load-more[hidden], .load-hint[hidden] { display: none; }
 .load-hint { margin: 0; padding: 11px; color: var(--dim); font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { #load-more { transition: none; } #load-more:hover { transform: none; } }
+
+/* 公开编辑器：本地草稿与文章信息 */
+.public-editor-local-note { padding: 13px 16px; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); font-size: 13px; margin-bottom: 18px; }
+.public-editor-local-note span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.public-editor-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.public-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 18px; }
+#editor-save-status { color: var(--muted); font-size: 12px; }
+.writing-workspace[data-mode="edit"] #public-f-body { display: block; }
+body.zen-editing .public-editor-meta, body.zen-editing .public-editor-actions, body.zen-editing .public-editor-local-note { display: none; }
+@media (max-width: 820px) {
+  .public-editor-meta { grid-template-columns: 1fr; gap: 0; }
+  .writing-workspace #public-post-preview, .writing-workspace .code-area, .writing-workspace .code-area.tall { height: 50vh; min-height: 320px; }
+  .writing-workspace[data-mode="zen"] { grid-template-columns: minmax(0, 1fr); height: auto; }
+}

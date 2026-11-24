@@ -25,6 +25,9 @@
 
   // ---------------- DOM 元素 ----------------
   const body = $('#public-f-body');
+  const title = $('#public-f-title');
+  const description = $('#public-f-description');
+  const previewStatus = $('#public-preview-status');
   const previewFrame = $('#public-post-preview');
   const writingWorkspace = $('#public-writing-workspace');
   const saveStatus = $('#editor-save-status');
@@ -256,126 +259,247 @@
     ['\\bot', ['假', 'bottom', 'bot']],
   ]);
 
-  let latexPickerSelection = null;
-  let latexPickerCategory = 'all';
-  let latexPickerActive = 0;
-  let latexPickerResults = [];
-
-  const currentLatexResults = () => {
-    if (latexPickerCategory === 'recent') return [];
-    if (latexPickerCategory === 'all') return [...latexSymbols];
-    return latexSymbols.filter((symbol) => symbol.category === latexPickerCategory);
-  };
-
-  const renderLatexPicker = () => {
-    latexCategoryTabs.innerHTML = '';
-    const seenCategories = new Set();
-    latexSymbols.forEach((symbol) => {
-      const category = symbol.category;
-      if (seenCategories.has(category)) return;
-      seenCategories.add(category);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'category-tab';
-      btn.textContent = latexCategoryName(symbol.category);
-      btn.dataset.category = category;
-      if (category === latexPickerCategory) {
-        btn.classList.add('active');
-        btn.setAttribute('aria-pressed', 'true');
-      } else {
-        btn.setAttribute('aria-pressed', 'false');
-      }
-      btn.addEventListener('click', () => {
-        latexPickerCategory = category;
-        renderLatexPicker();
-        renderLatexGrid();
-      });
-      latexCategoryTabs.append(btn);
-    });
-  };
-
-  const renderLatexGrid = () => {
-    latexPickerResults = currentLatexResults();
-    latexPickerActive = 0;
-    const q = latexSearchInput.value.trim().toLowerCase();
-    let filtered = latexPickerResults;
-    if (q) {
-      filtered = latexPickerResults.filter((symbol) =>
-        symbol.command.toLowerCase().includes(q) ||
-        symbol.aliases.some((a) => a.toLowerCase().includes(q))
-      );
-    }
-    latexSymbolGrid.innerHTML = '';
-    if (!filtered.length) {
-      latexSymbolGrid.className = 'latex-picker-empty';
-      latexSymbolGrid.textContent = '没有匹配的符号。';
-      return;
-    }
-    latexSymbolGrid.className = 'latex-symbol-grid';
-    filtered.forEach((symbol, index) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'latex-symbol-btn';
-      btn.dataset.latexIndex = index;
-      if (index === latexPickerActive) btn.classList.add('active');
-      btn.innerHTML = `<div class="latex-command">${escapeHtml(symbol.command)}</div><div class="latex-aliases">${symbol.aliases.slice(0, 3).join(' · ')}</div>`;
-      btn.title = symbol.command + ' · ' + symbol.aliases.join(', ');
-      btn.addEventListener('click', () => insertLatexSymbol(symbol));
-      latexSymbolGrid.append(btn);
-    });
-    latexCommandDisplay.textContent = filtered[latexPickerActive]?.command || '选择一个符号';
-    latexDetailDisplay.textContent = '方向键选择，Enter 或点击插入';
-  };
-
-  const escapeHtml = (text) => String(text).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-
-  // ---------------- 辅助：在光标处插入文本 ----------------
   const insertAtCursor = (text) => {
     const start = body.selectionStart ?? body.value.length;
     const end = body.selectionEnd ?? body.value.length;
-    const before = body.value.slice(0, start);
-    const after = body.value.slice(end);
-    body.value = before + text + after;
-    const cursorPos = start + text.length;
-    body.selectionStart = cursorPos;
-    body.selectionEnd = cursorPos;
+    body.value = body.value.slice(0, start) + text + body.value.slice(end);
+    body.selectionStart = body.selectionEnd = start + text.length;
     body.focus();
     body.dispatchEvent(new window.Event('input', { bubbles: true }));
   };
 
-  const insertLatexSymbol = (symbol) => {
-    const start = body.selectionStart ?? body.value.length;
-    const end = body.selectionEnd ?? body.value.length;
-    const before = body.value.slice(0, start);
-    const after = body.value.slice(end);
-    body.value = before + symbol.insert + after;
-    const cursorPos = start + symbol.cursor[0];
-    body.selectionStart = cursorPos;
-    body.selectionEnd = start + symbol.cursor[1];
-    body.focus();
-    body.dispatchEvent(new window.Event('input', { bubbles: true }));
-    closeLatexPicker();
+  const latexPreviewCache = new Map();
+  let latexPickerSelection = null;
+  let latexPickerCategory = "all";
+  let latexPickerActive = 0;
+  let latexPickerResults = [];
+  const latexRecentKey = "minxi:latex-recent";
+  const readLatexRecent = () => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(latexRecentKey) || "[]");
+      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
   };
-
+  const recordLatexRecent = (symbol) => {
+    try {
+      const next = [symbol.command, ...readLatexRecent().filter((item) => item !== symbol.command)].slice(0, 18);
+      window.localStorage.setItem(latexRecentKey, JSON.stringify(next));
+    } catch { /* 本地存储不可用时不影响插入 */ }
+  };
+  const recentLatexSymbols = () => readLatexRecent()
+    .map((command) => latexSymbols.find((symbol) => symbol.command === command))
+    .filter(Boolean);
+  const latexSubsequence = (needle, haystack) => {
+    if (!needle) return true;
+    let index = 0;
+    for (const char of haystack) {
+      if (char === needle[index]) index += 1;
+      if (index >= needle.length) return true;
+    }
+    return false;
+  };
+  const scoreLatexSymbol = (symbol, query) => {
+    const command = symbol.command.toLocaleLowerCase();
+    const bare = command.replace(/^\\+/, "");
+    const aliases = symbol.aliases.map((alias) => alias.toLocaleLowerCase());
+    if (bare === query || command === query || command === `\\${query}`) return 0;
+    if (bare.startsWith(query)) return 1;
+    if (symbol.glyph === query || aliases.some((alias) => alias === query)) return 2;
+    if (aliases.some((alias) => alias.startsWith(query))) return 3;
+    if (bare.includes(query)) return 4;
+    if (aliases.some((alias) => alias.includes(query))) return 5;
+    if (latexSubsequence(query, bare)) return 6;
+    if (aliases.some((alias) => latexSubsequence(query, alias))) return 7;
+    return Number.POSITIVE_INFINITY;
+  };
+  const currentLatexResults = () => {
+    const query = latexSearchInput.value.trim().toLocaleLowerCase().replace(/^\\+/, "");
+    if (query) {
+      return latexSymbols
+        .map((symbol, index) => ({ symbol, index, score: scoreLatexSymbol(symbol, query) }))
+        .filter((item) => Number.isFinite(item.score))
+        .sort((a, b) => a.score - b.score || a.index - b.index)
+        .map((item) => item.symbol);
+    }
+    if (latexPickerCategory === "recent") return recentLatexSymbols();
+    if (latexPickerCategory === "all") return [...latexSymbols];
+    return latexSymbols.filter((symbol) => symbol.category === latexPickerCategory);
+  };
+  const latexPreviewHtml = (symbol) => {
+    if (!latexPreviewCache.has(symbol.command)) {
+      latexPreviewCache.set(symbol.command, window.MinxiPreview?.renderLatex?.(symbol.preview) || "");
+    }
+    return latexPreviewCache.get(symbol.command);
+  };
+  const setLatexPickerActive = (index, scroll = false) => {
+    if (!latexPickerResults.length) return;
+    latexPickerActive = Math.min(Math.max(index, 0), latexPickerResults.length - 1);
+    [...latexSymbolGrid.querySelectorAll("[data-latex-index]")].forEach((button) => {
+      button.classList.toggle("active", Number(button.dataset.latexIndex) === latexPickerActive);
+    });
+    const symbol = latexPickerResults[latexPickerActive];
+    latexCommandDisplay.textContent = symbol.command;
+    latexDetailDisplay.textContent = `${latexCategoryName(symbol.category)} · ${symbol.aliases.join(" · ")}`;
+    if (scroll) latexSymbolGrid.querySelector(`[data-latex-index="${latexPickerActive}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+  const renderLatexTabs = () => {
+    const tabs = [{ id: "all", name: "全部" }];
+    if (recentLatexSymbols().length) tabs.push({ id: "recent", name: "最近" });
+    tabs.push(...latexCategories.map(([id, name]) => ({ id, name })));
+    latexCategoryTabs.replaceChildren(...tabs.map((tab) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = tab.name;
+      button.dataset.latexCategory = tab.id;
+      button.classList.toggle("active", !latexSearchInput.value.trim() && latexPickerCategory === tab.id);
+      button.setAttribute("aria-pressed", String(latexPickerCategory === tab.id));
+      return button;
+    }));
+  };
+  const renderLatexResults = () => {
+    latexPickerResults = currentLatexResults();
+    latexPickerActive = 0;
+    renderLatexTabs();
+    if (!latexPickerResults.length) {
+      const empty = document.createElement("p");
+      empty.className = "latex-picker-empty";
+      empty.textContent = latexSearchInput.value.trim() ? "没有匹配的符号，换个命令或中文叫法试试。" : "还没有用过的符号，搜一个插入后会出现在这里。";
+      latexSymbolGrid.replaceChildren(empty);
+      latexCommandDisplay.textContent = "没有匹配的符号";
+      latexDetailDisplay.textContent = "可搜 \\pm、正负、积分、分数等";
+      return;
+    }
+    const nodes = latexPickerResults.map((symbol, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "latex-symbol-card";
+      button.dataset.latexIndex = String(index);
+      button.title = `${symbol.command}（${symbol.aliases.join(" · ")}）`;
+      button.setAttribute("aria-label", `插入 ${symbol.command}，${symbol.aliases.join("、")}`);
+      const preview = document.createElement("span");
+      preview.className = "latex-symbol-preview";
+      // 矩阵/分段/对齐等宽预览加 is-wide，CSS 缩小一号完整显示。
+      if (!symbol.glyph && String(symbol.preview || "").length > 22) preview.classList.add("is-wide");
+      if (symbol.glyph) preview.textContent = symbol.glyph;
+      else {
+        const html = latexPreviewHtml(symbol);
+        if (html) preview.innerHTML = html;
+        else preview.textContent = symbol.preview;
+      }
+      const command = document.createElement("span");
+      command.className = "latex-symbol-name";
+      command.textContent = symbol.command;
+      button.append(preview, command);
+      return button;
+    });
+    latexSymbolGrid.replaceChildren(...nodes);
+    setLatexPickerActive(0);
+  };
+  const restoreLatexEditorFocus = (selection = latexPickerSelection) => {
+    body.focus({ preventScroll: true });
+    if (!selection) return;
+    const start = Math.min(selection.start, body.value.length);
+    const end = Math.min(selection.end, body.value.length);
+    body.selectionStart = start;
+    body.selectionEnd = end;
+  };
   const openLatexPicker = () => {
     latexPickerSelection = {
       start: body.selectionStart ?? body.value.length,
       end: body.selectionEnd ?? body.value.length,
     };
-    latexPickerCategory = 'all';
-    latexSearchInput.value = '';
-    renderLatexPicker();
-    renderLatexGrid();
+    latexPickerCategory = "all";
+    latexSearchInput.value = "";
     latexPicker.hidden = false;
-    latexPickerBackdrop.hidden = false;
-    latexSearchInput.focus();
+    renderLatexResults();
+    setTimeout(() => latexSearchInput.focus(), 0);
   };
-
-  const closeLatexPicker = () => {
+  const closeLatexPicker = (restoreFocus = true) => {
+    if (latexPicker.hidden) return;
     latexPicker.hidden = true;
-    latexPickerBackdrop.hidden = true;
-    body.focus();
+    if (restoreFocus) restoreLatexEditorFocus();
   };
+  const insertLatexSymbol = (symbol) => {
+    if (!symbol) return;
+    recordLatexRecent(symbol);
+    const saved = latexPickerSelection || {
+      start: body.selectionStart ?? body.value.length,
+      end: body.selectionEnd ?? body.value.length,
+    };
+    const start = Math.min(saved.start, body.value.length);
+    const end = Math.min(saved.end, body.value.length);
+    body.value = body.value.slice(0, start) + symbol.insert + body.value.slice(end);
+    latexPicker.hidden = true;
+    body.focus({ preventScroll: true });
+    body.selectionStart = start + symbol.cursor[0];
+    body.selectionEnd = start + symbol.cursor[1];
+    body.dispatchEvent(new window.Event("input", { bubbles: true }));
+  };
+  latexCategoryTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-latex-category]");
+    if (!button) return;
+    latexPickerCategory = button.dataset.latexCategory;
+    latexSearchInput.value = "";
+    renderLatexResults();
+    latexSearchInput.focus();
+  });
+  latexSymbolGrid.addEventListener("mouseover", (event) => {
+    const button = event.target.closest("[data-latex-index]");
+    if (button) setLatexPickerActive(Number(button.dataset.latexIndex));
+  });
+  latexSymbolGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-latex-index]");
+    if (button) insertLatexSymbol(latexPickerResults[Number(button.dataset.latexIndex)]);
+  });
+  latexSearchInput.addEventListener("input", renderLatexResults);
+  latexSearchInput.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLatexPicker();
+      return;
+    }
+    if (!latexPickerResults.length) return;
+    const columns = Math.max(1, (window.getComputedStyle(latexSymbolGrid).gridTemplateColumns || "").split(" ").filter(Boolean).length || 6);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setLatexPickerActive(latexPickerActive + columns, true);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setLatexPickerActive(latexPickerActive - columns, true);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const collapsed = latexSearchInput.selectionStart === latexSearchInput.selectionEnd;
+      const atBoundary = event.key === "ArrowLeft"
+        ? collapsed && latexSearchInput.selectionStart === 0
+        : collapsed && latexSearchInput.selectionStart === latexSearchInput.value.length;
+      if (atBoundary) {
+        event.preventDefault();
+        setLatexPickerActive(latexPickerActive + (event.key === "ArrowLeft" ? -1 : 1), true);
+      }
+    } else if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      insertLatexSymbol(latexPickerResults[latexPickerActive]);
+    }
+  });
+  $("#public-close-latex-picker").addEventListener("click", () => closeLatexPicker());
+  $("#public-latex-picker-backdrop").addEventListener("click", () => closeLatexPicker());
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !latexPicker.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeLatexPicker();
+    }
+  }, true);
+  body.addEventListener("keydown", (event) => {
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "ArrowUp" && !event.isComposing) {
+      event.preventDefault();
+      openLatexPicker();
+    }
+  });
+  $("#public-insert-latex-symbol").addEventListener("click", openLatexPicker);
+
 
   // ---------------- 自动保存 ----------------
   let draftTimer = 0;
@@ -388,6 +512,8 @@
         const data = JSON.parse(raw);
         if (data && typeof data.text === 'string') {
           body.value = data.text;
+          title.value = typeof data.title === 'string' ? data.title : '';
+          description.value = typeof data.description === 'string' ? data.description : '';
           draftSavedAt = data.savedAt || '';
           return true;
         }
@@ -397,28 +523,40 @@
   };
 
   const saveDraft = () => {
-    const text = body.value;
-    const data = { text, savedAt: new Date().toISOString() };
+    clearTimeout(draftTimer);
+    draftTimer = 0;
+    const data = { text: body.value, title: title.value, description: description.value, savedAt: new Date().toISOString() };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       draftSavedAt = data.savedAt;
-      saveStatus.textContent = `本地草稿已自动保存（${new Date(data.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}）`;
-      saveStatus.hidden = false;
-    } catch { /* localStorage 不可用时忽略 */ }
+      saveStatus.textContent = `本地草稿已保存（${new Date(data.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}）`;
+      return true;
+    } catch {
+      saveStatus.textContent = '本地保存失败，请下载 Markdown 备份';
+      return false;
+    }
   };
 
   const scheduleSave = () => {
     clearTimeout(draftTimer);
+    saveStatus.textContent = '等待保存到本地…';
     draftTimer = setTimeout(saveDraft, AUTO_SAVE_MS);
     updateStats();
   };
 
   const clearDraft = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    body.value = '';
+    if (!window.confirm('确定清除当前浏览器中的草稿吗？此操作无法撤销。')) return;
+    clearTimeout(draftTimer);
+    draftTimer = 0;
+    try { localStorage.removeItem(STORAGE_KEY); } catch {
+      saveStatus.textContent = '无法清除本地草稿，请检查浏览器存储权限';
+      return;
+    }
+    body.value = ''; title.value = ''; description.value = '';
     draftSavedAt = '';
-    saveStatus.hidden = true;
+    saveStatus.textContent = '本地草稿已清除';
     updateStats();
+    queuePreview();
     showToast('本地草稿已清除');
   };
 
@@ -430,10 +568,8 @@
 
   // ---------------- 插入按钮事件 ----------------
   $('#public-insert-math')?.addEventListener('click', () => {
-    insertAtCursor("\n\n$$\n\f(n) = \sum_{i=1}^{n} i = \frac{n(n+1)}{2}\n$$\n\n");
+    insertAtCursor("\n\n$$\nf(n) = \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n");
   });
-
-  $('#public-insert-latex-symbol')?.addEventListener('click', openLatexPicker);
 
   $('#public-insert-fold')?.addEventListener('change', (event) => {
     const kind = event.target.value;
@@ -454,11 +590,8 @@
     event.target.value = '';
   });
 
-  $('#public-insert-image')?.addEventListener('change', (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    showToast('公开编辑器不支持图片上传，请手动输入 Markdown 图片语法');
-    event.target.value = '';
+  $('#public-insert-image')?.addEventListener('click', () => {
+    insertAtCursor('![图片说明](https://)');
   });
 
   $('#public-insert-more')?.addEventListener('click', () => {
@@ -506,22 +639,23 @@
   let lineMirror = null;
   let syncRaf = 0;
   let editorSyncRaf = 0;
-  let mirrorIdleTimer = 0;
   let syncingPreview = false;
   let syncingEditor = false;
   let previewLoadPending = false;
 
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
 
-  // 给 textarea 加底部留白：只保留一行的留白，让最后一行在滚到尽头时
-  // 仍能在编辑区可见范围内（底部附近），不会被大段空白推到顶部。
+  // 与后台一致：用视觉留白让最后一行可滚到编辑区顶部，不改变草稿正文。
   const updateEditorOverscroll = () => {
     const ta = body;
     if (!ta) return;
     const style = window.getComputedStyle(ta);
     const fontSize = parseFloat(style.fontSize) || 12.5;
     const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.9;
-    ta.style.paddingBottom = `${Math.round(lineHeight)}px`;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const height = Number.isFinite(ta.clientHeight) ? ta.clientHeight : 0;
+    const bottom = height > 0 ? Math.max(lineHeight, height - paddingTop - lineHeight) : lineHeight;
+    ta.style.paddingBottom = `${Math.round(bottom)}px`;
     scrollAnchorsDirty = true;
   };
 
@@ -572,12 +706,15 @@
       const last = kids[kids.length - 1];
       return (last.offsetTop || 0) + (last.offsetHeight || 0);
     };
+    // 锚点的编辑区坐标以第一行行首为 0：textarea 的 scrollTop 同样以第一行
+    // 能滚到的位置为基准，直接拿镜像的绝对 offsetTop 会多出顶部内边距。
     const mirrorBaseTop = mirrorLineTop(1);
     const isAtomicBlock = (block) => {
+      // 函数图/关系图不再整块钉在顶部：和折叠框一样按块内进度缓慢下移。
       // 独立图片没有可对应的源码内部进度，仍整块对齐。
       return Boolean(block.querySelector?.(':scope > img'));
     };
-    for (const block of doc.querySelectorAll('[data-source-line]')) {
+    for (const block of doc.querySelectorAll("[data-source-line]")) {
       const parentFold = block.parentElement?.closest?.('details.fold-box');
       if (parentFold && !parentFold.open) continue;
       if (!block.classList?.contains('fold-box')
@@ -601,69 +738,81 @@
     }
     return anchors;
   };
-
   const syncPreviewScroll = () => {
     if (syncingPreview) return;
     syncingPreview = true;
     try {
       const ta = body;
-      const doc = previewFrame.contentDocument;
-      const scroll = doc?.scrollingElement;
-      if (!doc || !scroll) return;
-      if (writingWorkspace?.dataset.mode === 'edit') return;
-      const maxPv = scroll.scrollHeight - scroll.clientHeight;
-      if (!(maxPv > 0)) return;
-
-      const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
-      const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
-      const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
-      if (!(physicalMaxTa > 0)) {
-        if (scroll.style) scroll.style.scrollBehavior = 'auto';
-        scroll.scrollTop = 0;
-        return;
-      }
-
-      const anchors = collectScrollAnchors(doc, scroll);
-      const rawY = ta.scrollTop || 0;
-      // 编辑区已进入留白区域（rawY > effectiveMaxTa）：不再滚动预览，
-      // 避免触发表面上的预览滚动事件从而导致 syncEditorScroll 把编辑区
-      // 拖到文末空白处。编辑区保持在当前位置，不做任何程序性移动。
-      if (rawY > effectiveMaxTa) {
-        return;
-      }
-      const y = rawY;
-      let target;
-
-      if (!anchors.length) {
-        target = effectiveMaxTa > 0 ? (y / effectiveMaxTa) * maxPv : maxPv;
-      } else if (rawY >= effectiveMaxTa - 0.5) {
-        // 编辑区滚到有效底部（内容实际结束）：预览同时到底。
-        target = maxPv;
-      } else if (y < anchors[0].ta) {
-        target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
-      } else {
-        let i = anchors.length - 1;
-        while (i > 0 && anchors[i].ta > y) i -= 1;
-        const a = anchors[i];
-        if (y < a.taEnd) {
-          // 不在渲染到行头就同步滚动：编辑区在块内滚动时，预览保持在
-          // 块起始位置，不随编辑区滚动。只有当编辑区滚到行尾（y >=
-          // a.taEnd）时，才把预览映射到该块的结束位置（最后一行）。
+    const doc = previewFrame.contentDocument;
+    const scroll = doc?.scrollingElement;
+    if (!doc || !scroll) return;
+    if (writingWorkspace?.dataset.mode === "edit") return;
+    const maxPv = scroll.scrollHeight - scroll.clientHeight;
+    if (!(maxPv > 0)) return;
+    // 编辑区的可滚行程以物理行程为准：底部留白正是让最后一行能继续滚到
+    // 编辑区顶部的那段距离，锚点坐标也按完整行程计算。若在这里先把位置
+    // 钳到「扣除留白后的行程」，滚到最后约一屏时位置会被提前冻住，预览
+    // 还没到底就不再跟随。只有完全没有锚点、退回百分比同步时，才按扣除
+    // 留白后的行程算，避免留白把百分比稀释。
+    const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
+    const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+    const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
+    if (!(physicalMaxTa > 0)) {
+      // 正文短到本身不用滚：预览直接对齐顶部。
+      if (scroll.style) scroll.style.scrollBehavior = "auto";
+      scroll.scrollTop = 0;
+      return;
+    }
+    const anchors = collectScrollAnchors(doc, scroll);
+    const rawY = ta.scrollTop || 0;
+    const y = Math.min(rawY, anchors.length ? physicalMaxTa : effectiveMaxTa);
+    let target;
+    if (!anchors.length) {
+      // 没有可用锚点时退回按正文总高度比例同步（不含文末留白）。
+      target = effectiveMaxTa > 0 ? (y / effectiveMaxTa) * maxPv : maxPv;
+    } else if (rawY >= physicalMaxTa - 0.5) {
+      // 编辑区真正到底：预览必须同时到底，不能停在最后一块的内部映射上。
+      target = maxPv;
+    } else if (y < anchors[0].ta) {
+      target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
+    } else {
+      let i = anchors.length - 1;
+      while (i > 0 && anchors[i].ta > y) i -= 1;
+      const a = anchors[i];
+      if (y < a.taEnd) {
+        // 块内部：独立图片停在块顶；其余块（含图与折叠框）按行位置
+        // 比例摊到当前渲染高度，随编辑滚动缓慢下移。
+        if (a.atomic) {
           target = a.pv;
         } else {
-          // 行尾：保持预览在该块的结束位置（最后一行），不跳到空白。
-          // 只有当编辑区进入下一个锚点块时，才会在下一次循环中重新定位。
-          target = a.pvBottom;
+          const span = a.taEnd - a.ta;
+          target = span > 0 ? a.pv + ((y - a.ta) / span) * (a.pvBottom - a.pv) : a.pv;
         }
+      } else if (i + 1 < anchors.length) {
+        // 块之间的空行区：从上一块下沿过渡到下一块上沿。
+        const b = anchors[i + 1];
+        const span = b.ta - a.taEnd;
+        target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
+      } else {
+        // 最后一块之后：平滑过渡到两侧同时见底。
+        const span = physicalMaxTa - a.taEnd;
+        target = span > 0.5
+          ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
+          : (y >= physicalMaxTa - 0.5 ? maxPv : a.pvBottom);
       }
-
-      if (scroll.style) scroll.style.scrollBehavior = 'auto';
-      scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
+    }
+    // 预览文档继承了站点的 smooth 滚动；程序对齐必须直接落位，不能播放
+    // 一段从旧位置滚到目标位置的物理滚动动画。
+    if (scroll.style) scroll.style.scrollBehavior = "auto";
+    scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
     } finally {
       syncingPreview = false;
     }
   };
 
+  /* 预览滚动 → 编辑区跟随：反向查找预览滚动位置对应的源码锚点，
+     把预览区间映射回编辑区行镜像的像素位置，带动编辑区同步滚动。
+     防止与编辑区→预览的同步形成循环，通过 syncingEditor 标志互斥。 */
   const syncEditorScroll = () => {
     if (syncingEditor) return;
     syncingEditor = true;
@@ -676,38 +825,46 @@
       const ta = body;
       const maxPv = scroll.scrollHeight - scroll.clientHeight;
       const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
-      const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
-      const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
       if (!(physicalMaxTa > 0)) return;
       const pv = scroll.scrollTop || 0;
 
       let targetTa;
       if (pv <= anchors[0].pv) {
+        // 预览在第一个锚点之前：按比例回退到编辑区顶部区间。
         targetTa = anchors[0].ta > 0 ? (pv / anchors[0].pv) * anchors[0].ta : 0;
       } else if (pv >= maxPv - 0.5) {
-        // 预览真正到底（用户滚轮滚动或自动渲染）：编辑区保持原位，
-        // 不做任何操作，不被拖到文末空白处。
-        return;
+        // 预览真正到底：编辑区也到底部。
+        targetTa = physicalMaxTa;
       } else {
+        // 从后往前找到第一个 pv >= anchors[i].pv 的锚点，pv 落在该锚点覆盖范围内或之后。
         let i = anchors.length - 1;
         while (i > 0 && anchors[i].pv > pv) i -= 1;
         const a = anchors[i];
-        if (pv < a.pvBottom) {
-          // 不在渲染到行头就同步滚动：预览在块内滚动时，编辑区保持在
-          // 块起始位置，不随预览滚动。只有当预览滚到行尾（pv >=
-          // a.pvBottom）时，才在下面的分支里把编辑区映射到该块的
-          // 结束位置。
-          targetTa = a.ta;
+        if (pv <= a.pvBottom) {
+          // 在锚点 a 覆盖范围内（块内）。
+          if (a.atomic) {
+            // 独立图片整块对齐：回到块顶。
+            targetTa = a.ta;
+          } else {
+            const pvSpan = a.pvBottom - a.pv;
+            const taSpan = a.taEnd - a.ta;
+            targetTa = pvSpan > 0 ? a.ta + ((pv - a.pv) / pvSpan) * taSpan : a.ta;
+          }
+        } else if (i + 1 < anchors.length) {
+          // 块间空行区域：a.pvBottom < pv < anchors[i+1].pv。
+          const b = anchors[i + 1];
+          const pvSpan = b.pv - a.pvBottom;
+          const taSpan = b.ta - a.taEnd;
+          targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
         } else {
-          // 行尾：保持编辑区在该块的结束位置（最后一行），不跳到空白。
-          // 只有当预览进入下一个锚点块时，才会在下一次循环中重新定位。
-          targetTa = a.taEnd;
+          // 最后一块之后：平滑过渡到两侧同时见底。
+          const span = maxPv - a.pvBottom;
+          targetTa = span > 0.5
+            ? a.taEnd + ((pv - a.pvBottom) / span) * (physicalMaxTa - a.taEnd)
+            : physicalMaxTa;
         }
       }
-      // 编辑区永远不会被程序移动到留白区域（effectiveMaxTa 以上），
-      // 只能由用户自己滚动进入留白。程序性移动始终限制在有效内容
-      // 范围内，避免「预览到底时编辑区被拖到全是空格的地方」。
-      ta.scrollTop = Math.max(0, Math.min(effectiveMaxTa, targetTa));
+      ta.scrollTop = Math.max(0, Math.min(physicalMaxTa, targetTa));
     } finally {
       syncingEditor = false;
     }
@@ -723,9 +880,117 @@
     syncRaf = scheduleFrame(() => { syncRaf = 0; syncPreviewScroll(); });
   };
 
-  const queueEditorSync = () => {
-    if (editorSyncRaf) return;
-    editorSyncRaf = scheduleFrame(() => { editorSyncRaf = 0; syncEditorScroll(); });
+
+  const formatGraphCoord = (value) => String(Number(Number(value).toFixed(2)));
+  const rewriteGraphBlockPositions = (markdown, graphIndex, positions) => {
+    const lines = String(markdown).split("\n");
+    const graphNodeId = /^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/;
+    let current = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^```graph\s*$/.test(lines[i].trim())) continue;
+      current += 1;
+      let end = i + 1;
+      while (end < lines.length && !/^```\s*$/.test(lines[end].trim())) end += 1;
+      if (current !== graphIndex) { i = end; continue; }
+      if (end >= lines.length) return null;
+      const seen = new Set();
+      const bodyLines = lines.slice(i + 1, end).map((line) => {
+        const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
+        if (!match) return line;
+        const idSegment = match[2].trim();
+        // 点名后可能跟点权（A[5] / A(5)）：识别真实点名，写回时原样保留这一段。
+        const idMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)(?:\s*(?:\[[^\]]+\]|\([^)]+\)))?$/.exec(idSegment);
+        const id = idMatch?.[1] || '';
+        if (!graphNodeId.test(id)) return line;
+        seen.add(id);
+        const options = (match[3] || "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item) => !/^(x|y)\s*=/i.test(item));
+        const pos = positions?.[id];
+        if (pos && Number.isFinite(Number(pos.x)) && Number.isFinite(Number(pos.y))) {
+          options.push(`x=${formatGraphCoord(pos.x)}`, `y=${formatGraphCoord(pos.y)}`);
+        }
+        return options.length ? `${match[1]}${idSegment} ; ${options.join(" ; ")}` : `${match[1]}${idSegment}`;
+      });
+      if (positions) {
+        for (const [id, pos] of Object.entries(positions)) {
+          if (seen.has(id) || !graphNodeId.test(id)) continue;
+          if (!pos || !Number.isFinite(Number(pos.x)) || !Number.isFinite(Number(pos.y))) continue;
+          bodyLines.push(`node: ${id} ; x=${formatGraphCoord(pos.x)} ; y=${formatGraphCoord(pos.y)}`);
+        }
+      }
+      return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
+    }
+    return null;
+  };
+  const formatGraphWeight = (value) => String(Number(Number(value).toFixed(4)));
+  const rewriteGraphBlockNodeWeight = (markdown, graphIndex, nodeId, weight) => {
+    if (!/^[A-Za-z0-9_\-\u4e00-\u9fa5]+$/.test(String(nodeId || ''))) return null;
+    if (weight !== null && !Number.isFinite(Number(weight))) return null;
+    const lines = String(markdown).split("\n");
+    let current = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^```graph\s*$/.test(lines[i].trim())) continue;
+      current += 1;
+      let end = i + 1;
+      while (end < lines.length && !/^```\s*$/.test(lines[end].trim())) end += 1;
+      if (current !== graphIndex) { i = end; continue; }
+      if (end >= lines.length) return null;
+      let seen = false;
+      const bodyLines = lines.slice(i + 1, end).map((line) => {
+        const match = /^(\s*(?:node|点|顶点)\s*[:：]\s*)([^;]+?)\s*(?:;\s*(.*))?$/.exec(line);
+        if (!match) return line;
+        const idSegment = match[2].trim();
+        const idMatch = /^([A-Za-z0-9_\-\u4e00-\u9fa5]+)(?:\s*(?:\[[^\]]+\]|\([^)]+\)))?$/.exec(idSegment);
+        const id = idMatch?.[1] || '';
+        if (id !== nodeId) return line;
+        seen = true;
+        const options = (match[3] || "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item) => !/^(weight|w|点权|权重)\s*(?:=|[:：])/i.test(item));
+        if (weight !== null) options.push(`weight=${formatGraphWeight(weight)}`);
+        return options.length ? `${match[1]}${id} ; ${options.join(" ; ")}` : `${match[1]}${id}`;
+      });
+      if (!seen && weight !== null) {
+        bodyLines.push(`node: ${nodeId} ; weight=${formatGraphWeight(weight)}`);
+      }
+      return [...lines.slice(0, i + 1), ...bodyLines, ...lines.slice(end)].join("\n");
+    }
+    return null;
+  };
+  const handleGraphNodeWeight = (event) => {
+    const detail = event.detail || {};
+    const graphIndex = Number(detail.graphIndex || 0);
+    const weight = detail.weight === null ? null : Number(detail.weight);
+    if (detail.weight !== null && !Number.isFinite(weight)) return;
+    const next = rewriteGraphBlockNodeWeight(body.value, graphIndex, detail.nodeId, weight);
+    if (next === null || next === body.value) return;
+    const cursor = Math.min(body.selectionStart ?? next.length, next.length);
+    body.value = next;
+    body.selectionStart = body.selectionEnd = cursor;
+    body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    previewStatus.textContent = weight === null
+      ? "图点权已从源码清除（将自动保存到本地草稿）"
+      : "图点权已写回源码（将自动保存到本地草稿）";
+  };
+  const handleGraphPositions = (event) => {
+    const detail = event.detail || {};
+    const graphIndex = Number(detail.graphIndex || 0);
+    const positions = detail.reset ? null : detail.positions;
+    if (!detail.reset && (!positions || typeof positions !== "object")) return;
+    const next = rewriteGraphBlockPositions(body.value, graphIndex, positions);
+    if (next === null || next === body.value) return;
+    const cursor = Math.min(body.selectionStart ?? next.length, next.length);
+    body.value = next;
+    body.selectionStart = body.selectionEnd = cursor;
+    body.dispatchEvent(new window.Event("input", { bubbles: true }));
+    previewStatus.textContent = detail.reset
+      ? "图点位已重置为自动布局（改动将自动保存到本地）"
+      : "图点位已写回源码（将自动保存到本地草稿）";
   };
 
   // ---------------- 预览渲染 ----------------
@@ -738,37 +1003,46 @@
     });
   };
 
+  let previewSignature = '';
   const renderPreview = () => {
-    const doc = previewFrame.contentDocument;
-    if (!doc) return;
-    if (typeof window.MinxiPreview === 'undefined' || !window.MinxiPreview.buildFragment) {
-      if (previewReadyRetries < MAX_PREVIEW_READY_RETRIES) {
-        previewReadyRetries++;
-        setTimeout(() => renderPreview(), 100);
-      }
-      return;
-    }
-    const text = body.value;
-    let fragment;
+    if (!window.MinxiPreview?.document) return;
+    const input = { body: body.value, title: title.value, description: description.value };
+    const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    const signature = JSON.stringify([input, theme]);
+    if (signature === previewSignature || previewLoadPending) return;
     try {
-      fragment = window.MinxiPreview.buildFragment({ body: text });
+      const doc = previewFrame.contentDocument;
+      const hasContent = !!doc?.querySelector('.article-content');
+      const openFolds = hasContent ? [...doc.querySelectorAll('details.fold-box[open][data-preview-fold-key]')].map((fold) => fold.dataset.previewFoldKey) : [];
+      const plotViews = hasContent ? [...doc.querySelectorAll('.md-plot')].map((figure) => ({
+        xMin: figure.dataset.viewXMin, xMax: figure.dataset.viewXMax,
+        yMin: figure.dataset.viewYMin, yMax: figure.dataset.viewYMax,
+        coords: figure.dataset.viewCoords, intersections: figure.dataset.viewIntersections,
+      })) : [];
+      const graphViews = hasContent ? [...doc.querySelectorAll('.md-graph svg')].map((svg) => svg.getAttribute('data-preview-viewbox') || '') : [];
+      const options = { ...input, openFolds, plotViews, graphViews };
+      const frameTheme = doc?.documentElement?.dataset.theme === 'light' ? 'light' : 'dark';
+      if (!previewLoadPending && hasContent && frameTheme === theme && window.MinxiPreview.patch(doc, options)) {
+        window.MinxiPreview.enhance(doc);
+        scrollAnchorsDirty = true;
+        syncPreviewScroll();
+      } else {
+        previewLoadPending = true;
+        previewFrame.srcdoc = window.MinxiPreview.document(options);
+      }
+      previewSignature = signature;
+      previewStatus.textContent = '预览已更新 · Markdown / KaTeX / 折叠框 / 可交互图表（代码高亮与目录以发布页为准）';
     } catch (error) {
-      doc.body.innerHTML = `<div class="muted small">预览渲染出错：${escapeHtml(error.message)}</div>`;
-      return;
+      previewStatus.textContent = `预览失败：${error.message}`;
     }
-    doc.body.innerHTML = '';
-    doc.body.appendChild(fragment);
-    doc.querySelectorAll('pre code[class*="language-\"]').forEach((code) => {
-      const pre = code.parentElement;
-      if (pre) pre.classList.add('highlight');
-    });
-    // 渲染完成后标脏锚点，下次滚动时重新收集
-    scrollAnchorsDirty = true;
   };
 
   // ---------------- 下载 .md ----------------
   const downloadMd = () => {
-    const text = body.value;
+    const metadata = [];
+    if (title.value) metadata.push(`title: ${JSON.stringify(title.value)}`);
+    if (description.value) metadata.push(`description: ${JSON.stringify(description.value)}`);
+    const text = (metadata.length ? `---\n${metadata.join('\n')}\n---\n\n` : '') + body.value;
     const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -784,8 +1058,7 @@
   };
 
   const saveToLocal = () => {
-    saveDraft();
-    showToast('已保存到本地草稿');
+    if (saveDraft()) showToast('已保存到本地草稿');
   };
 
   // ---------------- 初始化 ----------------
@@ -813,41 +1086,13 @@
     loadDraft();
     updateStats();
 
-    body.addEventListener('input', () => {
+    [body, title, description].forEach((field) => field.addEventListener('input', () => {
+      scrollAnchorsDirty = true;
       scheduleSave();
       queuePreview();
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowUp' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        if (latexPicker.hidden === false) return;
-        event.preventDefault();
-        openLatexPicker();
-      }
-      if (event.key === 'Escape' && latexPicker.hidden === false) {
-        closeLatexPicker();
-      }
-    });
-
-    latexSearchInput.addEventListener('input', renderLatexGrid);
-    latexSearchInput.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        latexPickerActive = Math.min(latexPickerActive + 1, latexPickerResults.length - 1);
-        renderLatexGrid();
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        latexPickerActive = Math.max(latexPickerActive - 1, 0);
-        renderLatexGrid();
-      } else if (event.key === 'Enter') {
-        event.preventDefault();
-        const symbol = latexPickerResults[latexPickerActive];
-        if (symbol) insertLatexSymbol(symbol);
-      }
-    });
-
-    $('#public-close-latex-picker')?.addEventListener('click', closeLatexPicker);
-    latexPickerBackdrop?.addEventListener('click', closeLatexPicker);
+    }));
+    window.addEventListener('pagehide', () => { if (draftTimer) saveDraft(); });
+    new MutationObserver(() => queuePreview()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     downloadBtn?.addEventListener('click', downloadMd);
     clearBtn?.addEventListener('click', clearDraft);
@@ -873,7 +1118,10 @@
     // 并做初始对齐与多次校准（参考后台编辑器），避免 iframe 未就绪时
     // 监听器绑定失败导致预览滚动不跟随编辑区。
     previewFrame.addEventListener('load', () => {
+      previewLoadPending = false;
       scrollAnchorsDirty = true;
+      try { previewFrame.contentDocument?.addEventListener('minxi:graph-positions', handleGraphPositions);
+        previewFrame.contentDocument?.addEventListener('minxi:graph-node-weight', handleGraphNodeWeight); } catch { /* iframe 尚未就绪 */ }
       try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
       try {
         previewFrame.contentDocument?.addEventListener('scroll', () => {
@@ -882,6 +1130,7 @@
           editorSyncRaf = scheduleFrame(() => { editorSyncRaf = 0; syncEditorScroll(); });
         }, { passive: true });
       } catch { /* 预览滚动监听器绑定失败时忽略 */ }
+      if (previewSignature !== JSON.stringify([{ body: body.value, title: title.value, description: description.value }, document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'])) queuePreview();
       syncPreviewScroll();
       const revealAlignedPreview = () => {
         syncPreviewScroll();
