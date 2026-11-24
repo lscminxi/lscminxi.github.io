@@ -2,7 +2,7 @@
 title: 浅谈 Kruskal 重构树
 date: 2026-10-23 14:52:00
 categories:
-  - 学习笔记
+  - 总结
 tags:
   - 图论
   - 生成树
@@ -67,4 +67,5 @@ node: 9 ; x=-91.31 ; y=131.33 ; weight=3
 :::
 
 板子题，先预处理出 kruskal 重构树，对于每个询问，先判断 $x,y$ 是否在一棵树上，然后求出 $\operatorname{lca}(u,v)$ 的点权即可。
+
 
