@@ -140,22 +140,14 @@ assert(!/font-size:\s*11px/.test(gutterPre), "Gutter must not use a smaller font
 assert(/\.highlight td\s*\{[^}]*vertical-align:\s*top/.test(css), "Highlight cells must align at the top");
 assert(css.includes('html[data-theme="light"] .article-content'), "Light overrides for articles are missing");
 
-// 顶栏：展开状态由 main.js 判断后加类，靠 :hover 会卡住（详见 tools/nav.test.mjs）
-assert(index.includes('class="header-hint"'), "Top hint arrow is missing");
-assert(index.includes("data-open-header"), "Top hint arrow trigger is missing");
-assert(index.includes('class="header-hover-zone"'), "Header hover zone is missing");
-assert(/js\/main\.js\?v=/.test(index), "Header script must be cache-busted");
-assert(/css\/main\.css\?v=/.test(index), "Header stylesheet must be cache-busted");
-assert(css.includes("html.header-open .site-header"), "Header open state must be class driven");
-const bareCss = css.replace(/\/\*[\s\S]*?\*\//g, " "); // 注释里也有选择器，先剥掉
-const hoverOpeners = [...bareCss.matchAll(/([^{}]+)\{/g)]
-  .flatMap((match) => match[1].split(","))
-  .map((selector) => selector.replace(/\s+/g, " ").trim())
-  .filter((selector) => /:hover/.test(selector) && /(\.site-header|\.site-header:hover)$/.test(selector));
-assert(hoverOpeners.length >= 3, `Header hover fallback rules are missing (${hoverOpeners.length})`);
-for (const selector of hoverOpeners) {
-  assert(selector.startsWith("html:not(.header-js)"), `Header opens from bare :hover, it will stick: ${selector}`);
-}
+// 顶栏始终可见，不依赖 JS、悬停或触摸来展开。
+assert(index.includes('class="site-header"'), "Site header is missing");
+assert(!index.includes('class="header-hint"') && !index.includes('class="header-hover-zone"'), "Obsolete hidden-header controls remain");
+assert(/js\/main\.js\?v=/.test(index), "Main script must be cache-busted");
+assert(/css\/main\.css\?v=/.test(index), "Main stylesheet must be cache-busted");
+const headerRule = /\.site-header\s*\{([^}]*)\}/.exec(css)?.[1] || "";
+assert(/position:\s*sticky/.test(headerRule) && /top:\s*0/.test(headerRule), "Header must stay visible at the top");
+assert(!/transform\s*:/.test(headerRule), "Header must not be translated off screen");
 
 const wallpaperRule = /--wallpaper-image:\s*([^;]+);/.exec(index);
 if (look.wallpaper) {
