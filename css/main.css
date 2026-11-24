@@ -617,6 +617,9 @@ html.header-open .header-hint {
     border-color 0.2s,
     background 0.2s;
 }
+.post-batch-hidden {
+  display: none;
+}
 .post-card:hover {
   border-color: #405461;
   /* 悬停背景必须与默认态同为 120deg 双色标渐变：默认态是渐变、悬停态若写纯色，
