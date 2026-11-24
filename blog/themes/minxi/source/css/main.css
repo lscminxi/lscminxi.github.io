@@ -97,100 +97,12 @@ svg {
   height: 83px;
   border-bottom: 1px solid #202630;
   background: #0b0e14ed;
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 20;
   backdrop-filter: blur(18px);
-  /* 展开时的投影。用令牌而不是写死颜色，浅色主题只要覆盖这一个值。 */
   --header-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
-  /* 默认收在屏幕外。展开/收起由 main.js 切换 html.header-open 控制，
-     「鼠标离开后停一会儿再收起」也交给 JS 计时（不再用 transition-delay：
-     那样鼠标只是快速划过、浏览器 :hover 状态没跟上时，顶栏会一直挂在页面上）。 */
-  transform: translateY(calc(-100% - 1px));
-  transition: transform 0.6s ease, box-shadow 0.6s ease;
-}
-/* 顶部一条很窄的感应区，用来触发顶栏显示 */
-.header-hover-zone {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 14px;
-  z-index: 19;
-}
-/* 展开状态：由 main.js 根据「指针是否真的在顶栏/感应区上方」判断后加类。
-   不依赖 CSS :hover —— 元素滑入滑出时浏览器可能把 :hover 留在旧值上。 */
-html.header-open .site-header {
-  transform: none;
   box-shadow: var(--header-shadow);
-}
-/* 没有 JS 可用时的兜底：还是老办法，靠悬停和键盘焦点展开（多一层 2 秒的停留） */
-html:not(.header-js) .header-hover-zone:hover + .header-hint + .site-header,
-html:not(.header-js) .header-hint:hover + .site-header,
-html:not(.header-js) .site-header:hover,
-html:not(.header-js) .site-header:focus-within {
-  transform: none;
-  box-shadow: var(--header-shadow);
-  transition: transform 0.6s ease 2s, box-shadow 0.6s ease 2s;
-}
-/* 键盘操作始终有效（不依赖 JS）：Tab 进顶栏时自动滑出 */
-.site-header:focus-within {
-  transform: none;
-  box-shadow: var(--header-shadow);
-  transition: transform 0.6s ease 0s, box-shadow 0.6s ease 0s;
-}
-/* 页面最上方的半透明小箭头：提示「上面还有导航栏」。
-   鼠标悬停/点击都能拉出顶栏；顶栏展开后它淡出，收起来时再出现。
-   不带任何底衬（只有箭头本身），颜色走 --accent，深浅两套主题自动跟着变。 */
-.header-hint {
-  position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 21;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  width: 56px;
-  height: 16px;
-  padding: 1px 0 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  opacity: 0.5;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.25s ease, height 0.25s ease, transform 0.25s ease;
-}
-.header-hint-icon {
-  animation: header-hint-bob 3.4s ease-in-out infinite;
-}
-.header-hint:hover,
-.header-hint:focus-visible {
-  opacity: 0.92;
-  height: 21px;
-}
-html.header-open .header-hint {
-  opacity: 0;
-  pointer-events: none;
-}
-@keyframes header-hint-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.75;
-  }
-  50% {
-    transform: translateY(2px);
-    opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .header-hint-icon {
-    animation: none;
-  }
 }
 .header-inner {
   max-width: 1180px;
@@ -2649,22 +2561,6 @@ html[data-wallpaper="on"] .site-header {
   .wallpaper-actions {
     flex-direction: column-reverse;
     align-items: stretch;
-  }
-}
-
-/* 触屏设备没有鼠标悬停，顶栏保持常驻 */
-@media (hover: none) and (pointer: coarse) {
-  .site-header {
-    position: sticky;
-    transform: none;
-  }
-  .header-hover-zone {
-    display: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .site-header {
-    transition: none;
   }
 }
 
