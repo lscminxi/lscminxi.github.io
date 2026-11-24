@@ -1105,6 +1105,19 @@
       scrollAnchorsDirty = true;
       updateEditorOverscroll();
     });
+    // The workspace can change size without a window resize (responsive layout,
+    // mode changes or font loading). Recalculate once its actual height changes.
+    if (window.ResizeObserver) {
+      let lastHeight = -1;
+      const observer = new ResizeObserver(() => {
+        const height = body.clientHeight;
+        if (height > 0 && height !== lastHeight) {
+          lastHeight = height;
+          updateEditorOverscroll();
+        }
+      });
+      observer.observe(body);
+    }
 
     document.fonts?.ready?.then(() => {
       updateEditorOverscroll();

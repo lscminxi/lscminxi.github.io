@@ -4,12 +4,13 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
 const wait = (ms = 80) => new Promise(resolve => setTimeout(resolve, ms));
-async function editor(draft) {
+async function editor(draft, setup) {
   const html = await readFile('public/editor/index.html', 'utf8');
   const dom = new JSDOM(html, { url: 'https://example.test/editor/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   w.fetch = () => { throw new Error('Editor must not upload drafts'); };
   w.confirm = () => true;
+  setup?.(w);
   if (draft) w.localStorage.setItem('minxi.public.editor.draft', JSON.stringify(draft));
   w.eval(await readFile('source/admin/preview.js', 'utf8'));
   w.eval(await readFile('themes/minxi/source/js/editor.js', 'utf8'));
@@ -106,5 +107,19 @@ test('public editor has the same adjustable end-of-document overscroll as admin'
   Object.defineProperty(field, 'clientHeight', { configurable: true, get: () => 220 });
   w.dispatchEvent(new w.Event('resize'));
   assert.equal(field.style.paddingBottom, '190px');
+  dom.window.close();
+});
+
+
+test('overscroll recalculates when the editor changes size without a window resize', async () => {
+  let notify;
+  const dom = await editor(null, (w) => {
+    w.ResizeObserver = class { constructor(callback) { notify = callback; } observe() {} };
+  });
+  const field = dom.window.document.querySelector('#public-f-body');
+  field.style.fontSize = '10px'; field.style.lineHeight = '20px'; field.style.paddingTop = '10px';
+  Object.defineProperty(field, 'clientHeight', { configurable: true, get: () => 300 });
+  notify();
+  assert.equal(field.style.paddingBottom, '270px');
   dom.window.close();
 });
