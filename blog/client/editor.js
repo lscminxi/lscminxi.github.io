@@ -629,9 +629,12 @@
 
       const anchors = collectScrollAnchors(doc, scroll);
       const rawY = ta.scrollTop || 0;
-      // 只在有效滚动行程内计算（扣除文末留白），避免编辑区滚入留白区域时
-      // 预览被错误地映射到底部，导致「编辑区下滑一点直接跳到底部」的缺陷。
-      const y = Math.min(rawY, effectiveMaxTa);
+      // 防止编辑区滚入文末留白区域：若已滚入留白，立即拉回有效底部，
+      // 避免编辑区停留在全是空格的文末位置而不是原地。
+      if (rawY > effectiveMaxTa) {
+        ta.scrollTop = effectiveMaxTa;
+      }
+      const y = effectiveMaxTa >= rawY ? rawY : effectiveMaxTa;
       let target;
 
       if (!anchors.length) {
