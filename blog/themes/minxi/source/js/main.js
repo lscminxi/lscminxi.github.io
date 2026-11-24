@@ -260,6 +260,14 @@
     });
   }
 
+  // 首页浮动标签：点击后在新窗口打开 原神云游
+  const floatingTag = document.querySelector("[data-open-yunshi]");
+  if (floatingTag) {
+    floatingTag.addEventListener("click", () => {
+      window.open("https://ys.mihoyo.com/cloud/", "_blank");
+    });
+  }
+
   document.querySelectorAll("figure.highlight").forEach((block) => {
     const language =
       [...block.classList].find((name) => name !== "highlight") || "code";
