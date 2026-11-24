@@ -687,10 +687,9 @@
       if (pv <= anchors[0].pv) {
         targetTa = anchors[0].ta > 0 ? (pv / anchors[0].pv) * anchors[0].ta : 0;
       } else if (pv >= maxPv - 0.5) {
-        // 预览真正到底：编辑区只映射到最后一行源码位置（有效底部），
-        // 不被强制滚到包含留白的物理最底部，避免底部出现一堆空白空格。
-        const overscrollBottom = parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
-        targetTa = Math.max(0, physicalMaxTa - overscrollBottom);
+        // 预览真正到底（用户滚轮滚动或自动渲染）：编辑区保持原位，
+        // 不做任何操作，不被拖到文末空白处。
+        return;
       } else {
         let i = anchors.length - 1;
         while (i > 0 && anchors[i].pv > pv) i -= 1;
