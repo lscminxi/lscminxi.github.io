@@ -4904,3 +4904,13 @@ body.zen-editing .editor-page .editor-guide {
   background: var(--bg);
   box-sizing: border-box;
 }
+
+/* 首页分页操作 */
+.load-more-area { display: flex; justify-content: center; padding: 20px 0 8px; }
+#load-more { display: inline-flex; align-items: center; gap: 10px; padding: 11px 20px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; transition: border-color .2s, background .2s, transform .2s; }
+#load-more:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); transform: translateY(-2px); }
+#load-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#load-more small { color: var(--dim); font-size: 11px; }
+#load-more[hidden], .load-hint[hidden] { display: none; }
+.load-hint { margin: 0; padding: 11px; color: var(--dim); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { #load-more { transition: none; } #load-more:hover { transform: none; } }

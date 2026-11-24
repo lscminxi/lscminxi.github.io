@@ -197,13 +197,19 @@
           filterValue === "all" || card.dataset.category === filterValue;
         if (matches) {
           wrapper.hidden = false;
-          if (!wrapper.classList.contains("post-batch-hidden")) visible++;
+          if (loadMoreBtn) wrapper.classList.toggle("post-batch-hidden", visible >= 6);
+          visible++;
         } else {
           wrapper.hidden = true;
         }
       });
+      document.querySelectorAll(".pinned-block .post-card").forEach((card) => {
+        card.hidden = filterValue !== "all" && card.dataset.category !== filterValue;
+        if (!card.hidden) visible++;
+      });
       const empty = document.querySelector(".filter-empty");
       if (empty) empty.hidden = visible !== 0;
+      updateLoadMore();
       // 归档页：没有可见文章的年份标题和置顶区块一并隐藏。
       document.querySelectorAll(".archive-year, .pinned-block").forEach((group) => {
         let count = 0;
@@ -230,34 +236,24 @@
     }),
   );
 
-  // 首页分批显示：超过10篇文章时，默认只显示前6篇普通文章，
-  // 点击「加载更多」每次显示下6篇（在当前分类筛选下）。
+  // 按当前分类统计剩余文章，切换分类后同步按钮状态。
   const loadMoreBtn = document.querySelector("#load-more");
   const loadHint = document.querySelector(".load-hint");
+  const remainingPosts = () => [...document.querySelectorAll(".post-card-wrapper.post-batch-hidden")]
+    .filter((wrapper) => !wrapper.hidden);
+  const updateLoadMore = () => {
+    if (!loadMoreBtn) return;
+    const remaining = remainingPosts().length;
+    loadMoreBtn.hidden = remaining === 0;
+    if (remaining) loadMoreBtn.innerHTML = `加载更多 <span aria-hidden="true">↓</span> <small>剩余 ${remaining} 篇</small>`;
+    if (loadHint) loadHint.hidden = remaining !== 0;
+  };
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener("click", () => {
-      const activeFilter = document.querySelector("[data-filter].active");
-      const filterValue = activeFilter ? activeFilter.dataset.filter : "all";
-      let shown = 0;
-      document
-        .querySelectorAll(".post-card-wrapper.post-batch-hidden")
-        .forEach((wrapper) => {
-          const card = wrapper.querySelector(".post-card");
-          const matches =
-            filterValue === "all" || card.dataset.category === filterValue;
-          if (matches && shown < 6) {
-            wrapper.classList.remove("post-batch-hidden");
-            shown++;
-          }
-        });
-      const remaining = document.querySelectorAll(
-        ".post-card-wrapper.post-batch-hidden",
-      ).length;
-      if (remaining === 0) {
-        loadMoreBtn.hidden = true;
-        if (loadHint) loadHint.hidden = false;
-      }
+      remainingPosts().slice(0, 6).forEach((wrapper) => wrapper.classList.remove("post-batch-hidden"));
+      updateLoadMore();
     });
+    updateLoadMore();
   }
 
   // 首页浮动标签：点击后在新窗口打开 原神云游

@@ -1095,3 +1095,19 @@ test('editor guide is folded and visibility uses pin-style toggle buttons', asyn
   assert.equal(pub.getAttribute('aria-pressed'), 'true', '可切回公开');
   editor.window.close();
 });
+
+test('multiline inline matrices render with surrounding text in preview and full publication', async () => {
+  const md = '设 $B=\n\n\\begin{bmatrix}\n\n1& 1\\\\\n\n1& 0\n\n\\end{bmatrix}$，然后计算。';
+  const post = await hexo.post.render('matrix-test.md', { content: md });
+  for (const doc of [preview(md), new JSDOM(render(md)).window.document, new JSDOM(post.content).window.document]) {
+    assert.equal(doc.querySelectorAll('.katex').length, 1);
+    assert.equal(doc.querySelectorAll('.katex-error').length, 0);
+    assert(doc.querySelector('annotation').textContent.includes('bmatrix'));
+    assert(doc.body.textContent.includes('然后计算'));
+  }
+});
+test('multiline math preprocessing leaves code, escaped dollars and display blocks alone', () => {
+  const preprocess = require('../lib/inline-math.cjs');
+  const source = '```tex\n$x\ny$\n```\n\n`$x\ny$`\n\n\\$literal\n\n$$\na\\\\\nb\n$$';
+  assert.equal(preprocess(source), source);
+});
