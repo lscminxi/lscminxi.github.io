@@ -625,10 +625,13 @@
 
       const anchors = collectScrollAnchors(doc, scroll);
       const rawY = ta.scrollTop || 0;
-      // 不再强制拉回 ta.scrollTop（避免滚动跳动）。只在有效滚动行程
-      // 内计算映射；进入留白区域（rawY > effectiveMaxTa）时，预览保持
-      // 在最后一块位置，不随编辑区进入空白。
-      const y = Math.min(rawY, effectiveMaxTa);
+      // 编辑区已进入留白区域（rawY > effectiveMaxTa）：不再滚动预览，
+      // 避免触发表面上的预览滚动事件从而导致 syncEditorScroll 把编辑区
+      // 拖到文末空白处。编辑区保持在当前位置，不做任何程序性移动。
+      if (rawY > effectiveMaxTa) {
+        return;
+      }
+      const y = rawY;
       let target;
 
       if (!anchors.length) {
@@ -680,6 +683,8 @@
       const ta = body;
       const maxPv = scroll.scrollHeight - scroll.clientHeight;
       const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
+      const overscrollBottom = parseFloat(window.getComputedStyle(ta).paddingBottom) || 0;
+      const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
       if (!(physicalMaxTa > 0)) return;
       const pv = scroll.scrollTop || 0;
 
@@ -715,7 +720,10 @@
           targetTa = a.taEnd;
         }
       }
-      ta.scrollTop = Math.max(0, Math.min(physicalMaxTa, targetTa));
+      // 编辑区永远不会被程序移动到留白区域（effectiveMaxTa 以上），
+      // 只能由用户自己滚动进入留白。程序性移动始终限制在有效内容
+      // 范围内，避免「预览到底时编辑区被拖到全是空格的地方」。
+      ta.scrollTop = Math.max(0, Math.min(effectiveMaxTa, targetTa));
     } finally {
       syncingEditor = false;
     }
