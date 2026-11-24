@@ -648,16 +648,11 @@
         if (y < a.taEnd) {
           // 不在渲染到行头就同步滚动：编辑区在块内滚动时，预览保持在
           // 块起始位置，不随编辑区滚动。只有当编辑区滚到行尾（y >=
-          // a.taEnd）时，才在下面的分支里把预览映射到该块的结束位置。
+          // a.taEnd）时，才把预览映射到该块的结束位置（最后一行）。
           target = a.pv;
-        } else if (i + 1 < anchors.length) {
-          const b = anchors[i + 1];
-          const span = b.ta - a.taEnd;
-          target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
         } else {
-          // 最后一块之后：保持预览在最后一块的底部位置，不随编辑区
-          // 微滚而向下拖拽。只有当编辑区滚到有效底部（rawY >=
-          // effectiveMaxTa - 0.5）时，才在上面的分支里把预览映射到底部。
+          // 行尾：保持预览在该块的结束位置（最后一行），不跳到空白。
+          // 只有当编辑区进入下一个锚点块时，才会在下一次循环中重新定位。
           target = a.pvBottom;
         }
       }
@@ -703,16 +698,9 @@
           // a.pvBottom）时，才在下面的分支里把编辑区映射到该块的
           // 结束位置。
           targetTa = a.ta;
-        } else if (i + 1 < anchors.length) {
-          const b = anchors[i + 1];
-          const pvSpan = b.pv - a.pvBottom;
-          const taSpan = b.ta - a.taEnd;
-          targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
         } else {
-          // 最后一块之后：保持编辑区在最后一块的结束位置，不随预览
-          // 微滚而向下拖拽。只有当预览真正到底（pv >= maxPv - 0.5）时，
-          // 才在上面的分支里把编辑区映射到有效底部，避免「下滑一点
-          // 直接跳到底部」的缺陷。
+          // 行尾：保持编辑区在该块的结束位置（最后一行），不跳到空白。
+          // 只有当预览进入下一个锚点块时，才会在下一次循环中重新定位。
           targetTa = a.taEnd;
         }
       }
