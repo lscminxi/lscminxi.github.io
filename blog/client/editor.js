@@ -513,19 +513,15 @@
 
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
 
-  // 允许「滑过文末”：给 textarea 加底部留白，滚到尽头时最后一行正好停在编辑区顶部。
+  // 给 textarea 加底部留白：只保留一行的留白，让最后一行在滚到尽头时
+  // 仍能在编辑区可见范围内（底部附近），不会被大段空白推到顶部。
   const updateEditorOverscroll = () => {
     const ta = body;
     if (!ta) return;
     const style = window.getComputedStyle(ta);
     const fontSize = parseFloat(style.fontSize) || 12.5;
     const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.9;
-    const paddingTop = parseFloat(style.paddingTop) || 0;
-    const height = Number.isFinite(ta.clientHeight) ? ta.clientHeight : 0;
-    const bottom = height > 0
-      ? Math.max(lineHeight, height - paddingTop - lineHeight)
-      : lineHeight;
-    ta.style.paddingBottom = `${Math.round(bottom)}px`;
+    ta.style.paddingBottom = `${Math.round(lineHeight)}px`;
     scrollAnchorsDirty = true;
   };
 
@@ -629,18 +625,16 @@
 
       const anchors = collectScrollAnchors(doc, scroll);
       const rawY = ta.scrollTop || 0;
-      // 防止编辑区滚入文末留白区域：若已滚入留白，立即拉回有效底部，
-      // 避免编辑区停留在全是空格的文末位置而不是原地。
-      if (rawY > effectiveMaxTa) {
-        ta.scrollTop = effectiveMaxTa;
-      }
-      const y = effectiveMaxTa >= rawY ? rawY : effectiveMaxTa;
+      // 不再强制拉回 ta.scrollTop（避免滚动跳动）。只在有效滚动行程
+      // 内计算映射；进入留白区域（rawY > effectiveMaxTa）时，预览保持
+      // 在最后一块位置，不随编辑区进入空白。
+      const y = Math.min(rawY, effectiveMaxTa);
       let target;
 
       if (!anchors.length) {
         target = effectiveMaxTa > 0 ? (y / effectiveMaxTa) * maxPv : maxPv;
-      } else if (rawY >= physicalMaxTa - 0.5) {
-        // 编辑区真正到底：预览必须同时到底。
+      } else if (rawY >= effectiveMaxTa - 0.5) {
+        // 编辑区滚到有效底部（内容实际结束）：预览同时到底。
         target = maxPv;
       } else if (y < anchors[0].ta) {
         target = anchors[0].ta > 0 ? (y / anchors[0].ta) * anchors[0].pv : anchors[0].pv;
@@ -661,9 +655,8 @@
           target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
         } else {
           // 最后一块之后：保持预览在最后一块的底部位置，不随编辑区
-          // 微滚而向下拖拽。只有当编辑区真正到底（rawY >= physicalMaxTa
-          // - 0.5）时，才在上面的分支里把预览映射到底部，避免「下滑
-          // 一点直接跳到底部」的缺陷。
+          // 微滚而向下拖拽。只有当编辑区滚到有效底部（rawY >=
+          // effectiveMaxTa - 0.5）时，才在上面的分支里把预览映射到底部。
           target = a.pvBottom;
         }
       }
