@@ -646,12 +646,10 @@
         while (i > 0 && anchors[i].ta > y) i -= 1;
         const a = anchors[i];
         if (y < a.taEnd) {
-          if (a.atomic) {
-            target = a.pv;
-          } else {
-            const span = a.taEnd - a.ta;
-            target = span > 0 ? a.pv + ((y - a.ta) / span) * (a.pvBottom - a.pv) : a.pv;
-          }
+          // 不在渲染到行头就同步滚动：编辑区在块内滚动时，预览保持在
+          // 块起始位置，不随编辑区滚动。只有当编辑区滚到行尾（y >=
+          // a.taEnd）时，才在下面的分支里把预览映射到该块的结束位置。
+          target = a.pv;
         } else if (i + 1 < anchors.length) {
           const b = anchors[i + 1];
           const span = b.ta - a.taEnd;
@@ -699,14 +697,12 @@
         let i = anchors.length - 1;
         while (i > 0 && anchors[i].pv > pv) i -= 1;
         const a = anchors[i];
-        if (pv <= a.pvBottom) {
-          if (a.atomic) {
-            targetTa = a.ta;
-          } else {
-            const pvSpan = a.pvBottom - a.pv;
-            const taSpan = a.taEnd - a.ta;
-            targetTa = pvSpan > 0 ? a.ta + ((pv - a.pv) / pvSpan) * taSpan : a.ta;
-          }
+        if (pv < a.pvBottom) {
+          // 不在渲染到行头就同步滚动：预览在块内滚动时，编辑区保持在
+          // 块起始位置，不随预览滚动。只有当预览滚到行尾（pv >=
+          // a.pvBottom）时，才在下面的分支里把编辑区映射到该块的
+          // 结束位置。
+          targetTa = a.ta;
         } else if (i + 1 < anchors.length) {
           const b = anchors[i + 1];
           const pvSpan = b.pv - a.pvBottom;
