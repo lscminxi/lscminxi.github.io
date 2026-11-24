@@ -657,11 +657,11 @@
           const span = b.ta - a.taEnd;
           target = span > 0 ? a.pvBottom + ((y - a.taEnd) / span) * (b.pv - a.pvBottom) : b.pv;
         } else {
-          // 最后一块之后：在有效行程内过渡，避免留白区域导致预览跳到底部。
-          const span = effectiveMaxTa - a.taEnd;
-          target = span > 0.5
-            ? a.pvBottom + ((y - a.taEnd) / span) * (maxPv - a.pvBottom)
-            : (y >= effectiveMaxTa - 0.5 ? maxPv : a.pvBottom);
+          // 最后一块之后：保持预览在最后一块的底部位置，不随编辑区
+          // 微滚而向下拖拽。只有当编辑区真正到底（rawY >= physicalMaxTa
+          // - 0.5）时，才在上面的分支里把预览映射到底部，避免「下滑
+          // 一点直接跳到底部」的缺陷。
+          target = a.pvBottom;
         }
       }
 
@@ -713,13 +713,11 @@
           const taSpan = b.ta - a.taEnd;
           targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
         } else {
-          // 最后一块之后：平滑过渡到编辑区有效底部（扣除文末留白）。
-          const span = maxPv - a.pvBottom;
-          const overscrollBottom = parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
-          const effectiveMaxTa = Math.max(0, physicalMaxTa - overscrollBottom);
-          targetTa = span > 0
-            ? a.taEnd + ((pv - a.pvBottom) / span) * (effectiveMaxTa - a.taEnd)
-            : effectiveMaxTa;
+          // 最后一块之后：保持编辑区在最后一块的结束位置，不随预览
+          // 微滚而向下拖拽。只有当预览真正到底（pv >= maxPv - 0.5）时，
+          // 才在上面的分支里把编辑区映射到有效底部，避免「下滑一点
+          // 直接跳到底部」的缺陷。
+          targetTa = a.taEnd;
         }
       }
       ta.scrollTop = Math.max(0, Math.min(physicalMaxTa, targetTa));
