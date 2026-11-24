@@ -334,6 +334,23 @@ svg {
   overflow: hidden;
   box-shadow: 0 15px 60px #0004;
   transform: rotate(-1.5deg);
+  transition: transform 220ms cubic-bezier(.2, 1.5, .4, 1), border-color 220ms ease;
+}
+.code-window:hover,
+.code-window:focus-visible {
+  transform: translateY(-5px) rotate(-1.5deg) scale(1.02);
+  border-color: var(--accent);
+}
+.code-window:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.code-window:active {
+  transform: translateY(-2px) rotate(-1.5deg) scale(.99);
+}
+@media (prefers-reduced-motion: reduce) {
+  .code-window { transition: none; }
+  .code-window:hover, .code-window:focus-visible, .code-window:active { transform: rotate(-1.5deg); }
 }
 .window-bar {
   display: flex;
