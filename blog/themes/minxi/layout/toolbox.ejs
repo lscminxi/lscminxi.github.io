@@ -1,0 +1,24 @@
+<div class="page-heading">
+  <div class="eyebrow"><%= page.eyebrow %></div>
+  <h1><%= page.title %><span class="accent-dot">.</span></h1>
+  <p><%= page.description %></p>
+</div>
+
+<section class="toolbox" aria-labelledby="toolbox-heading">
+  <div class="toolbox-heading">
+    <div><span class="toolbox-kicker">TOOLS FOR YOUR IDEAS</span><h2 id="toolbox-heading">随手工具</h2></div>
+    <span class="toolbox-count">01 / TOOL</span>
+  </div>
+  <div class="toolbox-grid">
+    <a class="toolbox-card" href="<%- url_for('/editor/') %>">
+      <div class="toolbox-card-top">
+        <span class="toolbox-icon" aria-hidden="true">&lt;/&gt;</span>
+        <span class="toolbox-arrow" aria-hidden="true">↗</span>
+      </div>
+      <span class="toolbox-label">WRITE &amp; PREVIEW</span>
+      <h3>Markdown 编辑器</h3>
+      <p>边写边预览，支持公式、折叠框和交互图表。草稿只保存在当前浏览器。</p>
+      <span class="toolbox-link">开始写作 <span aria-hidden="true">→</span></span>
+    </a>
+  </div>
+</section>
