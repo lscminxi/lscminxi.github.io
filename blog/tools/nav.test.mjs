@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 
 // main.js 是主题里手写的脚本（不经过打包），产物 public/index.html 里有真实的顶栏标记。
@@ -110,4 +110,27 @@ test('百宝箱 is reachable from the main navigation and contains the local edi
   assert(card?.textContent.includes('Markdown 编辑器'));
   assert(card.textContent.includes('浏览器'));
   assert(editor.querySelector('#public-f-body'));
+});
+
+test('hero code window links to the cloud game without affecting the floating tag', async () => {
+  assert.match(css, /\.code-window:hover/);
+  assert.match(css, /\.code-window:focus-visible/);
+  assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.code-window/);
+  const pages = await readdir('public/page', { withFileTypes: true }).catch(() => []);
+  const paths = ['public/index.html', ...pages.filter((entry) => entry.isDirectory()).map((entry) => `public/page/${entry.name}/index.html`)];
+  for (const path of paths) {
+    const dom = new JSDOM(await readFile(path, 'utf8'));
+    const doc = dom.window.document;
+    const link = doc.querySelector('a.code-window');
+    assert(link, `${path}: code window must be a native link`);
+    assert.equal(link.getAttribute('href'), 'https://mc.kurogames.com/cloud/index.html#/');
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.match(link.getAttribute('rel'), /noopener/);
+    assert.match(link.getAttribute('aria-label'), /鸣潮/);
+    assert.equal(link.hasAttribute('title'), false, 'do not show a hover tooltip');
+    assert(link.querySelector('.hero-code'));
+    assert(doc.querySelector('.floating-tag[data-open-yunshi]'));
+    assert(!link.contains(doc.querySelector('.floating-tag')), 'existing floating tag stays independent');
+    dom.window.close();
+  }
 });
