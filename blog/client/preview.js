@@ -36,9 +36,45 @@ const registerFigureSignatures = (root) => {
   });
 };
 
+// 预处理跨行 inline math：marked-katex-extension 的 inline 正则不允许
+// 内容中包含换行符，导致 $...$ 跨多行时（如矩阵、分段函数）渲染失败。
+// 将跨行的 $...$ 内部换行符替换为空格，使其能被正确识别渲染。
+const preprocessInlineMath = (text) => {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '$') {
+      let j = i + 1;
+      let hasNewline = false;
+      while (j < text.length && text[j] !== '$') {
+        if (text[j] === '\n') hasNewline = true;
+        j += 1;
+      }
+      if (j < text.length && text[j] === '$') {
+        const content = text.slice(i + 1, j);
+        if (hasNewline) {
+          result += '$' + content.replace(/\n/g, ' ') + '$';
+        } else {
+          result += text.slice(i, j + 1);
+        }
+        i = j + 1;
+      } else {
+        result += text[i];
+        i += 1;
+      }
+    } else {
+      result += text[i];
+      i += 1;
+    }
+  }
+  return result;
+};
+
 window.MinxiPreview = {
   // 把 Markdown 渲染成可插入的 DOM 片段（document 全页与 patch 增量共用）。
   buildFragment({ body = '', openFolds = [], plotViews = [], graphViews = [] } = {}) {
+    // 预处理跨行 inline math，避免矩阵等多行公式前后有字符时渲染失败
+    body = preprocessInlineMath(body);
     // Sanitize before inserting. The sandboxed iframe also blocks scripts, forms
     // and all active content. Same-origin is allowed only for local CSS/fonts;
     // NEVER add allow-scripts to the iframe sandbox.
