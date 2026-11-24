@@ -10,7 +10,7 @@
  * 预览使用后台同一套 MinxiPreview.buildFragment（window.MinxiPreview），
  * 支持 $$ 公式、```plot 函数图、```graph 关系图、:::info 折叠框等语法。
  *
- * 滚动同步：编辑区与预览区双向按块级锚点分段插值对齐，
+ * 滚动同步：编辑区单向带动预览区，按块级锚点分段插值对齐，
  * 仿洛谷编辑器，块内按源码行位置比例缓慢下移，不钉块顶，不跳回。
  */
 
@@ -634,13 +634,11 @@
     stats.textContent = `共 ${chars} 字 · ${lines} 行`;
   };
 
-  // ---------------- 滚动同步（双向，仿洛谷编辑器） ----------------
+  // ---------------- 滚动同步（编辑区带动预览，仿洛谷编辑器） ----------------
   let scrollAnchorsDirty = true;
   let lineMirror = null;
   let syncRaf = 0;
-  let editorSyncRaf = 0;
   let syncingPreview = false;
-  let syncingEditor = false;
   let previewLoadPending = false;
 
   const scheduleFrame = (callback) => (window.requestAnimationFrame ? window.requestAnimationFrame(callback) : setTimeout(callback, 16));
@@ -807,66 +805,6 @@
     scroll.scrollTop = Math.max(0, Math.min(maxPv, target));
     } finally {
       syncingPreview = false;
-    }
-  };
-
-  /* 预览滚动 → 编辑区跟随：反向查找预览滚动位置对应的源码锚点，
-     把预览区间映射回编辑区行镜像的像素位置，带动编辑区同步滚动。
-     防止与编辑区→预览的同步形成循环，通过 syncingEditor 标志互斥。 */
-  const syncEditorScroll = () => {
-    if (syncingEditor) return;
-    syncingEditor = true;
-    try {
-      const doc = previewFrame.contentDocument;
-      const scroll = doc?.scrollingElement;
-      if (!doc || !scroll) return;
-      const anchors = collectScrollAnchors(doc, scroll);
-      if (!anchors.length) return;
-      const ta = body;
-      const maxPv = scroll.scrollHeight - scroll.clientHeight;
-      const physicalMaxTa = Math.max(0, ta.scrollHeight - ta.clientHeight);
-      if (!(physicalMaxTa > 0)) return;
-      const pv = scroll.scrollTop || 0;
-
-      let targetTa;
-      if (pv <= anchors[0].pv) {
-        // 预览在第一个锚点之前：按比例回退到编辑区顶部区间。
-        targetTa = anchors[0].ta > 0 ? (pv / anchors[0].pv) * anchors[0].ta : 0;
-      } else if (pv >= maxPv - 0.5) {
-        // 预览真正到底：编辑区也到底部。
-        targetTa = physicalMaxTa;
-      } else {
-        // 从后往前找到第一个 pv >= anchors[i].pv 的锚点，pv 落在该锚点覆盖范围内或之后。
-        let i = anchors.length - 1;
-        while (i > 0 && anchors[i].pv > pv) i -= 1;
-        const a = anchors[i];
-        if (pv <= a.pvBottom) {
-          // 在锚点 a 覆盖范围内（块内）。
-          if (a.atomic) {
-            // 独立图片整块对齐：回到块顶。
-            targetTa = a.ta;
-          } else {
-            const pvSpan = a.pvBottom - a.pv;
-            const taSpan = a.taEnd - a.ta;
-            targetTa = pvSpan > 0 ? a.ta + ((pv - a.pv) / pvSpan) * taSpan : a.ta;
-          }
-        } else if (i + 1 < anchors.length) {
-          // 块间空行区域：a.pvBottom < pv < anchors[i+1].pv。
-          const b = anchors[i + 1];
-          const pvSpan = b.pv - a.pvBottom;
-          const taSpan = b.ta - a.taEnd;
-          targetTa = pvSpan > 0 ? a.taEnd + ((pv - a.pvBottom) / pvSpan) * taSpan : a.taEnd;
-        } else {
-          // 最后一块之后：平滑过渡到两侧同时见底。
-          const span = maxPv - a.pvBottom;
-          targetTa = span > 0.5
-            ? a.taEnd + ((pv - a.pvBottom) / span) * (physicalMaxTa - a.taEnd)
-            : physicalMaxTa;
-        }
-      }
-      ta.scrollTop = Math.max(0, Math.min(physicalMaxTa, targetTa));
-    } finally {
-      syncingEditor = false;
     }
   };
 
@@ -1127,22 +1065,13 @@
 
     updateEditorOverscroll();
 
-    // 预览 iframe 加载完成后：绑定预览滚动→编辑区的反向同步，
-    // 并做初始对齐与多次校准（参考后台编辑器），避免 iframe 未就绪时
-    // 监听器绑定失败导致预览滚动不跟随编辑区。
+    // 预览 iframe 加载完成后做初始对齐与多次校准。
     previewFrame.addEventListener('load', () => {
       previewLoadPending = false;
       scrollAnchorsDirty = true;
       try { previewFrame.contentDocument?.addEventListener('minxi:graph-positions', handleGraphPositions);
         previewFrame.contentDocument?.addEventListener('minxi:graph-node-weight', handleGraphNodeWeight); } catch { /* iframe 尚未就绪 */ }
       try { window.MinxiPreview?.enhance?.(previewFrame.contentDocument); } catch { /* 预览组件未就绪时忽略 */ }
-      try {
-        previewFrame.contentDocument?.addEventListener('scroll', () => {
-          if (syncingPreview) return;
-          if (editorSyncRaf) return;
-          editorSyncRaf = scheduleFrame(() => { editorSyncRaf = 0; syncEditorScroll(); });
-        }, { passive: true });
-      } catch { /* 预览滚动监听器绑定失败时忽略 */ }
       if (previewSignature !== JSON.stringify([{ body: body.value, title: title.value, description: description.value }, document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'])) queuePreview();
       syncPreviewScroll();
       const revealAlignedPreview = () => {

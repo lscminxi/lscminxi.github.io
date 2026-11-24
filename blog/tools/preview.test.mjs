@@ -1111,3 +1111,41 @@ test('multiline math preprocessing leaves code, escaped dollars and display bloc
   const source = '```tex\n$x\ny$\n```\n\n`$x\ny$`\n\n\\$literal\n\n$$\na\\\\\nb\n$$';
   assert.equal(preprocess(source), source);
 });
+
+test('preview reaching the bottom never sends the editor into overscroll padding', async () => {
+  const editor = new JSDOM(await readFile('source/admin/index.html', 'utf8'), {
+    url: 'https://preview.example/admin/', runScripts: 'outside-only',
+  });
+  const w = editor.window;
+  w.fetch = () => { throw new Error('Scroll sync must not fetch'); };
+  w.eval(await readFile('source/admin/preview.js', 'utf8'));
+  w.eval(await readFile('source/admin/admin.js', 'utf8'));
+  const field = w.document.querySelector('#f-body');
+  const frame = w.document.querySelector('#post-preview');
+  const doc = frame.contentDocument;
+  field.value = '第一行\n第二行';
+  doc.body.innerHTML = '<div class="article-content"><p data-source-line="1" data-source-end-line="2">内容</p></div>';
+  if (!doc.scrollingElement) Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  let editorTop = 200, previewTop = 0;
+  Object.defineProperties(field, {
+    scrollHeight: { configurable: true, get: () => 1400 },
+    clientHeight: { configurable: true, get: () => 400 },
+    scrollTop: { configurable: true, get: () => editorTop, set: v => { editorTop = v; } },
+  });
+  field.style.paddingBottom = '350px';
+  Object.defineProperties(doc.scrollingElement, {
+    scrollHeight: { configurable: true, get: () => 600 },
+    clientHeight: { configurable: true, get: () => 400 },
+    scrollTop: { configurable: true, get: () => previewTop, set: v => { previewTop = v; } },
+  });
+  frame.dispatchEvent(new w.Event('load'));
+  await new Promise(resolve => setTimeout(resolve, 160));
+  // Simulate the asynchronous document scroll event fired by the browser after
+  // the editor has moved the preview to its bottom (not a window scroll event).
+  editorTop = 200;
+  previewTop = 200;
+  doc.dispatchEvent(new w.Event('scroll'));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(editorTop, 200, 'preview scroll must not move the editor into its blank padding');
+  editor.window.close();
+});

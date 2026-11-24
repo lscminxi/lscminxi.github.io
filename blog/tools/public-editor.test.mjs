@@ -123,3 +123,19 @@ test('overscroll recalculates when the editor changes size without a window resi
   assert.equal(field.style.paddingBottom, '270px');
   dom.window.close();
 });
+
+test('preview scroll cannot pull the public editor into the bottom padding', async () => {
+  const dom = await editor(); const w = dom.window, d = w.document;
+  const doc = loadPreview(w), field = d.querySelector('#public-f-body');
+  field.value = '第一行\n第二行';
+  doc.querySelector('.article-content').innerHTML = '<p data-source-line="1" data-source-end-line="2">内容</p>';
+  if (!doc.scrollingElement) Object.defineProperty(doc, 'scrollingElement', { configurable: true, get: () => doc.documentElement });
+  let editorTop = 200, previewTop = 200;
+  Object.defineProperties(field, { scrollHeight: { configurable: true, get: () => 1400 }, clientHeight: { configurable: true, get: () => 400 }, scrollTop: { configurable: true, get: () => editorTop, set: v => { editorTop = v; } } });
+  Object.defineProperties(doc.scrollingElement, { scrollHeight: { configurable: true, get: () => 600 }, clientHeight: { configurable: true, get: () => 400 }, scrollTop: { configurable: true, get: () => previewTop, set: v => { previewTop = v; } } });
+  field.style.paddingBottom = '350px';
+  doc.dispatchEvent(new w.Event('scroll'));
+  await wait(100);
+  assert.equal(editorTop, 200);
+  dom.window.close();
+});
