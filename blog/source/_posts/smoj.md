@@ -483,5 +483,6 @@ ${color('background','纯色背景')}${color('gradientA','渐变颜色 A')}${col
 ```
 :::
 
-[链接](https://zsoj.gbfish.cn/file/239/Hydro-UI-Beautifier-extension-v1.7.4%20%281%29.zip)
+[链接](https://zsoj.gbfish.cn/file/239/Hydro-UI-Beautifier-1.7.8.user.js)
+
 
