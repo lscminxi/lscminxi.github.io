@@ -2,7 +2,9 @@
 title: smoj 优化插件
 date: 2026-11-25 19:36:00
 categories:
-  - 学习笔记
+  - 其他
+tags:
+  - SM
 ---
 :::success[code]
 ```
