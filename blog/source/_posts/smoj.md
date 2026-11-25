@@ -11,13 +11,14 @@ tags:
 // ==UserScript==
 // @name         Hydro UI Beautifier
 // @namespace    https://zsoj.gbfish.cn/
-// @version      1.7.4
+// @version      1.7.5
 // @description  Hydro 全站 Glass 美化：修复页脚吸底与菜单选中/悬停圆角
 // @author       ChatGPT
 // @match        https://zsoj.gbfish.cn/*
-// @match        https://hydro.ac/*
 // @match        http://10.3.44.224/*
-// @match        //10.3.44.224/*
+// @match        https://10.3.44.224/*
+// @match        https://hydro.ac/*
+// @match        https://oier.group/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -28,7 +29,7 @@ tags:
     if (window.__HYDRO_BEAUTIFIER_V170__) return;
     window.__HYDRO_BEAUTIFIER_V170__ = true;
 
-    const VERSION = '1.7.4';
+    const VERSION = '1.7.5';
     const KEY = 'hydro_beautifier_v170';
     const OLD_KEYS = ['hydro_beautifier_v160', 'hydro_beautifier_v150', 'hydro_beautifier_v141', 'hydro_beautifier_v14', 'hydro_beautifier_v13', 'hydro_beautifier_v12', 'hydro_beautifier_v11'];
     const PRESET_KEY = KEY + '_presets';
@@ -128,7 +129,8 @@ body{min-height:100vh;min-height:100dvh;background:transparent!important;isolati
 .hb170-sticky-shell>.hb170-sticky-footer{margin-top:auto!important;flex-shrink:0!important;width:100%}
 body.hb170-transparent .main,body.hb170-transparent #panel,body.hb170-transparent .slideout-panel{background:transparent!important}
 body.hb170-layout .main{max-width:var(--hb-page-width)!important;width:calc(100% - 32px)!important;margin-inline:auto!important}
-body.hb170-layout .main .row{column-gap:var(--hb-layout-gap)}
+/* Hydro 使用浮动栅格，column-gap 对 float 不生效。以半栏距作为每列的左右内边距。 */
+body.hb170-layout .main .row:not(.collapse)>:is(.column,.columns){padding-left:calc(var(--hb-layout-gap) / 2)!important;padding-right:calc(var(--hb-layout-gap) / 2)!important;box-sizing:border-box!important}
 body.hb170-layout.hb170-compact .main .row{row-gap:8px}
 body.hb170-compact .main .section__body{padding-block:8px!important}
 body.hb170-compact .main .section{margin-bottom:10px!important}
@@ -145,11 +147,19 @@ body:not(.hb170-media-frames) .hb170-media-frame>img,body:not(.hb170-media-frame
 .hb170-card :is(.active,.selected,.is-selected,.is-active,[aria-selected="true"],[aria-checked="true"],[data-state="active"],[data-selected="true"]){overflow:hidden!important}
 .hb170-card :is(tr,li,.item,.menu-item,.tab,.nav-item):is(.active,.selected,.is-selected,.is-active,[aria-selected="true"],[aria-current="true"]){border-radius:var(--hb-global-radius)!important;background-clip:padding-box!important;overflow:hidden!important}
 .hb170-card :is(a,button,[role="button"],[role="tab"],[role="option"]):focus-visible{outline:2px solid var(--hb-accent)!important;outline-offset:2px!important;border-radius:var(--hb170-radius,var(--hb-global-radius))!important}
+/* 浅色适配：比赛横幅的标题、信息和参加状态采用灰色；保留深色状态徽章、黄色按钮和图标的原配色。 */
+:is(html.theme--light body,body.hb170-light) .main .section--contest .media__body .section__body>h1,
+:is(html.theme--light body,body.hb170-light) .main .section--contest .info,
+:is(html.theme--light body,body.hb170-light) .main .section--contest .info li,
+:is(html.theme--light body,body.hb170-light) .main .section--contest .media__right .typo,
+:is(html.theme--light body,body.hb170-light) .main .section--contest .media__right .typo p,
+:is(html.theme--light body,body.hb170-light) .main .section--contest .media__right .typo .icon{color:#6b7280!important;text-shadow:none!important}
 /* Hydro 将高亮画在 menu__link / messagepad__list-item 本身；包括 hover。 */
 .main :is(a,button).menu__link:is(:hover,:active,:focus-visible,.active,.selected,[aria-current="page"]),.main .menu__item:is(.active,.selected,.is-active)>.menu__link,.main .messagepad__list-item:is(:hover,:active,:focus-visible,.active,.selected,[aria-selected="true"]){border-radius:var(--hb170-radius,var(--hb-global-radius))!important;background-clip:padding-box!important}
 body.hb170-hover .hb170-card:hover{transform:translateY(calc(-1 * var(--hb-hover-lift,3px)))!important;filter:brightness(var(--hb-hover-brightness,108%))!important}
 .hb170-card .section__header,.hb170-card .section__body{background:transparent!important;border-radius:inherit}
-.hb170-card .section__body{padding:var(--hb-global-padding)}
+/* 站点本身有 first-child / last-child 等更具体的 padding 规则，需要提升优先级。保留明确标记 no-padding 的表格等区域。 */
+body:not(.hb170-compact) .main .hb170-card .section__body:not(.no-padding),body:not(.hb170-compact) #academic-root .hb170-card .section__body:not(.no-padding){padding:var(--hb-global-padding)!important}
 .hb170-table-wrap{border-radius:var(--hb170-radius,var(--hb-global-radius))!important;overflow:hidden!important}
 .hb170-table-wrap table{border-collapse:separate!important;border-spacing:0!important;background:transparent!important;border-radius:inherit!important}
 .hb170-table-wrap th,.hb170-table-wrap td{background:transparent!important;border-color:var(--hb-global-border)!important}
@@ -163,7 +173,8 @@ body.hb170-striped .hb170-table-wrap tbody tr:nth-child(even){background:rgba(0,
 body.hb170-shadow .hb170-card{box-shadow:var(--hb-global-shadow)!important}
 body:not(.hb170-shadow) .hb170-card{box-shadow:none!important}
 body.hb170-border-off .hb170-card{border-color:transparent!important}
-body.hb170-font-scale{font-size:calc(1rem * var(--hb-font-scale,1))}
+/* Hydro 的大量字号使用 rem，仅修改 body 无法影响这些元素。以原有根字号为基准缩放。 */
+html.hb170-font-scale{font-size:calc(var(--hb-base-font-size,13px) * var(--hb-font-scale,1))!important}
 .main .section.hb170-card,.main .section__table-container.hb170-card,#academic-root .ac-card.hb170-card{isolation:isolate}
 .main .section__table-container.hb170-card{padding:0!important}
 .main .section__table-container.hb170-card table{margin:0!important}
@@ -207,7 +218,7 @@ ${check('border','显示卡片边框')}${range('borderOpacity','边框透明度'
 <section data-page="cards" hidden><h3>板块继承关系</h3><p class="hint">默认所有板块继承全局设置。关闭某个板块的跟随开关后，才启用该板块的独立参数。</p><h3>图片与嵌入内容</h3>${check('mediaFrames','为正文图片、贴图和嵌入内容添加圆角外框')}${range('mediaFramePadding','媒体外框内边距',0,16)}<p class="hint">自动排除导航 Logo、头像和图标；带背景图的作业/比赛侧栏封面也会裁切到卡片圆角内。</p>
 ${['native:普通卡片','table:题目表格','side:右侧栏','academic:学术板块'].map(x => { const [g,label] = x.split(':'); return `<h3>${label}</h3>${check(g+'FollowGlobal','跟随全局卡片设置')}${range(g+'Opacity','透明度',10,100)}${range(g+'Blur','毛玻璃',0,30)}${range(g+'Radius','圆角',0,32)}`; }).join('')}
 <div class="grid"><button class="action secondary" id="hb-follow-all">全部跟随全局</button><button class="action secondary" id="hb-reset-groups">重置独立参数</button></div></section>
-<section data-page="layout" hidden><h3>页面布局</h3>${check('layoutEnabled','启用布局控制')}${range('width','内容最大宽度',900,2200,20)}${range('gap','栏间距',0,48)}${range('sideWidth','侧栏宽度比例',15,45)}<div class="item"><div class="label">布局模式</div><select data-select="layoutMode"><option value="auto">自动（保持 Hydro 原布局）</option><option value="wide">宽屏双栏</option><option value="single">单栏</option></select></div>${check('compact','紧凑模式')}<div class="hint">宽屏双栏和单栏模式只对检测到的主内容布局容器生效；自动模式不改变原有列结构。</div><h3>字体</h3>${range('fontScale','全局字号比例',85,115)}</section>
+<section data-page="layout" hidden><h3>页面布局</h3>${check('layoutEnabled','启用布局控制')}${range('width','内容最大宽度',900,2200,20)}${range('gap','栏间距',0,48)}${range('sideWidth','侧栏宽度比例',15,45)}<div class="item"><div class="label">布局模式</div><select data-select="layoutMode"><option value="auto">自动（保持 Hydro 原布局）</option><option value="wide">宽屏双栏</option><option value="single">单栏</option></select></div>${check('compact','紧凑模式')}<div class="hint">栏间距作用于 Hydro 的标准列布局；宽屏双栏和单栏只对检测到的主内容布局容器生效。</div><h3>字体</h3>${range('fontScale','全局字号比例',85,115)}<div class="hint">缩放以 rem 和继承字号为主；网页中固定像素字号或编辑器字号可能不受影响。</div></section>
 <section data-page="background" hidden><h3>背景模式</h3><div class="item"><select data-select="backgroundMode"><option value="image">图片/纯色</option><option value="gradient">渐变</option></select></div><div class="item"><label class="label">图片 URL</label><input id="hb-image-url" type="text" placeholder="https://..."></div><div class="grid"><button class="action" id="hb-image-apply">应用图片</button><button class="action secondary" id="hb-image-clear">清除图片</button></div><div class="status" id="hb-image-status">背景尚未加载</div>
 ${color('background','纯色背景')}${color('gradientA','渐变颜色 A')}${color('gradientB','渐变颜色 B')}${range('gradientAngle','渐变角度',0,360)}<h3>背景效果</h3>${range('opacity','图片透明度',0,100)}${range('bgBlur','背景模糊',0,20)}${range('overlay','遮罩强度',0,90)}${color('overlayColor','遮罩颜色')}${range('saturation','饱和度',0,200)}${range('brightness','亮度',20,180)}${range('contrast','对比度',20,180)}${check('noise','细微噪点纹理')}${check('enabled','启用背景层')}<div class="item"><div class="label">背景尺寸</div><select data-select="bgSize"><option>cover</option><option>contain</option><option>100% 100%</option></select></div><div class="item"><div class="label">背景位置</div><select data-select="bgPosition"><option>center</option><option>top</option><option>bottom</option><option>left</option><option>right</option></select></div></section>
 <section data-page="themes" hidden><h3>内置主题</h3><div class="grid">${Object.keys(THEMES).map(k => `<button class="preset" data-theme="${k}">${k.toUpperCase()}</button>`).join('')}</div><h3>自定义主题</h3><div class="item"><input id="hb-preset-name" type="text" placeholder="方案名称"></div><div class="grid"><button class="action" id="hb-preset-save">保存当前方案</button><button class="action secondary" id="hb-preset-delete">删除选中方案</button></div><div id="hb-custom-presets"></div>${color('accent','强调色')}<div class="hint">主题切换不会覆盖背景图片 URL 和独立板块参数。</div></section>
@@ -342,7 +353,8 @@ ${color('background','纯色背景')}${color('gradientA','渐变颜色 A')}${col
         };
         for (const g of GROUPS) { const v = groupValues(g); vars[`--hb-${g}-bg`] = `rgba(${darkRGB},${v.opacity/100})`; vars[`--hb-${g}-blur`] = v.blur+'px'; vars[`--hb-${g}-radius`] = v.radius+'px'; }
         Object.entries(vars).forEach(([k,v]) => root.style.setProperty(k,v));
-        for (const [cls,val] of Object.entries({'transparent':settings.transparent,'layout':settings.layoutEnabled,'compact':settings.compact,'striped':settings.striped,'shadow':settings.shadow,'border-off':!settings.border,'hover':settings.hover,'media-frames':settings.mediaFrames,'font-scale':settings.fontScale!==100})) body.classList.toggle('hb170-'+cls,!!val);
+        for (const [cls,val] of Object.entries({'transparent':settings.transparent,'layout':settings.layoutEnabled,'compact':settings.compact,'striped':settings.striped,'shadow':settings.shadow,'border-off':!settings.border,'hover':settings.hover,'media-frames':settings.mediaFrames,'light':!settings.dark})) body.classList.toggle('hb170-'+cls,!!val);
+        root.classList.toggle('hb170-font-scale', Number(settings.fontScale)!==100);
         applyBackground();
         // 更新跟随状态，不必每次滑动都重新搜索 DOM。
         if (rescan) scanCards(); else for (const [el,g] of recognized) if (el.isConnected) setCardStyle(el,g);
@@ -446,8 +458,17 @@ ${color('background','纯色背景')}${color('gradientA','渐变颜色 A')}${col
         if(trigger.parentNode!==document.body)document.body.append(trigger);
         if(panel.parentNode!==document.body)document.body.append(panel);
     }
-    mount(); applyStickyFooter(); syncUI(); applyAll();
-    window.addEventListener('resize',applyStickyFooter);
+    // 获取 Hydro 当前响应式根字号（不把之前的缩放再计入基准）。
+    function refreshBaseFontSize() {
+        const root = document.documentElement;
+        const scaled = root.classList.contains('hb170-font-scale');
+        if (scaled) root.classList.remove('hb170-font-scale');
+        const size = parseFloat(getComputedStyle(root).fontSize);
+        if (scaled) root.classList.add('hb170-font-scale');
+        if (Number.isFinite(size) && size > 0) root.style.setProperty('--hb-base-font-size', size + 'px');
+    }
+    mount(); applyStickyFooter(); syncUI(); refreshBaseFontSize(); applyAll();
+    window.addEventListener('resize',()=>{refreshBaseFontSize();applyStickyFooter();});
     // 只监听页面子节点变动；忽略自己的面板和媒体包装引起的内部变化。
     let scanTimer=0;
     const observer=new MutationObserver(records=>{
@@ -463,3 +484,4 @@ ${color('background','纯色背景')}${color('gradientA','渐变颜色 A')}${col
 :::
 
 [链接](https://zsoj.gbfish.cn/file/239/Hydro-UI-Beautifier-extension-v1.7.4%20%281%29.zip)
+
